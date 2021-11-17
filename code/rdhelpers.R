@@ -84,3 +84,19 @@ optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, d
   bws$var <- v
   return(bws)
 }
+
+rdgazer <- function(rdlist, dvlabs = NULL, xlines = NULL, se_r = "Conventional", type = "text", ...){
+  dummymods <- list(); coef <- list(); se <- list(); bw <- c(); nobs <- c(); untreatedmean <- c()
+  for (i in 1:length(rdlist)) {
+    dummymods[[i]] <- lm(rdlist[[i]]$Y ~ rdlist[[i]]$X)
+    coef[[i]] <- c(0, rdlist[[i]]$coef["Conventional",])
+    se[[i]] <- c(1, rdlist[[i]]$se[se_r,])
+    bw[i] <- round(rdlist[[i]]$bws[1,1],2)
+    nobs[i] <- sum(rdlist[[i]]$N_h)
+  }
+  s <- stargazer(dummymods, type = type, coef = coef, se = se, column.labels = dvlabs,
+                 omit.stat = "all", digits = 2, df = FALSE, omit = c("Constant"), 
+                 covariate.labels = c("Treatment"),
+                 add.lines = c(list(c("N", nobs),
+                                    c("Bandwidth", bw)), xlines), ...)
+}
