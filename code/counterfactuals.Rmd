@@ -1,0 +1,316 @@
+---
+title: "Predicting Vulnerability"
+output: html_notebook
+---
+
+
+```{r}
+library(gbm)
+library(tidyverse)
+```
+
+### Predicting Vulnerability
+
+Simplest version
+
+```{r}
+vallist <- readRDS("vallist.rds")
+
+errors = lapply(vallist, function(x){is.character(x)})
+goodlist <- vallist[errors!=TRUE]
+sum(errors==TRUE)
+sum(as.numeric(lapply(vallist, function(x) x$maxiterE)), na.rm = TRUE)
+sum(as.numeric(lapply(vallist, function(x) x$maxiterV)), na.rm = TRUE)
+sum(as.numeric(lapply(vallist, function(x) is.na(x$maxiterV))), na.rm = TRUE)
+sum(unlist(lapply(vallist, function(x) x$maxflag[1])), na.rm = TRUE)
+sum(unlist(lapply(vallist, function(x) x$maxflag[2])), na.rm = TRUE)
+sum(unlist(lapply(vallist, function(x) x$maxflag[3])), na.rm = TRUE)
+```
+
+```{r}
+df.vf <- data.frame("hhid" = unique(df.hh$hhid)[errors!=TRUE],
+                    "x1" = sapply(goodlist, function(x) x$x[1]),
+                    "x2" = sapply(goodlist, function(x) x$x[2]),
+                    "x3" = sapply(goodlist, function(x) x$x[3]),
+                    "vx1" = sapply(goodlist, function(x) x$vx[1]),
+                    "vx2" = sapply(goodlist, function(x) x$vx[2]),
+                    "vx3" = sapply(goodlist, function(x) x$vx[3]),
+                    "vdelta251" = sapply(goodlist, function(x) x$vaiddelta25[1]),
+                    "vdelta252" = sapply(goodlist, function(x) x$vaiddelta25[2]),
+                    "vdelta253" = sapply(goodlist, function(x) x$vaiddelta25[3]),
+                    "vdelta1001" = sapply(goodlist, function(x) x$vaiddelta100[1]),
+                    "vdelta1002" = sapply(goodlist, function(x) x$vaiddelta100[2]),
+                    "vdelta1003" = sapply(goodlist, function(x) x$vaiddelta100[3]),
+                    "cdelta251" = sapply(goodlist, function(x) x$caiddelta25[1]),
+                    "cdelta252" = sapply(goodlist, function(x) x$caiddelta25[2]),
+                    "cdelta253" = sapply(goodlist, function(x) x$caiddelta25[3]),
+                    "cdelta1001" = sapply(goodlist, function(x) x$caiddelta100[1]),
+                    "cdelta1002" = sapply(goodlist, function(x) x$caiddelta100[2]),
+                    "cdelta1003" = sapply(goodlist, function(x) x$caiddelta100[3]))
+
+df.hh <- merge(df.hh, df.vf, by = "hhid", all.x = TRUE)
+```
+
+```{r}
+ggplot(filter(df.hh, vdelta1001 < 1e-7)) +
+  geom_point(aes(x = log(vdelta1001), y = log(consumption), color = log(gorkha_loss_amt)), alpha = .2) +
+  scale_color_viridis_c() + theme_bw()
+
+ggplot(filter(df.hh, vdelta1001 < 1e-7)) +
+  geom_point(aes(x = log(vdelta1001), y = log(vdelta251), color = log(gorkha_loss_amt)), alpha = .2) +
+  scale_color_viridis_c() + theme_bw()
+
+ggplot(filter(df.hh, vdelta1001 < 1e-7 & wave==1)) +
+  geom_point(aes(x = x1, y = log(vdelta251), color = log(gorkha_loss_amt)), alpha = .2) +
+  scale_color_viridis_c() + theme_bw()
+
+ggplot(filter(df.hh, vdelta1001 < 1e-7 & wave==1)) +
+  geom_point(aes(x = x1, y = log(cdelta251), color = log(gorkha_loss_amt)), alpha = .2) +
+  scale_color_viridis_c() + theme_bw()
+
+ggplot(filter(df.hh, vdelta1001 < 1e-7 & wave==1)) +
+  geom_point(aes(x = log(consumption), y = log(cdelta251), color = log(gorkha_loss_amt)), alpha = .2) +
+  scale_color_viridis_c() + theme_bw()
+
+ggplot(filter(df.hh, vdelta1001 < 1e-7 & wave==1)) +
+  geom_point(aes(x = log(consumption), y = x1, color = log(gorkha_loss_amt)), alpha = .2) +
+  scale_color_viridis_c() + theme_bw()
+
+ggplot(filter(df.hh, x1 < 500000)) +
+  geom_histogram(aes(x = x1)) + theme_bw() + labs(x = "Buffer stock") +
+  theme(text = element_text(size = 20))
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/xhist.png")
+
+ggplot(filter(df.hh, x1 < 500000 & x1 > -500000 & wave==1)) +
+  geom_histogram(aes(x = x1 - total_income)) + theme_bw() + labs(x = "Buffer stock") +
+  theme(text = element_text(size = 20)) + xlim(-500000,500000)
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/xminusyhist.png")
+
+ggplot(filter(df.hh, wave==1)) +
+  geom_point(aes(x = log(x1), y = log(total_income))) + theme_bw() + labs(x = "Buffer stock") +
+  theme(text = element_text(size = 20))
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/xinc.png")
+
+ggplot(filter(df.hh, wave==1)) +
+  geom_point(aes(x = log(x1), y = log(consumption))) + theme_bw() + labs(x = "Buffer stock") +
+  theme(text = element_text(size = 20))
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/xcons.png")
+
+ggplot(filter(df.hh, wave==1)) +
+  geom_point(aes(x = log(x1), y = log(x2))) + theme_bw() + labs(x = "Buffer stock")
+
+ggplot(filter(df.hh, wave==1)) +
+  geom_point(aes(x = log(x1), y = log(x3))) + theme_bw() + labs(x = "Buffer stock wave 1", y = "Buffer stock wave 3") +
+  theme(text = element_text(size = 20))
+```
+
+Variable importance is very unstable
+
+### why am I filtering by not receiving aid?
+
+```{r}
+df.gbm0 <- filter(df.hh, wave==1 & vdelta1001 < 1e-7)
+
+df.gbm1 <- df.gbm0 %>% filter(aid_cumulative_bin==0) %>%
+  select(hhid, vdelta1001, slope, elevation, shake_pga, walls, foundation, roof, gorkha_loss) %>%
+  mutate(walls = as.factor(walls), foundation = as.factor(foundation), roof = as.factor(roof)) %>%
+  filter(complete.cases(.)) 
+
+df.gbm2 <- df.gbm0 %>% filter(aid_cumulative_bin==0) %>% 
+  mutate(asset_stock = log(asset_stock), equip_stock = log(equip_stock+1), durables_stock = log(durables_stock+1), landvalue = log(landvalue+1), 
+         home_value = log(home_value+1), livestock_value = log(livestock_value+1)) %>%
+  select(hhid, vdelta1001, high_caste, hhmembers, under5, under18, over65, slope, elevation, shake_pga, walls, foundation, roof, fuel, stove, asset_stock, equip_stock, durables_stock, landvalue, 
+         home_value, livestock_value, pension, femalehh, wage_only, no_inc, ag_1season, ag_2season, livestock_only, ag_livestock, ag_ls_wages, ag_ls_business, business_only,
+         wage_bus, ag_wage_bus, ag_ls_all, diversified, temp_earth_housing, age_hh, highest_ed, prev_loans, gorkha_loss) %>%
+  mutate(walls = as.factor(walls), foundation = as.factor(foundation), roof = as.factor(roof), fuel = as.factor(fuel), stove = as.factor(stove)) %>%
+  filter(complete.cases(.)) 
+
+train1 = sample(1:nrow(df.gbm1), 250)
+train2 = sample(1:nrow(df.gbm2), 250)
+
+modgbm1 <- gbm(vdelta1001 ~ ., data = df.gbm1[train1, colnames(df.gbm1)!="hhid"], n.trees=1000, shrinkage=0.01, interaction.depth = 4, cv.folds = 5)
+modgbm2 <- gbm(vdelta1001 ~ ., data = df.gbm2[train2, colnames(df.gbm2)!="hhid"], n.trees=3000, shrinkage=0.01, interaction.depth = 4, cv.folds = 5)
+
+best.iter1 <- gbm.perf(modgbm1, method = "cv")
+best.iter2 <- gbm.perf(modgbm2, method = "cv")
+
+df.gbm0$preds1 <- predict(modgbm1, newdata = df.gbm0, n.trees = best.iter1)
+df.gbm0$preds2 <- predict(modgbm2, newdata = df.gbm0, n.trees = best.iter2)
+
+df.mod1 <- summary(modgbm1, n.trees = best.iter1)
+df.mod2 <- summary(modgbm2, n.trees = best.iter2)
+
+ggplot(df.mod1) + 
+  geom_col(aes(y = var, x = rel.inf, fill = var)) +
+  theme_bw() + labs(x = "relative influence", y = "") +
+  theme(text = element_text(size = 24)) + guides(fill = FALSE)
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/relinf1.png")
+
+ggplot(filter(df.mod2, rel.inf>5)) + 
+  geom_col(aes(y = var, x = rel.inf, fill = var)) +
+  theme_bw() + labs(x = "relative influence", y = "") +
+  theme(text = element_text(size = 24)) + guides(fill = FALSE)
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/relinf2.png")
+
+plot.gbm(modgbm1, i.var = c("slope", "elevation"))
+plot.gbm(modgbm1, i.var = c("roof", "gorkha_loss"))
+plot.gbm(modgbm1, i.var = c("walls", "shake_pga"))
+plot.gbm(modgbm1, i.var = c("slope", "shake_pga"))
+
+a <- plot.gbm(modgbm2, i.var = c("hhmembers", "durables_stock"))
+b <- plot.gbm(modgbm2, i.var = c("slope", "shake_pga"))
+c <- plot.gbm(modgbm2, i.var = c("age_hh", "highest_ed"))
+d <- plot.gbm(modgbm2, i.var = c("high_caste", "femalehh"))
+
+cowplot::plot_grid(a, b, c, d) + theme_bw()
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/gbmmargin.png")
+
+plot.gbm(modgbm2, i.var = c("elevation", "livestock_value"))
+plot.gbm(modgbm2, i.var = c("age_hh", "asset_stock"))
+
+```
+
+```{r}
+ggplot(filter(df.gbm0, vdelta1001 < 5e-10)) + 
+  geom_point(aes(x = vdelta1001, y = preds1, color = received_aid)) +
+  geom_abline(aes(slope = 1, intercept = 0))
+
+ggplot(filter(df.gbm0, vdelta1001 < 5e-10)) + 
+  geom_point(aes(x = vdelta1001, y = preds2, color = received_aid)) +
+  geom_abline(aes(slope = 1, intercept = 0))
+
+ggplot(filter(df.gbm0, vdelta1001 < 5e-10)) + 
+  geom_point(aes(x = preds1, y = preds2, color = received_aid)) +
+  geom_abline(aes(slope = 1, intercept = 0))
+```
+Confusion matrix 
+
+
+```{r}
+q <- sum(df.hh$received_aid==1 & df.hh$wave==1)/nrow(filter(df.hh, wave==1))
+q
+tclass <- c("True Pos", "True Pos", "True Neg", "True Neg")
+pclass <- c("Pred Neg", "Pred Pos", "Pred Neg", "Pred Pos")
+
+y <- c(sum(df.gbm0$received_aid==0 & df.gbm0$vdelta1001>quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0),
+       sum(df.gbm0$received_aid==1 & df.gbm0$vdelta1001>quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0),
+       sum(df.gbm0$received_aid==0 & df.gbm0$vdelta1001<quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0),
+       sum(df.gbm0$received_aid==1 & df.gbm0$vdelta1001<quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0))
+
+ggplot() +
+  geom_tile(aes(x = ordered(tclass, levels = unique(tclass)), y = pclass, fill = y)) +
+  geom_text(aes(x = ordered(tclass, levels = unique(tclass)), y = pclass, 
+                label = paste(round(y,3), "\n", c("", paste("(",as.character(round(y[2]/q,3)*100), "%)", sep = ""), "", ""))), vjust = 1, color = "white") + 
+  theme_bw() + guides(fill = FALSE) + labs(x = "", y = "", title = "Actual Allocations") +
+  theme(text = element_text(size = 22))
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/cmatactual.png")
+
+y <- c(sum(df.gbm0$preds1<quantile(df.gbm0$preds1, 1-q) & df.gbm0$vdelta1001>quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0),
+       sum(df.gbm0$preds1>quantile(df.gbm0$preds1, 1-q) & df.gbm0$vdelta1001>quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0),
+       sum(df.gbm0$preds1<quantile(df.gbm0$preds1, 1-q) & df.gbm0$vdelta1001<quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0),
+       sum(df.gbm0$preds1>quantile(df.gbm0$preds1, 1-q) & df.gbm0$vdelta1001<quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0))
+
+ggplot() +
+  geom_tile(aes(x = ordered(tclass, levels = unique(tclass)), y = pclass, fill = y)) +
+  geom_text(aes(x = ordered(tclass, levels = unique(tclass)), y = pclass, 
+                label = paste(round(y,3), "\n", c("", paste("(",as.character(round(y[2]/q,3)*100), "%)", sep = ""), "", ""))), vjust = 1, color = "white") + 
+  theme_bw() + guides(fill = FALSE) + labs(x = "", y = "", title = "Limited Model") +
+  theme(text = element_text(size = 22))
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/cmatlim.png")
+
+y <- c(sum(df.gbm0$preds2<quantile(df.gbm0$preds2, 1-q) & df.gbm0$vdelta1001>quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0),
+       sum(df.gbm0$preds2>quantile(df.gbm0$preds2, 1-q) & df.gbm0$vdelta1001>quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0),
+       sum(df.gbm0$preds2<quantile(df.gbm0$preds2, 1-q) & df.gbm0$vdelta1001<quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0),
+       sum(df.gbm0$preds2>quantile(df.gbm0$preds2, 1-q) & df.gbm0$vdelta1001<quantile(df.gbm0$vdelta1001, 1-q))/nrow(df.gbm0))
+
+ggplot() +
+  geom_tile(aes(x = ordered(tclass, levels = unique(tclass)), y = pclass, fill = y)) +
+  geom_text(aes(x = ordered(tclass, levels = unique(tclass)), y = pclass, 
+                label = paste(round(y,3), "\n", c("", paste("(",as.character(round(y[2]/q,3)*100), "%)", sep = ""), "", ""))), vjust = 1, color = "white") + 
+  theme_bw() + guides(fill = FALSE) + labs(x = "", y = "", title = "Full Model") +
+  theme(text = element_text(size = 22))
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/cmatfull.png")
+```
+
+Utility Benefit - 25k emergency aid
+
+### this is avg benefit, for some reason with sum get diff answers - lengths are not same?
+### should be weighting?
+
+```{r}
+a <- mean(df.gbm0$vdelta251[df.gbm0$preds1>quantile(df.gbm0$preds1, 1-q)])/mean(df.gbm0$vdelta251[df.gbm0$emergency_aid==1])
+b <- mean(df.gbm0$vdelta251[df.gbm0$preds2>quantile(df.gbm0$preds2, 1-q)])/mean(df.gbm0$vdelta251[df.gbm0$emergency_aid==1])
+c <- mean(df.gbm0$vdelta251[df.gbm0$NGO_transfers>0])/mean(df.gbm0$vdelta251[df.gbm0$emergency_aid==1])
+
+ggplot() +
+  geom_col(aes(x = c(1, a, b, c), y = c("Actual", "Limited", "Full", "NGO"), fill = c(1, 2, 3, 4))) +
+  theme_bw() + labs(x = "", y = "", title = "Benefits relative to actual allocations") + guides(fill = FALSE) +
+  theme(text = element_text(size = 20))
+
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/bensmodel.png")
+```
+Benefit by district relative to overall average
+
+```{r}
+df.distval <- df.gbm0 %>%
+  group_by(distname) %>%
+  summarize(avg_need = mean(vdelta251, na.rm = TRUE),
+            val_aid = sum(vdelta251*emergency_aid, na.rm = TRUE)/sum(emergency_aid, na.rm = TRUE)) %>%
+  mutate(relative_need = avg_need/mean(df.gbm0$vdelta251),
+         relative_val = val_aid/mean(df.gbm0$vdelta251[df.gbm0$emergency_aid==1]))
+
+df.districts <- data.frame("district_name" = c("Gorkha", "Dhading", "Rasuwa", "Nuwakot", "Sindhupalchok", "Dolakha", "Ramechhap",
+                                               "Kathmandu", "Bhaktapur", "Lalitpur", "Kabhrepalanchok", "Okhaldhunga", "Sindhuli", "Makwanpur",
+                                               "Lamjung", "Tanahun", "Chitwan", "Solukhumbu", "Khotang", 
+                                               "Kaski", "Parbat", "Syangja", "Palpa", "Gulmi", "Baglung",
+                                               "Myagdi", "Arghakhanchi", "Nawalparasi", "Bhojpur", "Dhankuta", "Sankhuwasabha"),
+                           "district" = c(36, 30, 29, 28, 23, 22, 21, 27, 26, 25, 24, 12, 20, 31, 37, 38, 35, 11, 13,
+                                          40, 44, 39, 47, 46, 45, 43, 51, 48, 10, 7, 9), 
+                           "dist_14" = c(rep(1, times = 14), rep(0, times = 17)),
+                           "designation" = c(rep("severe", 7), rep("crisis", 7), rep("heavy", 5), rep("hit", 6), rep("slight", 6)))
+
+df.shp <- st_read("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/shapefiles/NPL_adm", "NPL_adm3") %>%
+              mutate(district_name = if_else(NAME_3=="Chitawan", "Chitwan",
+                                                 if_else(NAME_3=="Tanahu", "Tanahun",
+                                                         if_else(NAME_3=="Kavrepalanchok","Kabhrepalanchok",as.character(NAME_3)))))
+
+df.shp <- merge(df.shp, df.districts, by = "district_name", all = TRUE)
+df.shp <- merge(df.shp, df.distval, by.x = "district_name", by.y = "distname", all = TRUE)
+
+ggplot(df.shp) +
+  geom_sf(aes(fill = relative_need))
+
+ggplot(df.shp) +
+  geom_sf(aes(fill = relative_val))
+```
+
+
+Value of speed:
+avg utility benefit of 100k reconstruction aid - round 2 and 3, relative to round 1
+
+```{r}
+a <- mean(df.hh$vdelta252[df.hh$wave==2], na.rm = TRUE)/mean(df.hh$vdelta251[df.hh$wave==1], na.rm = TRUE)
+b <- mean(df.hh$vdelta253[df.hh$wave==3], na.rm = TRUE)/mean(df.hh$vdelta251[df.hh$wave==1], na.rm = TRUE)
+
+ggplot() +
+  geom_col(aes(x = c(1, a, b), y = c("First", "Second", "Third"), fill = c(2, 3, 1))) +
+  theme_bw() + labs(x = "", y = "", title = "Average value of aid by wave") + guides(fill = FALSE) +
+  theme(text = element_text(size = 20))
+
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/bstock_wave.png")
+```
+
+Value of aid actually given
+
+```{r}
+a <- mean(df.hh$vdelta252[df.hh$reconstruction_aid_bin==1 & df.hh$wave==2], na.rm = TRUE)/mean(df.hh$vdelta251[df.hh$emergency_aid==1 & df.hh$wave==1], na.rm = TRUE)
+b <- mean(df.hh$vdelta253[df.hh$reconstruction_aid_bin==1 & df.hh$wave==3], na.rm = TRUE)/mean(df.hh$vdelta251[df.hh$emergency_aid==1 & df.hh$wave==1], na.rm = TRUE)
+
+ggplot() +
+  geom_col(aes(x = c(1, a, b), y = c("First", "Second", "Third"), fill = c(2, 3, 1))) +
+  theme_bw() + labs(x = "", y = "", title = "Utility relative to first wave") + guides(fill = FALSE) +
+  theme(text = element_text(size = 20))
+
+ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/benswave.png")
+```
+

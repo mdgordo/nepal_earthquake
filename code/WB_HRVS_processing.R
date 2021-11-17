@@ -936,20 +936,7 @@ for (i in c(1:3)) {
                       market_shocks_bin = if_else(riot + price_shock>0,1,0),
                       natural_shocks_bin = if_else(livestock_farm_shock + other_nat_disaster>0,1,0),
                       idiosyncratic_shocks_bin = if_else(illness_injury_shock + violence_shock + job_default_shock>0,1,0),
-                      total_shocks = market_shocks + natural_shocks,
-                      ag_1season = if_else(wet_ag_sales + dry_ag_sales>0 & (wet_ag_sales==0 | dry_ag_sales==0) & livestock_income==0 & annual_wages==0 & business_revenues==0, 1, 0),
-                      ag_2season = if_else(wet_ag_sales>0 & dry_ag_sales>0 & livestock_income==0 & annual_wages==0 & business_revenues==0, 1, 0),
-                      livestock_only = if_else(wet_ag_sales==0 & dry_ag_sales==0 & livestock_income>0 & annual_wages==0 & business_revenues==0, 1, 0),
-                      ag_livestock = if_else(wet_ag_sales + dry_ag_sales>0 & livestock_income>0 & annual_wages==0 & business_revenues==0, 1, 0),
-                      ag_ls_wages = if_else(wet_ag_sales + dry_ag_sales + livestock_income>0 & annual_wages>0 & business_revenues==0, 1, 0),
-                      ag_ls_business = if_else(wet_ag_sales + dry_ag_sales + livestock_income>0 & annual_wages==0 & business_revenues>0, 1, 0),
-                      wage_only = if_else(wet_ag_sales + dry_ag_sales + livestock_income==0 & annual_wages>0 & business_revenues==0, 1, 0),
-                      business_only = if_else(wet_ag_sales + dry_ag_sales + livestock_income + annual_wages==0 & business_revenues>0, 1, 0),
-                      wage_bus = if_else(wet_ag_sales + dry_ag_sales + livestock_income==0 & annual_wages>0 & business_revenues>0, 1, 0),
-                      ag_wage_bus = if_else(wet_ag_sales + dry_ag_sales + livestock_income>0 & annual_wages>0 & business_revenues>0, 1, 0), 
-                      no_inc = if_else(wet_ag_sales + dry_ag_sales + livestock_income + annual_wages + business_revenues==0, 1, 0),
-                      ag_ls_all = if_else(wet_ag_sales + dry_ag_sales + livestock_income>0 & annual_wages==0 & business_revenues==0, 1, 0),
-                      diversified = if_else(ag_ls_wages==1 | ag_ls_business==1 | wage_bus==1 | ag_wage_bus==1, 1, 0))
+                      total_shocks = market_shocks + natural_shocks)
 
       df.hh <- merge(df.hh, df.wards, by = c("district", "vdc", "ward")) 
       
