@@ -1,0 +1,27 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.dta
+*.grd
+*.gri
+*.vrt
+*.csv
+!full_panel.csv
+!Wave 1 - Household.csv
+!Wave 2 - Household.csv
+!Wave 3 - Household.csv
+*.txt
+*.flt
+*.hdr
+*.cpg
+*.dbf
+*.lyr
+*.prj
+*.shp
+*.xml
+*.shx
+*.rds
+*.sbn
+*.sbx
+.DS_Store
