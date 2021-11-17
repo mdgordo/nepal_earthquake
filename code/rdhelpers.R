@@ -40,7 +40,7 @@ histfunc <- function(b, df, h=50){
     theme_light() + labs(y = "weighted count", x = paste("distance to ", b))
 }
 
-regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc3"){
+regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1"){
   if (donut!=0) df <- filter(df, abs(get(b))>donut)
   if (vce=="nn") c <- NULL else c <- df$strata
   if (fuzzy==TRUE) f <- df$aid_cumulative_bin else if (fuzzy==FALSE) f <- NULL else if (fuzzy=="inv") f <- 1-df$aid_cumulative_bin else f <- unlist(df[, fuzzy])
@@ -62,7 +62,7 @@ regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, k 
   return(out)
 }
 
-optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc3"){
+optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1"){
   if (donut!=0) df <- filter(df, abs(get(b))>donut)
   if (vce=="nn") c <- NULL else c <- df$strata
   Y <- unlist(df[, v])

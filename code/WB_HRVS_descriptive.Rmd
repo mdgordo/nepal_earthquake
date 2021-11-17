@@ -560,4 +560,66 @@ ggplot(df.coping) +
   scale_fill_viridis_d() + theme_light() + labs(x = "", y = "Fraction of households", fill = "Wave") +
   theme(text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
 ```
+### Mapping district designations: 
+https://www.preventionweb.net/files/63268_18moderatelyaffecteddistrictsovervi.pdf 
+#### green dots are border districts (<50 km)
 
+```{r, message=FALSE}
+df.districts <- data.frame("district_name" = c("Gorkha", "Dhading", "Rasuwa", "Nuwakot", "Sindhupalchok", "Dolakha", "Ramechhap",
+                                               "Kathmandu", "Bhaktapur", "Lalitpur", "Kabhrepalanchok", "Okhaldhunga", "Sindhuli", "Makwanpur",
+                                               "Lamjung", "Tanahun", "Chitwan", "Solukhumbu", "Khotang", 
+                                               "Kaski", "Parbat", "Syangja", "Palpa", "Gulmi", "Baglung",
+                                               "Myagdi", "Arghakhanchi", "Nawalparasi", "Bhojpur", "Dhankuta", "Sankhuwasabha"),
+                           "district" = c(36, 30, 29, 28, 23, 22, 21, 27, 26, 25, 24, 12, 20, 31, 37, 38, 35, 11, 13,
+                                          40, 44, 39, 47, 46, 45, 43, 51, 48, 10, 7, 9), 
+                           "dist_14" = c(rep(1, times = 14), rep(0, times = 17)),
+                           "designation" = c(rep("severe", 7), rep("crisis", 7), rep("heavy", 5), rep("hit", 6), rep("slight", 6)))
+
+df.wards <- read_csv(paste(rootdir, "/data/NPL_2016-2018_HRVS_v01_M_STATA12/HRVS_gps.csv", sep = ""))
+df.wards <- st_as_sf(df.wards, coords = c("long", "lat"), crs = 4326)
+
+df.shp <- st_read(paste(rootdir, "/data/shapefiles/NPL_adm", sep = ""), "NPL_adm3") %>%
+              mutate(district_name = if_else(NAME_3=="Chitawan", "Chitwan",
+                                                 if_else(NAME_3=="Tanahu", "Tanahun",
+                                                         if_else(NAME_3=="Kavrepalanchok","Kabhrepalanchok",as.character(NAME_3)))))
+
+df.shp <- merge(df.shp, df.districts, by = "district_name", all = TRUE) %>%
+            mutate(dist_14 = if_else(is.na(dist_14),0,dist_14),
+                 designation = if_else(is.na(designation),"none",as.character(designation)))
+
+severe <- st_union(filter(df.shp, designation == "severe"))
+crisis <- st_union(filter(df.shp, designation == "crisis"))
+heavy_losses <- st_union(filter(df.shp, designation == "heavy"))
+moderate <- st_union(filter(df.shp, designation == "hit"))
+slight <- st_union(filter(df.shp, designation == "slight"))
+dist_14 <- st_cast(st_union(severe, crisis), "LINESTRING")
+df.designations <- st_sf(designation = factor(c("severe", "crisis", "heavy losses", "moderate", "slight"), 
+                                              levels = c("severe", "crisis", "heavy losses", "moderate", "slight")), 
+                         geometry = c(severe, crisis, heavy_losses, moderate, slight))
+
+df.wards$location <- "sample wards"
+epicenter <- st_sfc(st_point(x = c(84.731, 28.23)), crs = 4326)
+epicenter <- st_sf(district = c(36), distname = c("Gorkha"), vdc = c("na"), ward = c("na"), geometry = c(epicenter), location = c("epicenter"))
+df.wards <- rbind(df.wards, epicenter)
+
+df.sample <- filter(df.hh, abs(dist_2_seg13) <= 15)
+samplewards <- unique(df.sample[,c("district", "vdc", "ward")])
+samplewards <- paste(samplewards$district, samplewards$vdc, samplewards$ward)
+df.wards <- mutate(df.wards, borderward14 = if_else(paste(district, vdc, ward) %in% samplewards, "border vdc", 
+                                                    if_else(location == "epicenter", "epicenter", "other vdc")))
+
+df.wards$borderward14 <- factor(df.wards$borderward14, levels = c("epicenter", "border vdc", "other vdc"))
+
+vdcmap <- ggplot() +
+        geom_sf(data = df.shp) +
+        geom_sf(data = df.designations, aes(color = designation, fill = designation), alpha = .3) +
+        scale_color_manual(values = c("red", "orange", "yellow", "green", "blue")) +
+        scale_fill_manual(values = c("red", "orange", "yellow", "green", "blue")) +
+        new_scale_fill() +
+        geom_sf(data = df.wards, aes(shape = as.factor(borderward14), fill = as.factor(borderward14), size = as.factor(borderward14))) +
+        scale_fill_manual(values = c("firebrick1", "cyan2", "grey32")) +
+        scale_size_manual(values = c(5,2,2)) +
+        scale_shape_manual(values = c(24,21,21)) + 
+        theme_light() + theme(legend.title = element_blank(), axis.text = element_blank()) + xlim(82,88) + ylim(26.4,29)
+vdcmap
+```
