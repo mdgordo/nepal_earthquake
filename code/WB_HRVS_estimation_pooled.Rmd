@@ -95,8 +95,10 @@ placebos <- c("elevation", "shake_pga", "gorkha_loss", "gorkha_loss_amt", "high_
 infravars <- c("time_to_market", "time_to_bank", "time_to_school", "time_to_health")
 aidvars <- c("aid_cumulative_bin", "aid_cumulative")
 numvars <- c("hhmembers", "under5", "under18", "over65", "currentlyliving", "extended_members", "children_attending", "days_ill", "emotion_good", "years_ago_built")
-consumptionvars <- c("food_consumption", "durables_consumption", "transportation", "energy_utilities", "ceremonial_expenses", "other_consumption")
-incomevars <- c("income", "remittance_income", "annual_wages", "ag_livestock_income", "business_income", "inf_transfers", "pub_transfers")
+consumptionvars <- c("food_consumption", "durables_consumption", "transportation", "energy_utilities", "ceremonial_expenses", "other_consumption",
+                     "consumption_pc", "food_consumption_pc")
+incomevars <- c("income", "remittance_income", "annual_wages", "ag_livestock_income", "business_income", "inf_transfers", "pub_transfers", 
+                "inputs", "income_pc", "total_income")
 pricevars <- c("chicken_price", "rice_price", "lentil_price", "sugar_price", "mutton_price", "potato_price")
 assetvars <- c("livestock_sales", "livestock_purchases", "investments", "asset_sales",
                "loans_taken_past_year", "loan_payments", "avg_interest_past_year", "financial_assets", "home_value")
@@ -226,8 +228,6 @@ plotlist
 
 ### Quantile RD
 
-Food Consumption - 100,000 is about $2.7/day, close to the median
-
 ```{r, warning = FALSE}
 cvarscutpts <- seq(40000, 200000, 20000)
 ctlist <- lapply(cvarscutpts, cutvars, var = "consumption")
@@ -238,21 +238,23 @@ cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
 rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+rdgazer(rdc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
 rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = "inv")
-rdgazer(rdcu, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+rdgazer(rdcu, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
 rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdcc, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+rdgazer(rdcc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
 ```{r}
 qplot("consumption")
 ```
+
+Food Consumption - 100,000 is about $2.7/day, close to the median
 
 ```{r, warning = FALSE}
 cvarscutpts <- seq(40000, 200000, 20000)
@@ -264,15 +266,15 @@ cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
 rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+rdgazer(rdc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
 rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = "inv")
-rdgazer(rdcu, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+rdgazer(rdcu, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
 rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdcc, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+rdgazer(rdcc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
@@ -291,15 +293,15 @@ cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
 rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", seq(10, 190, 20), "k npr", sep = ""), 
+rdgazer(rdc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
 rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = "inv")
-rdgazer(rdcu, dvlabs = paste("<", seq(10, 190, 20), "k npr", sep = ""), 
+rdgazer(rdcu, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
 rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdcc, dvlabs = paste("<", seq(10, 190, 20), "k npr", sep = ""), 
+rdgazer(rdcc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
@@ -319,15 +321,15 @@ cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
 rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", seq(50, 500, 20), "k npr", sep = ""), 
+rdgazer(rdc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
 rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = "inv")
-rdgazer(rdcu, dvlabs = paste("<", seq(50, 500, 20), "k npr", sep = ""), 
+rdgazer(rdcu, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
 rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdcc, dvlabs = paste("<", seq(50, 500, 20), "k npr", sep = ""), 
+rdgazer(rdcc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
