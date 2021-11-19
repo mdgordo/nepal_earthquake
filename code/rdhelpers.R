@@ -1,6 +1,6 @@
 ### RD functions
 
-plotvar <- function(v, b, df, h=50, ihs=FALSE, span = 1, k = "epanechnikov", weights = TRUE, donut = 0) {
+plotvar <- function(v, b, df, h=40, ihs=FALSE, span = 1, k = "epanechnikov", weights = TRUE, donut = 0) {
   df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "shake_pga", "wave")]
   df <- filter(df, abs(get(b))<h & complete.cases(df) & abs(get(b))>donut)
   Y <- unlist(df[, v])
@@ -28,7 +28,7 @@ plotvar <- function(v, b, df, h=50, ihs=FALSE, span = 1, k = "epanechnikov", wei
   return(r$rdplot)
 }
 
-histfunc <- function(b, df, h=50){
+histfunc <- function(b, df, h=40){
   df <- filter(df, abs(get(b))<h)
   X <- unlist(df[, b])
   W <- df$wt_hh
@@ -85,7 +85,7 @@ optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, d
   return(bws)
 }
 
-rdgazer <- function(rdlist, dvlabs = NULL, xlines = NULL, se_r = "Conventional", type = "text", ...){
+rdgazer <- function(rdlist, dvlabs = NULL, xlines = NULL, se_r = "Robust", type = "text", ...){
   dummymods <- list(); coef <- list(); se <- list(); bw <- c(); nobs <- c(); untreatedmean <- c()
   for (i in 1:length(rdlist)) {
     dummymods[[i]] <- lm(rdlist[[i]]$Y ~ rdlist[[i]]$X)
@@ -99,4 +99,31 @@ rdgazer <- function(rdlist, dvlabs = NULL, xlines = NULL, se_r = "Conventional",
                  covariate.labels = c("Treatment"),
                  add.lines = c(list(c("N", nobs),
                                     c("Bandwidth", bw)), xlines), ...)
+}
+
+qplot <- function(qvar){
+  qcovs <- model.matrix(~as.factor(df.hh$border_segment13)+as.factor(df.hh$border_segment13)*df.hh$dist_2_seg13 + df.hh$shake_pga + as.factor(df.hh$wave))[,-c(1,3)]
+  y <- unlist(df.hh[,qvar])
+  qtab <- rdquant(Y = y, x = df.hh$dist_2_seg13, c = 0, fuzzy = df.hh$aid_cumulative_bin, weights = df.hh$wt_hh, cluster = df.hh$strata, 
+                  vce = "hc3", covs = qcovs, kernel = "epanechnikov", h = h0, b = b0)
+  qtiles <- quantile(y, seq(.1, .9, .1), na.rm = TRUE)
+  
+  ggplot() +
+    geom_line(data = qtab$pdfs, aes(x = yvals, y = rcoefs, group = as.factor(treat), color = as.factor(treat))) +
+    geom_ribbon(data = qtab$pdfs, aes(x = yvals, y = rcoefs, group = as.factor(treat), color = as.factor(treat), ymin = rlower, ymax = rupper, 
+                                      fill = as.factor(treat)), alpha = .3) + 
+    guides(color = "none") +
+    scale_color_manual(values = c("grey55", "deepskyblue2")) +
+    scale_fill_manual(values = c("grey55", "deepskyblue2")) +
+    geom_rug(aes(x = qtiles), color = "red") + xlim(NA, qtiles[9]) +
+    theme_bw() + labs(x = qvar, y = "P(X < x)", fill = "Received Aid", color = "Received Aid")
+}
+
+cutvars <- function(cutpt, var){
+  ct = ifelse(df.hh[, var] < cutpt & df.hh$aid_cumulative_bin==1, 1, 0)
+  cu = ifelse(df.hh[, var] < cutpt & df.hh$aid_cumulative_bin==0, 1, 0)
+  c = ifelse(df.hh[, var] < cutpt, 1, 0)
+  df <- cbind(ct, cu, c)
+  colnames(df) <- paste(c("t", "u", "c"), cutpt, sep = "")
+  return(df)
 }

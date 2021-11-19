@@ -96,14 +96,13 @@ infravars <- c("time_to_market", "time_to_bank", "time_to_school", "time_to_heal
 aidvars <- c("aid_cumulative_bin", "aid_cumulative")
 numvars <- c("hhmembers", "under5", "under18", "over65", "currentlyliving", "extended_members", "children_attending", "days_ill", "emotion_good", "years_ago_built")
 consumptionvars <- c("food_consumption", "durables_consumption", "transportation", "energy_utilities", "ceremonial_expenses", "other_consumption")
-incomevars <- c("remittance_income", "annual_wages", "ag_livestock_income", "business_income", "inf_transfers", "pub_transfers")
+incomevars <- c("income", "remittance_income", "annual_wages", "ag_livestock_income", "business_income", "inf_transfers", "pub_transfers")
 pricevars <- c("chicken_price", "rice_price", "lentil_price", "sugar_price", "mutton_price", "potato_price")
 assetvars <- c("livestock_sales", "livestock_purchases", "investments", "asset_sales",
                "loans_taken_past_year", "loan_payments", "avg_interest_past_year", "financial_assets", "home_value")
 shockvars <- c("natural_shocks", "natural_shocks_bin", "market_shocks", "market_shocks_bin", "idiosyncratic_shocks", "idiosyncratic_shocks_bin")
 copingvars <- c("temp_earth_housing", "dissaving", "felt_hunger", "school_interrupt", 
-                "child_labor", "child_days_worked", "child_wage_days", "migrants_past_year")
-subvars <- c("remittance_income", "migrants_past_year", "loan_payments", "livestock_sales", "livestock_purchases")
+                "child_labor", "child_days_worked", "child_wage_days", "n_migrants")
 ```
 
 ### Placebo tests
@@ -167,8 +166,7 @@ lapply(numvars[numvars!="emotion_good"], plotvar, b = "dist_2_seg13", df = df.hh
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
 rdcash <- lapply(consumptionvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
 rdgazer(rdcash, dvlabs = str_replace_all(consumptionvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdcash, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/consumption.tex")
+        xlines = list(c("Wards", sapply(rdcash, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
 ```{r}
@@ -179,8 +177,7 @@ plotlist
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
 rdcash <- lapply(incomevars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
 rdgazer(rdcash, dvlabs = str_replace_all(incomevars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdcash, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/income.tex")
+        xlines = list(c("Wards", sapply(rdcash, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
 
@@ -192,8 +189,7 @@ plotlist
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
 rdcash <- lapply(assetvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
 rdgazer(rdcash, dvlabs = str_replace_all(assetvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdcash, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/assets.tex")
+        xlines = list(c("Wards", sapply(rdcash, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
 
@@ -207,8 +203,7 @@ Wave 2 saw drought in some districts
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
 rdshock <- lapply(shockvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
 rdgazer(rdshock, dvlabs = str_replace_all(shockvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdshock, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/shocks.tex")
+        xlines = list(c("Wards", sapply(rdshock, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
@@ -221,8 +216,7 @@ plotlist
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
 rdshock <- lapply(copingvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
 rdgazer(rdshock, dvlabs = str_replace_all(copingvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdshock, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/coping.tex")
+        xlines = list(c("Wards", sapply(rdshock, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
@@ -232,228 +226,111 @@ plotlist
 
 ### Quantile RD
 
-Consumption - change this to percapita?
+Food Consumption - 100,000 is about $2.7/day, close to the median
 
 ```{r, warning = FALSE}
-qplot <- function(qvar){
-  qcovs <- model.matrix(~as.factor(df.hh$border_segment13)+as.factor(df.hh$border_segment13)*df.hh$dist_2_seg13 + df.hh$shake_pga + as.factor(df.hh$wave))[,-c(1,3)]
-  y <- unlist(df.hh[,qvar])
-  qtab <- rdquant(Y = y, x = df.hh$dist_2_seg13, c = 0, fuzzy = df.hh$aid_cumulative_bin, weights = df.hh$wt_hh, cluster = df.hh$strata, 
-                  vce = "hc3", covs = qcovs, kernel = "epanechnikov", h = h0, b = b0)
-  qtiles <- quantile(y, seq(.1, .9, .1), na.rm = TRUE)
-  
-  ggplot() +
-    geom_line(data = qtab$pdfs, aes(x = yvals, y = rcoefs, group = as.factor(treat), color = as.factor(treat))) +
-    geom_ribbon(data = qtab$pdfs, aes(x = yvals, y = rcoefs, group = as.factor(treat), color = as.factor(treat), ymin = rlower, ymax = rupper, fill = as.factor(treat)), alpha = .3) + 
-    guides(color = "none") +
-    scale_color_manual(values = c("grey55", "deepskyblue2")) +
-    scale_fill_manual(values = c("grey55", "deepskyblue2")) +
-    geom_rug(aes(x = qtiles), color = "red") + xlim(NA, qtiles[9]) +
-    theme_bw() + labs(x = qvar, y = "P(X < x)", fill = "Received Aid", color = "Received Aid")
-}
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
+cvarscutpts <- seq(40000, 200000, 20000)
+ctlist <- lapply(cvarscutpts, cutvars, var = "consumption")
+df <- cbind(df.hh, do.call(cbind, ctlist))
 
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
+rdgazer(rdc, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = "inv")
+rdgazer(rdcu, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
+rdgazer(rdcc, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+```
+
+```{r}
 qplot("consumption")
 ```
-Food Consumption
-100,000 is about $2.7/day, close to the median
 
 ```{r, warning = FALSE}
+cvarscutpts <- seq(40000, 200000, 20000)
+ctlist <- lapply(cvarscutpts, cutvars, var = "food_consumption")
+df <- cbind(df.hh, do.call(cbind, ctlist))
+
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
+rdgazer(rdc, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = "inv")
+rdgazer(rdcu, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
+rdgazer(rdcc, dvlabs = paste("<", seq(40, 200, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+```
+
+```{r}
 qplot("food_consumption")
-ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/qtilefoodcon.png")
 ```
-
-```{r, warning = FALSE}
-qplot("non_durables")
-ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/qtilenon_dur.png")
-```
-
-```{r, warning = FALSE}
-qplot("income_gross")
-ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/qtileinc.png")
-```
-```{r, warning = FALSE}
-qplot("income")
-ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/qtileinc.png")
-```
-
-```{r, warning = FALSE}
-qplot("total_income")
-ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/qtileinc.png")
-```
-
-```{r, warning = FALSE}
-qplot("productive_assets")
-ggsave("/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/figures/qtileinc.png")
-```
-
 
 
 ```{r, warning = FALSE}
-ttest <- function(mod1, mod2){
-  m1 <- mod1$coef["Conventional", ]
-  s1 <- mod1$se["Robust", ]
-  n1 <- sum(mod1$N_h)
-  m2 <- mod2$coef["Conventional", ]
-  s2 <- mod2$se["Robust", ]
-  n2 <- sum(mod1$N_h)
-  se <- sqrt((s1^2/n1) + (s2^2/n2))
-  df <- ((s1^2/n1 + s2^2/n2)^2)/((s1^2/n1)^2/(n1-1) + (s2^2/n2)^2/(n2-1))
-  t <- (m1-m2)/se
-  dat <- c(m1-m2, se, t, 2*pt(-abs(t),df))
-  names(dat) <- c("Difference of means", "Std Error", "t", "p-value")
-  return(dat)
-}
+cvarscutpts <- seq(10000, 190000, 20000)
+ctlist <- lapply(cvarscutpts, cutvars, var = "income")
+df <- cbind(df.hh, do.call(cbind, ctlist))
 
-df.hh <- mutate(df.hh, fcs40t = if_else(consumption < 40000 & aid_cumulative_bin==1, 1, 0),
-                fcs60t = if_else(consumption < 60000 & aid_cumulative_bin==1, 1, 0),
-                fcs80t = if_else(consumption < 80000 & aid_cumulative_bin==1, 1, 0),
-                fcs100t = if_else(consumption < 100000 & aid_cumulative_bin==1, 1, 0),
-                fcs120t = if_else(consumption < 120000 & aid_cumulative_bin==1, 1, 0),
-                fcs140t = if_else(consumption < 140000 & aid_cumulative_bin==1, 1, 0),
-                fcs160t = if_else(consumption < 160000 & aid_cumulative_bin==1, 1, 0),
-                fcs180t = if_else(consumption < 180000 & aid_cumulative_bin==1, 1, 0),
-                fcs200t = if_else(consumption < 200000 & aid_cumulative_bin==1, 1, 0),
-                fcs300t = if_else(consumption < 300000 & aid_cumulative_bin==1, 1, 0),
-                fcs40u = if_else(consumption < 40000 & aid_cumulative_bin==0, 1, 0),
-                fcs60u = if_else(consumption < 60000 & aid_cumulative_bin==0, 1, 0),
-                fcs80u = if_else(consumption < 80000 & aid_cumulative_bin==0, 1, 0),
-                fcs100u = if_else(consumption < 100000 & aid_cumulative_bin==0, 1, 0),
-                fcs120u = if_else(consumption < 120000 & aid_cumulative_bin==0, 1, 0),
-                fcs140u = if_else(consumption < 140000 & aid_cumulative_bin==0, 1, 0),
-                fcs160u = if_else(consumption < 160000 & aid_cumulative_bin==0, 1, 0),
-                fcs180u = if_else(consumption < 180000 & aid_cumulative_bin==0, 1, 0),
-                fcs200u = if_else(consumption < 200000 & aid_cumulative_bin==0, 1, 0),
-                fcs300u = if_else(consumption < 300000 & aid_cumulative_bin==0, 1, 0))
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
 
-cvarst <- c("fcs40t","fcs60t","fcs80t","fcs100t","fcs120t","fcs140t","fcs160t","fcs180t","fcs200t", "fcs300t")
-cvarsu <- c("fcs40u","fcs60u","fcs80u","fcs100u","fcs120u","fcs140u","fcs160u","fcs180u","fcs200u", "fcs300u")
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
+rdgazer(rdc, dvlabs = paste("<", seq(10, 190, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", substring(cvarst, 4, 6), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/qtileconst.tex")
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = "inv")
+rdgazer(rdcu, dvlabs = paste("<", seq(10, 190, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = "inv")
-rdgazer(rdcu, dvlabs = paste("<", substring(cvarsu, 4, 6), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/qtileconsu.tex")
-
-mapply(ttest, mod1 = rdc, mod2 = rdcu)
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
+rdgazer(rdcc, dvlabs = paste("<", seq(10, 190, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
-
 
 
 ```{r}
-df.hh <- mutate(df.hh, fcs40t = if_else(food_consumption < 40000 & aid_cumulative_bin==1, 1, 0),
-                fcs60t = if_else(food_consumption < 60000 & aid_cumulative_bin==1, 1, 0),
-                fcs80t = if_else(food_consumption < 80000 & aid_cumulative_bin==1, 1, 0),
-                fcs100t = if_else(food_consumption < 100000 & aid_cumulative_bin==1, 1, 0),
-                fcs120t = if_else(food_consumption < 120000 & aid_cumulative_bin==1, 1, 0),
-                fcs140t = if_else(food_consumption < 140000 & aid_cumulative_bin==1, 1, 0),
-                fcs160t = if_else(food_consumption < 160000 & aid_cumulative_bin==1, 1, 0),
-                fcs180t = if_else(food_consumption < 180000 & aid_cumulative_bin==1, 1, 0),
-                fcs200t = if_else(food_consumption < 200000 & aid_cumulative_bin==1, 1, 0),
-                fcs250t = if_else(food_consumption < 250000 & aid_cumulative_bin==1, 0, 1), 
-                fcs40u = if_else(food_consumption < 40000 & aid_cumulative_bin==0, 1, 0),
-                fcs60u = if_else(food_consumption < 60000 & aid_cumulative_bin==0, 1, 0),
-                fcs80u = if_else(food_consumption < 80000 & aid_cumulative_bin==0, 1, 0),
-                fcs100u = if_else(food_consumption < 100000 & aid_cumulative_bin==0, 1, 0),
-                fcs120u = if_else(food_consumption < 120000 & aid_cumulative_bin==0, 1, 0),
-                fcs140u = if_else(food_consumption < 140000 & aid_cumulative_bin==0, 1, 0),
-                fcs160u = if_else(food_consumption < 160000 & aid_cumulative_bin==0, 1, 0),
-                fcs180u = if_else(food_consumption < 180000 & aid_cumulative_bin==0, 1, 0),
-                fcs200u = if_else(food_consumption < 200000 & aid_cumulative_bin==0, 1, 0),
-                fcs250u = if_else(food_consumption < 250000 & aid_cumulative_bin==0, 0, 1))
-
-cvarst <- c("fcs40t","fcs60t","fcs80t","fcs100t","fcs120t","fcs140t","fcs160t","fcs180t","fcs200t")
-cvarsu <- c("fcs40u","fcs60u","fcs80u","fcs100u","fcs120u","fcs140u","fcs160u","fcs180u","fcs200u")
-
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", substring(cvarst, 4, 6), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/qtilefcons.tex")
-
-rdc <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", substring(cvarsu, 4, 6), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/qtilefcons.tex")
+qplot("income")
 ```
-
 
 
 ```{r, warning = FALSE}
-df.hh <- mutate(df.hh, inc20t = if_else(income < 20000 & aid_cumulative_bin==1, 1, 0),
-                inc40t = if_else(income < 40000 & aid_cumulative_bin==1, 1, 0),
-                inc60t = if_else(income < 60000 & aid_cumulative_bin==1, 1, 0),
-                inc80t = if_else(income < 80000 & aid_cumulative_bin==1, 1, 0),
-                inc100t = if_else(income < 100000 & aid_cumulative_bin==1, 1, 0),
-                inc120t = if_else(income < 120000 & aid_cumulative_bin==1, 1, 0),
-                inc140t = if_else(income < 140000 & aid_cumulative_bin==1, 1, 0),
-                inc160t = if_else(income < 160000 & aid_cumulative_bin==1, 1, 0),
-                inc180t = if_else(income < 180000 & aid_cumulative_bin==1, 1, 0),
-                inc200t = if_else(income < 200000 & aid_cumulative_bin==1, 1, 0), 
-                inc20u = if_else(income < 20000 & aid_cumulative_bin==0, 1, 0),
-                inc40u = if_else(income < 40000 & aid_cumulative_bin==0, 1, 0),
-                inc60u = if_else(income < 60000 & aid_cumulative_bin==0, 1, 0),
-                inc80u = if_else(income < 80000 & aid_cumulative_bin==0, 1, 0),
-                inc100u = if_else(income < 100000 & aid_cumulative_bin==0, 1, 0),
-                inc120u = if_else(income < 120000 & aid_cumulative_bin==0, 1, 0),
-                inc140u = if_else(income < 140000 & aid_cumulative_bin==0, 1, 0),
-                inc160u = if_else(income < 160000 & aid_cumulative_bin==0, 1, 0),
-                inc180u = if_else(income < 180000 & aid_cumulative_bin==0, 1, 0),
-                inc200u = if_else(income < 200000 & aid_cumulative_bin==0, 1, 0))
+cvarscutpts <- seq(50000, 500000, 50000)
+ctlist <- lapply(cvarscutpts, cutvars, var = "productive_assets")
+df <- cbind(df.hh, do.call(cbind, ctlist))
 
-cvarst <- c("inc20t", "inc40t","inc60t","inc80t","inc100t","inc120t","inc140t","inc160t","inc180t","inc200t")
-cvarsu <- c("inc20u", "inc40u","inc60u","inc80u","inc100u","inc120u","inc140u","inc160u","inc180u","inc200u")
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
 
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", substring(cvarst, 4), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/qtileinc.tex")
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
+rdgazer(rdc, dvlabs = paste("<", seq(50, 500, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = "inv")
-rdgazer(rdcu, dvlabs = paste("<", substring(cvarsu, 4), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/qtileinc.tex")
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = "inv")
+rdgazer(rdcu, dvlabs = paste("<", seq(50, 500, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, fuzzy = TRUE)
+rdgazer(rdcc, dvlabs = paste("<", seq(50, 500, 20), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
 
-```{r, warning = FALSE}
-df.hh <- mutate(df.hh, inc20t = if_else(productive_assets < 20000 & aid_cumulative_bin==1, 1, 0),
-                inc40t = if_else(productive_assets < 40000 & aid_cumulative_bin==1, 1, 0),
-                inc60t = if_else(productive_assets < 60000 & aid_cumulative_bin==1, 1, 0),
-                inc80t = if_else(productive_assets < 80000 & aid_cumulative_bin==1, 1, 0),
-                inc100t = if_else(productive_assets < 100000 & aid_cumulative_bin==1, 1, 0),
-                inc120t = if_else(productive_assets < 120000 & aid_cumulative_bin==1, 1, 0),
-                inc140t = if_else(productive_assets < 140000 & aid_cumulative_bin==1, 1, 0),
-                inc160t = if_else(productive_assets < 160000 & aid_cumulative_bin==1, 1, 0),
-                inc180t = if_else(productive_assets < 180000 & aid_cumulative_bin==1, 1, 0),
-                inc200t = if_else(productive_assets < 200000 & aid_cumulative_bin==1, 1, 0),
-                inc200upt = if_else(productive_assets < 200000 & aid_cumulative_bin==1, 0, 1), 
-                inc20u = if_else(productive_assets < 20000 & aid_cumulative_bin==0, 1, 0),
-                inc40u = if_else(productive_assets < 40000 & aid_cumulative_bin==0, 1, 0),
-                inc60u = if_else(productive_assets < 60000 & aid_cumulative_bin==0, 1, 0),
-                inc80u = if_else(productive_assets < 80000 & aid_cumulative_bin==0, 1, 0),
-                inc100u = if_else(productive_assets < 100000 & aid_cumulative_bin==0, 1, 0),
-                inc120u = if_else(productive_assets < 120000 & aid_cumulative_bin==0, 1, 0),
-                inc140u = if_else(productive_assets < 140000 & aid_cumulative_bin==0, 1, 0),
-                inc160u = if_else(productive_assets < 160000 & aid_cumulative_bin==0, 1, 0),
-                inc180u = if_else(productive_assets < 180000 & aid_cumulative_bin==0, 1, 0),
-                inc200u = if_else(productive_assets < 200000 & aid_cumulative_bin==0, 1, 0),
-                inc200upu = if_else(productive_assets < 200000 & aid_cumulative_bin==0, 0, 1))
-
-cvarst <- c("inc20t", "inc40t","inc60t","inc80t","inc100t","inc120t","inc140t","inc160t","inc180t","inc200t","inc200upt")
-cvarsu <- c("inc20u", "inc40u","inc60u","inc80u","inc100u","inc120u","inc140u","inc160u","inc180u","inc200u","inc200upu")
-
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", substring(cvarst, 4), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/qtileinc.tex")
-
-rdc <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE)
-rdgazer(rdc, dvlabs = paste("<", substring(cvarsu, 4), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))),
-        type = "text", out = "/Users/mdgordo/Dropbox (Yale_FES)/Nepal/presentation_materials/tables/qtileinc.tex")
+```{r}
+qplot("productive_assets")
 ```
-
