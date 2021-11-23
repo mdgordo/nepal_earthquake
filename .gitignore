@@ -24,4 +24,5 @@
 *.rds
 *.sbn
 *.sbx
+*.xlsx
 .DS_Store
