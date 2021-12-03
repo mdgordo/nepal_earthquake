@@ -1,31 +1,70 @@
 library(tidyverse)
+library(parallel)
 
+### parameters
 gamma <- 3
 beta <- .95
-alpha <- .8
-y <- rlnorm(1000, meanlog = 0, sd = 1)
-#y <- rlnorm(1000, meanlog = 11, sd = .25)
-# mean = exp(11 + .25^2/2) = 61774
-# sd = sqrt((exp(.25^2) - 1)*exp(2*11 + .25^2)) = 15688
-y1 <- rlnorm(1000, meanlog = 11, sd = .35)
+R <- 1.03
+y <- rlnorm(1000, meanlog = 11, sd = .35)
 # mean = exp(11 + .35^2/2) = 63656
 # sd = sqrt((exp(.35^2) - 1)*exp(2*11 + .35^2)) = 22979
-y2 <- rlnorm(1000, meanlog = 12, sd = .35)
-# mean = exp(12 + .35^2/2) = 173035
-# sd = sqrt((exp(.35^2) - 1)*exp(2*12 + .35^2)) = 62465
-xgrid <- seq(1, 5000000, len = 3000)
-v0 <- xgrid
+#ylist <- rep(NA, 1000)
+#for (i in c(1:1000)) {
+#  ylist[i] <- min(rlnorm(10000, meanlog = 11, sd = .35))
+#}  
+# Expectation of minimum of 100 draws is ~26150, 1000 draws ~19400, 10000 draws is 15600
 
-u <- function(x) {1/x^gamma}
+### natural borrowing limit - not real b/c depends on # of draws from y
+B <- -min(y)/(R-1)
 
-### y*x^alpha makes it so consumption rises w buffer stock but not proportionally
-### could also do sectoral choice between risky and not risky sector
+### Initial grid and guess
+xgrid <- seq(B, 5000000, len = 5000)
+v0 <- rep(0, length(xgrid))
 
+### utility and production functional forms
+u <- function(x){x^(1-gamma)/(1-gamma)}
+
+### Value function iteration
+bellman_operator <- function(grid, w){
+  Valfunc = approxfun(grid, w, rule = 2)
+  optimizer <- function(x){
+    objective <- function(c) {
+      xtplus1 = R*(x - c) + y
+      r = u(c) + beta*mean(Valfunc(xtplus1))
+      return(r*1e6)
+    }
+    l <- optimize(objective, interval = c(1e-16, x - B), maximum = TRUE)
+    return(l$objective)
+  }
+  Tw = rep(NA, length(grid))
+  Tw = mclapply(grid, optimizer, mc.cores = 6)
+  return(unlist(Tw))
+}
+
+VFI <- function(grid, vinit, tol = 1e-13, maxiter = 300){
+  w = matrix(0, length(grid), 1)
+  w[,1] = vinit
+  d = 1
+  i = 2
+  while (d > tol & i < maxiter){
+    w = cbind(w, rep(0, length(grid)))
+    w[,i] = bellman_operator(grid, w[,i-1])
+    d = sqrt(sum((w[,i] - w[,i-1])^2))
+    i = i+1
+  }
+  return(w)
+}
+
+V <- VFI(xgrid, v0)
+
+
+
+
+### EFI 
 euler_operator <- function(grid, w, y){
   interp <- approxfun(grid, w, rule = 2)
   Tfx <- function(x) {
     r <- max(c(beta*mean(u(interp(x - interp(x) + y*(x - interp(x))^alpha))), u(x)))
-    #r <- max(c(beta*mean(u(interp(x - interp(x) + y))), u(x)))
     r <- r^(-1/gamma)
     return(r)
   }

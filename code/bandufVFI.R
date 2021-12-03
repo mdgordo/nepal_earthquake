@@ -1,63 +1,60 @@
 library(tidyverse)
 library(parallel)
+library(ROI)
+library(ROI.plugin.alabama)
+library(ROI.plugin.nloptr)
+library(ROI.plugin.deoptim)
 
 ### parameters
 gamma <- 3
 beta <- .9
 alpha <- .3
 R <- 1.03
-epsilon <- rlnorm(10000, 0, 1)
-B <- -.2*300000
-
-### Initial grid and guess
-xgrid <- seq(1, 5000000, len = 3000)
-v0 <- rep(0, length(xgrid))
 
 ### utility and production functional forms
 u <- function(x){x^(1-gamma)/(1-gamma)}
-uprime <- function(x) {1/x^gamma}
 f <- function(k) {epsilon*k^alpha}
-fprime <- function(k) {epsilon*alpha*k^(1-alpha)}
+
+### Need to calibrate these
+epsilon <- rlnorm(1000, 10, .35)
+B <- -min(f(1))/(R-1)
+
+### Initial grid and guess
+xgrid <- seq(B + 3, 5000000, len = 5000)
+v0 <- rep(0, length(xgrid))
+
+### Optimization setup
+ROI_setup <- function(Vfx, x){
+    objective <- function(ck) {
+      c <- ck[1]
+      k <- ck[2]
+      xtplus1 = R*(x - c - k) + f(k)
+      r = u(c) + beta*mean(Vfx(xtplus1))
+      return(r)
+    }
+    ### has to hold with certainty, so min of production
+    constraint <- function(ck){
+      c <- ck[1]
+      k <- ck[2]
+      return(B - R*(x - c - k) - min(f(k)))
+    }
+    nlprob <- OP(F_objective(objective, 2),
+                 F_constraint(constraint, dir = "<=", rhs = 0),
+                 maximum = TRUE,
+                 bounds = V_bound(li = c(1,2), lb = c(1,1)))
+    r <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = c(1.1, 1.1))
+    return(objective(solution(r)))
+}
 
 ### Value function iteration
-objective <- function(ck, Vfx, x) {
-  c <- ck[1]
-  k <- ck[2]
-  xtplus1 = R*(x - c - k) + f(k)
-  r = u(c) + beta*mean(Vfx(xtplus1))
-  return(r)
-}
-
 bellman_operator <- function(grid, w){
-  Valfunc = approxfun(grid, w, rule = 2)
+  Vfx = approxfun(grid, w, rule = 2)
   Tw = rep(NA, length(grid))
-  Tw = mclapply(grid, function(x) constrOptim(c(.9*x, .1*x), objective, method = "Nelder-Mead", ui = matrix(c(-1, 1, 0, -1, 0, 1), nrow = 3, ncol = 2),
-                                          ci = c(B - x, 0 , 0), Vfx = Valfunc, x = x, control = list(fnscale = -1, maxit = 300)), mc.cores = 6)
-  Tw = unlist(lapply(Tw, function(x) x$value))
-  return(Tw)
+  Tw = mclapply(xgrid, ROI_setup, Vfx = Vfx, mc.cores = 6, mc.preschedule = FALSE)
+  return(unlist(Tw))
 }
 
-### Other approach
-optimobj <- function(xi, k, b, Valfunc){
-  Valfunc = Valfunc[[1]]
-  o = optimize(objective, interval = c(0, b), x = xi, k = k, Vfx = Valfunc, maximum = TRUE)
-  return(o$objective)
-}
-
-bellman_operator <- function(grid, w){
-  Valfunc = approxfun(grid, w, rule = 2)
-  Valfunc = list(Valfunc)
-  Tw = rep(NA, length(grid))
-  for (i in 1:length(grid)) {
-    xi = grid[i]
-    kgrid = seq(0, xi, len = 3000)
-    bounds = B + kgrid - xi
-    Twk = mcmapply(optimobj, k = kgrid, b = bounds, x = xi, Valfunc = Valfunc, mc.cores = 6)
-    Tw[i] = max(unlist(Twk))
-  }
-  return(Tw)
-}
-#####
+#grid = xgrid; vinit = v0; tol = 1e-13; maxiter = 300
 
 VFI <- function(grid, vinit, tol = 1e-13, maxiter = 300){
   w = matrix(0, length(grid), 1)
