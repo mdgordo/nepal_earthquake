@@ -1,8 +1,9 @@
-library(tidyverse)
+library(tidyverse) 
 library(parallel)
 
-rootdir <- dirname(getwd())
-df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
+df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
+
+source(paste(getwd(), "/code/VFIfunctions.r", sep = ""))
 
 ### parameter vector
 
@@ -13,8 +14,15 @@ R <- 1.03
 alpha = .3
 mu = 11
 sigma = .35
+cmin = 10000
+lambda = .2
 
-theta <- c(gamma, beta, R, alpha, mu, sigma)
+theta <- c(gamma, beta, R, alpha, mu, sigma, cmin, lambda)
+
+### we want to match on non durable consumption and non transfer income - percapita?
+cissebarret <- lm(log(income_gross+1) ~ as.factor(caste_recode) + age_hh + age_hh^2 + femalehh + class5 + class10 +
+                    slope + elevation + poly(log(lag(income_gross+1)), 3) + as.factor(land_qtle),
+                  data = df.hh, weights = wt_hh, subset = !is.na(income_gross) & wave!=1)
 
 empiricalmoments <- c(0, .04, .25, .52, .64, .77, .86)
 

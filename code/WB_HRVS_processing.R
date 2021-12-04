@@ -969,7 +969,9 @@ df.hh <- df.hh %>% mutate(quake_aid_bin = if_else(quake_aid > 0, 1, 0),
   group_by(hhid) %>%
   mutate(quake_aid_lag = if_else(is.na(lag(quake_aid_bin, order_by = wave)), 0, lag(quake_aid_bin, order_by = wave)),
          lag_remitt = lag(remittance_income, order_by = wave),
-         lag_loan = lag(loans_taken_past_year, order_by = wave))
+         lag_loan = lag(loans_taken_past_year, order_by = wave),
+         lag_income_gross = lag(income_gross, order_by = wave),
+         lag_income = lag(income, order_by = wave))
 
 df.aid <- df.hh %>% arrange(wave) %>%
   group_by(hhid) %>% 

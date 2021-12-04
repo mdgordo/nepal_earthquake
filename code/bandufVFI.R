@@ -23,54 +23,10 @@ B <- -min(f(1))/(R-1)
 xgrid <- seq(B + 3, 5000000, len = 5000)
 v0 <- rep(0, length(xgrid))
 
-### Optimization setup
-ROI_setup <- function(Vfx, x){
-    objective <- function(ck) {
-      c <- ck[1]
-      k <- ck[2]
-      xtplus1 = R*(x - c - k) + f(k)
-      r = u(c) + beta*mean(Vfx(xtplus1))
-      return(r)
-    }
-    ### has to hold with certainty, so min of production
-    constraint <- function(ck){
-      c <- ck[1]
-      k <- ck[2]
-      return(B - R*(x - c - k) - min(f(k)))
-    }
-    nlprob <- OP(F_objective(objective, 2),
-                 F_constraint(constraint, dir = "<=", rhs = 0),
-                 maximum = TRUE,
-                 bounds = V_bound(li = c(1,2), lb = c(1,1)))
-    r <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = c(1.1, 1.1))
-    return(objective(solution(r)))
-}
-
-### Value function iteration
-bellman_operator <- function(grid, w){
-  Vfx = approxfun(grid, w, rule = 2)
-  Tw = rep(NA, length(grid))
-  Tw = mclapply(xgrid, ROI_setup, Vfx = Vfx, mc.cores = 6, mc.preschedule = FALSE)
-  return(unlist(Tw))
-}
-
+source(paste(getwd(), "/code/VFIfunctions.r", sep = ""))
 #grid = xgrid; vinit = v0; tol = 1e-13; maxiter = 300
 
-VFI <- function(grid, vinit, tol = 1e-13, maxiter = 300){
-  w = matrix(0, length(grid), 1)
-  w[,1] = vinit
-  d = 1
-  i = 2
-  while (d > tol & i < maxiter){
-    w = cbind(w, rep(0, length(grid)))
-    w[,i] = bellman_operator(grid, w[,i-1])
-    d = sqrt(sum((w[,i] - w[,i-1])^2))
-    i = i+1
-  }
-  return(w)
-}
-
-V <- VFI(xgrid, v0)
+V <- VFI(xgrid, v0, "bd")
 
 ### Plot value function
 dfplot <- function(V){
@@ -86,7 +42,7 @@ Vplot <- dfplot(V)
 ggplot(filter(Vplot, grid!=1 & iteration!=1)) +
   geom_line(aes(x = grid, y = fx, color = as.integer(iteration), group = as.integer(iteration)))
 
-ggplot(filter(Vplot, grid!=1 & as.integer(iteration)==232)) +
+ggplot(filter(Vplot, grid!=1 & as.integer(iteration)==dim(V)[2])) +
   geom_line(aes(x = grid, y = fx))
 
 ### Policy Functions
