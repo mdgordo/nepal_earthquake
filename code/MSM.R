@@ -1,4 +1,4 @@
-library(tidyverse) 
+library(tidyverse)
 library(parallel)
 
 df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
@@ -20,9 +20,20 @@ lambda = .2
 theta <- c(gamma, beta, R, alpha, mu, sigma, cmin, lambda)
 
 ### we want to match on non durable consumption and non transfer income - percapita?
-cissebarret <- lm(log(income_gross+1) ~ as.factor(caste_recode) + age_hh + age_hh^2 + femalehh + class5 + class10 +
-                    slope + elevation + poly(log(lag(income_gross+1)), 3) + as.factor(land_qtle),
-                  data = df.hh, weights = wt_hh, subset = !is.na(income_gross) & wave!=1)
+df <- filter(df.hh, !is.na(income_gross) & !is.na(lag_income_gross) & !is.na(age_hh) & !is.na(class5))
+cissebarret <- lm(log(income_gross+1) ~ as.factor(caste_recode) + poly(age_hh, 2) + femalehh + class5 + class10 +
+                    slope + elevation + poly(log(lag_income_gross+1), 3) + as.factor(land_qtle),
+                  data = df, weights = wt_hh, na.action = na.omit)
+winc_guess <- as.vector(coef(cissebarret))
+
+df$resid <- cissebarret$residuals^2
+cissebarret_resid <- lm(resid ~ as.factor(caste_recode) + poly(age_hh, 2) + femalehh + class5 + class10 +
+                    slope + elevation + poly(log(lag_income_gross+1), 3) + as.factor(land_qtle),
+                  data = df, weights = wt_hh, na.action = na.omit)
+wresid_guess <- as.vector(coef(cissebarret_resid))
+### need to use to predict income and variance - what moments to match here
+
+### PDF Moments
 
 empiricalmoments <- c(0, .04, .25, .52, .64, .77, .86)
 
