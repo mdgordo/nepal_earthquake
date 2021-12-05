@@ -20,7 +20,7 @@ bellman_operator <- function(grid, w){
 
 ### Policy function Deaton
 policyfunc <- function(x, Vfx){
-  if (x==B) {return(u(cmin) + beta*mean(Vfx(B)))} else{
+  if (x==B) {return(cmin)} else{
     objective <- function(c) {
       xtplus1 = R*(x - c) + y
       xtplus1 = if_else(xtplus1<B, B, xtplus1)
