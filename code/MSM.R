@@ -29,8 +29,8 @@ cissebarret <- lm(log(income_gross+1) ~ as.factor(caste_recode) + poly(age_hh, 2
 df$mu <- round(cissebarret$fitted.values,1)
 
 ### Moments
-
-pdfmoments_t <- c(0, .04, .25, .52, .64, .77, .86)
+thresholds <- seq(40000, 200000, 20000)
+pdfmoments_t <- c(0, 0, 0, .04, .25, .52, .64, .77, .86)
 pdfmoments_u <- c(0.05, 0.18, 0.32, 0.57, 0.63, 0.79, 0.77, 0.86, 0.92)
 mkt_clear <- 0
 
@@ -83,23 +83,46 @@ policyfunc <- function(x, Vfx, B, beta, R, y, gamma, cmin){
   }
 }
 
+bufferstock <- function(hhid, Vlist, xgrid){
+  ### pull right parameters
+  c = df$food_consumption[df$hhid==hhid]
+  mu = df$mu[df$hhid==hhid]
+  i = which(lapply(Vlist, function(x) x$mu==mu))
+  cfx = Vlist[[i]]$cfx
+  
+  ### find root of policy function
+  cfxrt <- function(x){cfx(x) - c}
+  r <- uniroot(cfxrt, interval = c(1, max(xgrid)), extendInt = "upX")$root
+  
+  ### pre and post aid buffer stock
+  bsx_pre = r - df$quake_aid[df$hhid==hhid]
+  bsx_post = r + 50000
+  
+  ### Calculate counterfactual consumption
+  cdist_pre = cfx(bsx_pre)
+  cdist_post = cfx(bsx_post)
+  return(c(cdist_pre, cdist_post))
+}
+
 
 ### MSM
 
 msm_func <- function(theta){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cmin = theta[4]; lambda = theta[5]; sigma = theta[6]
   
-  Vlist = list()
-  ### Solve for all the value functions
+  Vlist = vector(mode = "list", length = length(unique(df$mu)))
+  
+  ### Solve for all the value functions - might have to do this for pre and post interest rates
   for (i in sort(unique(df$mu))){
-    Vlist[[i]]$mu = sort(unique(df$mu))[i]
+    mu = sort(unique(df$mu))[i]
+    Vlist[[i]]$mu = mu
     
     ### productivity draws and lower bound
     y = rlnorm(1000, meanlog = mu, sd = sigma/mu)
     B = -lambda*mean(y)
     
     ### Initial grid and guess
-    xgrid <- seq(B, 5000000, len = 5000)
+    xgrid <- seq(B, 10*max(y), len = 5000)
     v0 <- rep(0, length(xgrid))
     
     ### Solve for value function
@@ -112,13 +135,14 @@ msm_func <- function(theta){
     
   }
   
-  ### Calculate everyone's buffer stock - continue here
-  cfxrt <- function(c){cfx(c) - consumption}
-  x[i] <- uniroot(cfxrt, interval = c(1, max(xgrid)), extendInt = "upX")$root
-  
-  ### Calculate counterfactual consumption??
+  ### Calculate everyone's buffer stock and counterfactual consumption - 50000 right number to use?
+  bsx = mclapply(df$hhid, bufferstock, Vlist, xgrid, mc.cores = 6)
+  cdist_pre = unlist(lapply(bsx, function(x) x[1]))
+  cdist_post = unlist(lapply(bsx, function(x) x[2]))
   
   ### Calculate fraction of hhs under each threshold with and without aid
+  pdf_pre = lapply(thresholds, function(x) sum(cdist_pre < x)/length(cdist_pre))
+  pdf_post = lapply(thresholds, function(x) sum(cdist_post < x)/length(cdist_post))
   
   ### Does market clear? how does aid influx affect interest rate?
   
