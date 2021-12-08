@@ -1,9 +1,12 @@
 library(tidyverse)
 library(parallel)
+library(ROI)
+library(ROI.plugin.alabama)
+library(ROI.plugin.nloptr)
+library(ROI.plugin.deoptim)
 
-df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
-
-source(paste(getwd(), "/code/VFIfunctions.r", sep = ""))
+#df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
+df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
 
 ### parameter vector
 
@@ -19,8 +22,8 @@ theta <- c(gamma, beta, R, cmin, lambda, sigma)
 
 u <- function(x, gamma){x^(1-gamma)/(1-gamma)}
 
-### we want to match on non durable consumption and non transfer income - percapita?
-df <- filter(df.hh, !is.na(income_gross) & !is.na(lag_income_gross) & !is.na(age_hh) & !is.na(class5))
+### we want to match on non durable consumption and non transfer income - percapita? - use machine learning? - doing wave 1 at the moment
+df <- filter(df.hh, wave==1 & !is.na(income_gross) & !is.na(age_hh) & !is.na(class5) & !is.na(class10) & !is.na(femalehh) & !is.na(caste_recode))
 cissebarret <- lm(log(income_gross+1) ~ as.factor(caste_recode) + poly(age_hh, 2) + femalehh + class5 + class10 +
                     slope + elevation + as.factor(land_qtle) #+ poly(log(lag_income_gross+1), 3) 
                   , data = df, weights = wt_hh, na.action = na.omit)
@@ -52,7 +55,7 @@ bellman_operator <- function(grid, w, B, beta, R, y, gamma, cmin){
     }
   }
   Tw = rep(NA, length(grid))
-  Tw = mclapply(grid, optimizer, mc.cores = 6)
+  Tw = mclapply(grid, optimizer, mc.cores = 46)
   return(unlist(Tw))
 }
 
@@ -83,25 +86,28 @@ policyfunc <- function(x, Vfx, B, beta, R, y, gamma, cmin){
   }
 }
 
-bufferstock <- function(hhid, Vlist, xgrid){
+bufferstock <- function(hhid, Vlist){
   ### pull right parameters
   c = df$food_consumption[df$hhid==hhid]
   mu = df$mu[df$hhid==hhid]
-  i = which(lapply(Vlist, function(x) x$mu==mu))
+  i = which(unlist(lapply(Vlist, function(x) x$mu))==mu)
   cfx = Vlist[[i]]$cfx
+  xgrid = Vlist[[i]]$xgrid
   
   ### find root of policy function
-  cfxrt <- function(x){cfx(x) - c}
-  r <- uniroot(cfxrt, interval = c(1, max(xgrid)), extendInt = "upX")$root
-  
+  cfxrt = function(x){cfx(x) - c}
+  if (c>cfx(max(xgrid))) {r = max(xgrid)} else {
+    r = uniroot(cfxrt, interval = c(1, max(xgrid)), extendInt = "upX")$root
+  }
   ### pre and post aid buffer stock
   bsx_pre = r - df$quake_aid[df$hhid==hhid]
   bsx_post = r + 50000
+  bsx_actual = r
   
   ### Calculate counterfactual consumption
   cdist_pre = cfx(bsx_pre)
   cdist_post = cfx(bsx_post)
-  return(c(cdist_pre, cdist_post))
+  return(c(cdist_pre, cdist_post, bsx_pre, bsx_post, bsx_actual))
 }
 
 
@@ -110,10 +116,10 @@ bufferstock <- function(hhid, Vlist, xgrid){
 msm_func <- function(theta){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cmin = theta[4]; lambda = theta[5]; sigma = theta[6]
   
-  Vlist = vector(mode = "list", length = length(unique(df$mu)))
+  Vlist = rep(list(list("mu" = NA, "xgrid" = NA, "Vfx" = NA, "cfx" = NA)), length(unique(df$mu)))
   
   ### Solve for all the value functions - might have to do this for pre and post interest rates
-  for (i in sort(unique(df$mu))){
+  for (i in c(1:length(unique(df$mu)))){
     mu = sort(unique(df$mu))[i]
     Vlist[[i]]$mu = mu
     
@@ -123,31 +129,54 @@ msm_func <- function(theta){
     
     ### Initial grid and guess
     xgrid <- seq(B, 10*max(y), len = 5000)
+    Vlist[[i]]$xgrid = xgrid
     v0 <- rep(0, length(xgrid))
     
     ### Solve for value function
-    V = VFI(xgrid, v0, B, beta, R, y, gamma, cmin)
-    Vlist[[i]]$Vfx = approxfun(xgrid, V[,dim(V)[2]])
+    V = VFI(grid = xgrid, vinit = v0, B = B, beta = beta, R = R, y = y, gamma = gamma, cmin = cmin)
+    Vfx = approxfun(xgrid, V[,dim(V)[2]])
+    Vlist[[i]]$Vfx = Vfx
     
     ### Solve for policy function
-    cfx <- mclapply(xgrid, policyfunc, Vfx = Vfx, mc.cores = 6)
-    Vlist[[i]]$cfx <- approxfun(xgrid, cfx, rule = 2)
+    cfx = mclapply(xgrid, policyfunc, Vfx = Vfx, 
+                   B = B, beta = beta, R = R, y = y, gamma = gamma, cmin = cmin, mc.cores = 46)
+    Vlist[[i]]$cfx = approxfun(xgrid, cfx, rule = 2)
     
+    #print(i)
+    #saveRDS(Vlist, "Vlist.rds")
   }
   
   ### Calculate everyone's buffer stock and counterfactual consumption - 50000 right number to use?
-  bsx = mclapply(df$hhid, bufferstock, Vlist, xgrid, mc.cores = 6)
+  bsx = mclapply(df$hhid, bufferstock, Vlist, mc.cores = 46)
   cdist_pre = unlist(lapply(bsx, function(x) x[1]))
   cdist_post = unlist(lapply(bsx, function(x) x[2]))
+  bsx_pre = unlist(lapply(bsx, function(x) x[3]))
+  bsx_post = unlist(lapply(bsx, function(x) x[4]))
+  bsx_actual = unlist(lapply(bsx, function(x) x[5]))
   
   ### Calculate fraction of hhs under each threshold with and without aid
-  pdf_pre = lapply(thresholds, function(x) sum(cdist_pre < x)/length(cdist_pre))
-  pdf_post = lapply(thresholds, function(x) sum(cdist_post < x)/length(cdist_post))
+  pdf_pre = unlist(lapply(thresholds, function(x) sum(cdist_pre < x)/length(cdist_pre)))
+  pdf_post = unlist(lapply(thresholds, function(x) sum(cdist_post < x)/length(cdist_post)))
   
-  ### Does market clear? how does aid influx affect interest rate?
+  ### Does market clear? 
+  mkt_mod = sum(bsx_actual - df$food_consumption)
   
-  modeledmoments = c()
+  modeledmoments = c(pdf_post, pdf_pre, mkt_mod)
   g = modeledmoments - moments
+  return(g)
 }
+
+print(msm_func(theta))
+
+objective <- function(theta) {
+  sse = sum(msm_func(theta)^2)
+  return(sse)
+}
+
+nlprob <- OP(F_objective(objective, 6),
+             bounds = V_bound(li = c(1,2,3,4,5,6), lb = c(1,.5,1,0,0,0),
+                              ui = c(2,3,5), ub = c(1,2,1)))
+sol <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = theta)
+solution(sol)
 
 

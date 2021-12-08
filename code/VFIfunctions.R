@@ -88,3 +88,27 @@ dfplot <- function(V){
   V$iteration <- as.integer(V$iteration)
   return(V)
 }
+
+bufferstock <- function(hhid, Vlist){
+  ### pull right parameters
+  c = df$food_consumption[df$hhid==hhid]
+  mu = df$mu[df$hhid==hhid]
+  i = which(unlist(lapply(Vlist, function(x) x$mu))==mu)
+  cfx = Vlist[[i]]$cfx
+  xgrid = Vlist[[i]]$xgrid
+  
+  ### find root of policy function
+  cfxrt = function(x){cfx(x) - c}
+  if (c>cfx(max(xgrid))) {r = max(xgrid)} else {
+    r = uniroot(cfxrt, interval = c(1, max(xgrid)), extendInt = "upX")$root
+  }
+  ### pre and post aid buffer stock - aid = 300000?
+  bsx_pre = r - df$quake_aid[df$hhid==hhid]
+  bsx_post = r + 50000
+  bsx_actual = r
+  
+  ### Calculate counterfactual consumption
+  cdist_pre = cfx(bsx_pre)
+  cdist_post = cfx(bsx_post)
+  return(c(cdist_pre, cdist_post, bsx_pre, bsx_post, bsx_actual))
+}
