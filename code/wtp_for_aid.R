@@ -5,7 +5,7 @@ library(parallel)
 gamma <- 4.49
 beta <- .934
 R <- 1.026
-cmin <- 12710
+cbar <- .5
 lambda <- .418
 sigma <- 7.418
 
@@ -25,14 +25,14 @@ cissebarret <- lm(log(income_gross+1) ~ as.factor(caste_recode) + poly(age_hh, 2
 
 ### coarsen for feasibility
 df$mu <- round(cissebarret$fitted.values,1)
-mus <- seq(8,13,.1)
+mus <- seq(8.5,13,.0025)
 
 ### VFI functions
-source(paste(getwd(), "/code/VFIfunctions.r", sep = ""))
+source("/home/mdg59/project/WBHRVS/VFIfunctions.R")
 
 Vlist = rep(list(list("mu" = NA, "xgrid" = NA, "Vfx" = NA, "cfx" = NA)), length(mus))
 
-### Solve for all the value functions - lower bounding at exp(8 + (7.4/8)^2/2) = 4572
+### Solve for all the value functions - lower bounding at exp(8.5 + (7.4/8)^2/2) = 7538
 for (i in c(1:length(mus))){
   mu = mus[i]
   Vlist[[i]]$mu = mu
@@ -40,9 +40,10 @@ for (i in c(1:length(mus))){
   ### productivity draws and lower bound
   y = rlnorm(1000, meanlog = mu, sd = sigma/mu)
   B = -lambda*mean(y)
+  cmin = cbar*mean(y)
   
   ### Initial grid and guess
-  xgrid <- seq(B, 10*max(y), len = 5000)
+  xgrid <- seq(B, 10*max(y), len = 7000)
   Vlist[[i]]$xgrid = xgrid
   v0 <- rep(0, length(xgrid))
   
@@ -52,9 +53,10 @@ for (i in c(1:length(mus))){
   Vlist[[i]]$Vfx = Vfx
   
   ### Solve for policy function
-  cfx = mclapply(xgrid, policyfunc, Vfx = Vfx, 
-                 B = B, beta = beta, R = R, y = y, gamma = gamma, cmin = cmin, mc.cores = 46)
+  cfx = mclapply(xgrid, policyfunc, Vfx = Vfx, mc.cores = detectCores()-2)
   Vlist[[i]]$cfx = approxfun(xgrid, cfx, rule = 2)
+  
+  print(i)
   
 }
 
@@ -62,28 +64,28 @@ saveRDS(Vlist, "Vlist.rds")
 
 ### Solve for each hhs buffer stock
 
-bsx = mclapply(df$hhid, bufferstock, Vlist, mc.cores = 46)
+bsx = mclapply(df$hhid, bufferstock, Vlist, mc.cores = detectCores()-2)
 cdist_pre = unlist(lapply(bsx, function(x) x[1]))
 cdist_post = unlist(lapply(bsx, function(x) x[2]))
 bsx_pre = unlist(lapply(bsx, function(x) x[3]))
 bsx_post = unlist(lapply(bsx, function(x) x[4]))
 bsx_actual = unlist(lapply(bsx, function(x) x[5]))
 
-wtp50k <- function(hhid){
+wtp100k <- function(hhid){
   x = bsx_pre[df$hhid==hhid]
   mu = df$mu[df$hhid==hhid]
   i = which(unlist(lapply(Vlist, function(x) x$mu))==mu)
   Vfx = Vlist[[i]]$Vfx
   V = Vfx(x)
-  val4aid = lapply(Vlist, function(f) f$Vfx(x+100000))
-  vi = which.min(abs(V - vfx(x)))
+  val4aid = unlist(lapply(Vlist, function(f) f$Vfx(x+100000)))
+  vi = which.min(abs(V - val4aid))
   mu0 = exp(mu + (sigma/mu)^2/2)
   muprime = exp(mus[vi] + (sigma/mu)^2/2)
-  return((mu - muprime)/(1 - beta))
+  return((mu0 - muprime)/(1 - beta))
 }
 
-wtps <- mclapply(df$hhid, wtp50k, mc.cores = 46)
-saveRDS("wtps.rds")
+wtps <- mclapply(df$hhid, wtp100k, mc.cores = detectCores()-2)
+saveRDS(wtps, "wtps.rds")
 
 
 

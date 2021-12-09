@@ -33,14 +33,14 @@ df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), gu
 #### Summary Stats
 
 ```{r}
-df <- df.hh[,c("consumption", "food_consumption", "income_gross", "productive_assets", 
-                              "loans_taken_past_year", "loans_made_past_year", "remittance_income",
-                              "currentlyliving", "n_migrants", "skipped_meal", "child_labor",
-                              "aid_cumulative", "received_aid", "NGO_transfers", "pub_transfers", "inf_transfers", "gorkha_loss_ever")]
+df <- df.hh[,c("consumption", "food_consumption", "income_gross", "productive_assets",
+              "loans_taken_past_year", "loans_made_past_year", "remittance_income",
+              "currentlyliving", "n_migrants", "skipped_meal", "aid_cumulative", "received_aid", 
+              "NGO_transfers", "pub_transfers", "inf_transfers", "gorkha_loss_ever")]
 
 xtabwts <- sumstats.wtd(df, df.hh$wt_hh, d = 2, labs = c("Consumption", "Food Consumption", "Income", "Productive Assets", "Loans Taken Past Year",
                               "Loans Made Past Year", "Remittance Income", "Household Members", "Connected Migrants", "Skipped Meal(%)",
-                              "Child Labor(%)", "Earthquake Aid", "Earthquake Aid(%)", "NGO Aid", 
+                              "Earthquake Aid", "Earthquake Aid(%)", "NGO Aid", 
                               "Public Transfers", "Informal Transfers", "Affected by Earthquake"))
 print(xtabwts, include.rownames = FALSE)
 

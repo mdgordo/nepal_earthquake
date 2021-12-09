@@ -2,32 +2,34 @@
 bellman_operator <- function(grid, w){
   Valfunc = approxfun(grid, w, rule = 2)
   optimizer <- function(x){
-    if (x==B) {return(u(cmin) + beta*mean(Valfunc(B)))} else{
+    if (x-B < cmin) {
+      return(u(cmin) + beta*Valfunc(B))
+      } else {
       objective <- function(c) {
         xtplus1 = R*(x - c) + y
         xtplus1 = if_else(xtplus1<B, B, xtplus1)
         r = u(c) + beta*mean(Valfunc(xtplus1))
         return(r)
       }
-      l <- optimize(objective, interval = c(1, x - B), maximum = TRUE)
+      l <- optimize(objective, interval = c(cmin, x - B), maximum = TRUE)
       return(l$objective)
     }
   }
   Tw = rep(NA, length(grid))
-  Tw = mclapply(grid, optimizer, mc.cores = 6)
+  Tw = mclapply(grid, optimizer, mc.cores = detectCores()-2)
   return(unlist(Tw))
 }
 
 ### Policy function Deaton
 policyfunc <- function(x, Vfx){
-  if (x==B) {return(cmin)} else{
+  if (x-B < cmin) {return(cmin)} else{
     objective <- function(c) {
       xtplus1 = R*(x - c) + y
       xtplus1 = if_else(xtplus1<B, B, xtplus1)
       r = u(c) + beta*mean(Vfx(xtplus1))
       return(r)
     }
-    l <- optimize(objective, interval = c(1, x - B), maximum = TRUE)
+    l <- optimize(objective, interval = c(cmin, x - B), maximum = TRUE)
     return(l$maximum)
   }
 }
@@ -99,7 +101,9 @@ bufferstock <- function(hhid, Vlist){
   
   ### find root of policy function
   cfxrt = function(x){cfx(x) - c}
-  if (c>cfx(max(xgrid))) {r = max(xgrid)} else {
+  if (c>cfx(max(xgrid))) {r = max(xgrid)} else if (c<cfx(min(xgrid))) {
+    r = min(xgrid)
+  } else {
     r = uniroot(cfxrt, interval = c(1, max(xgrid)), extendInt = "upX")$root
   }
   ### pre and post aid buffer stock - aid = 300000?

@@ -14,13 +14,15 @@ df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
 gamma <- 3
 beta <- .95
 R <- 1.03
-cmin = 10000
+cbar = .5
 lambda = .2
 sigma = 3.85
 
-theta <- c(gamma, beta, R, cmin, lambda, sigma)
+theta <- c(gamma, beta, R, cbar, lambda, sigma)
 
 u <- function(x, gamma){x^(1-gamma)/(1-gamma)}
+
+aid_amt = 300000
 
 ### we want to match on non durable consumption and non transfer income - percapita? - use machine learning? - doing wave 1 at the moment
 df <- filter(df.hh, wave==1 & !is.na(income_gross) & !is.na(age_hh) & !is.na(class5) & !is.na(class10) & !is.na(femalehh) & !is.na(caste_recode))
@@ -43,19 +45,21 @@ moments <- c(pdfmoments_t, pdfmoments_u, mkt_clear)
 bellman_operator <- function(grid, w, B, beta, R, y, gamma, cmin){
   Valfunc = approxfun(grid, w, rule = 2)
   optimizer <- function(x){
-    if (x==B) {return(u(cmin, gamma) + beta*mean(Valfunc(B)))} else{
+    if (x-B < cmin) {
+      return(u(cmin) + beta*Valfunc(B))
+    } else {
       objective <- function(c) {
         xtplus1 = R*(x - c) + y
         xtplus1 = if_else(xtplus1<B, B, xtplus1)
         r = u(c, gamma) + beta*mean(Valfunc(xtplus1))
         return(r)
       }
-      l <- optimize(objective, interval = c(1, x - B), maximum = TRUE)
+      l <- optimize(objective, interval = c(cmin, x - B), maximum = TRUE)
       return(l$objective)
     }
   }
   Tw = rep(NA, length(grid))
-  Tw = mclapply(grid, optimizer, mc.cores = 46)
+  Tw = mclapply(grid, optimizer, mc.cores = detectCores()-2)
   return(unlist(Tw))
 }
 
@@ -74,14 +78,14 @@ VFI <- function(grid, vinit, tol = 1e-9, maxiter = 300, B, beta, R, y, gamma, cm
 }
 
 policyfunc <- function(x, Vfx, B, beta, R, y, gamma, cmin){
-  if (x==B) {return(cmin)} else{
+  if (x - B < cmin) {return(cmin)} else{
     objective <- function(c) {
       xtplus1 = R*(x - c) + y
       xtplus1 = if_else(xtplus1<B, B, xtplus1)
       r = u(c, gamma) + beta*mean(Vfx(xtplus1))
       return(r)
     }
-    l <- optimize(objective, interval = c(1, x - B), maximum = TRUE)
+    l <- optimize(objective, interval = c(cmin, x - B), maximum = TRUE)
     return(l$maximum)
   }
 }
@@ -96,12 +100,14 @@ bufferstock <- function(hhid, Vlist){
   
   ### find root of policy function
   cfxrt = function(x){cfx(x) - c}
-  if (c>cfx(max(xgrid))) {r = max(xgrid)} else {
+  if (c>cfx(max(xgrid))) {r = max(xgrid)} else if (c<cfx(min(xgrid))) {
+    r = min(xgrid)
+  } else {
     r = uniroot(cfxrt, interval = c(1, max(xgrid)), extendInt = "upX")$root
   }
   ### pre and post aid buffer stock
   bsx_pre = r - df$quake_aid[df$hhid==hhid]
-  bsx_post = r + 50000
+  bsx_post = r + aid_amt
   bsx_actual = r
   
   ### Calculate counterfactual consumption
@@ -114,7 +120,7 @@ bufferstock <- function(hhid, Vlist){
 ### MSM
 
 msm_func <- function(theta){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cmin = theta[4]; lambda = theta[5]; sigma = theta[6]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; lambda = theta[5]; sigma = theta[6]
   
   Vlist = rep(list(list("mu" = NA, "xgrid" = NA, "Vfx" = NA, "cfx" = NA)), length(unique(df$mu)))
   
@@ -126,6 +132,7 @@ msm_func <- function(theta){
     ### productivity draws and lower bound
     y = rlnorm(1000, meanlog = mu, sd = sigma/mu)
     B = -lambda*mean(y)
+    cmin = cbar*mean(y)
     
     ### Initial grid and guess
     xgrid <- seq(B, 10*max(y), len = 5000)
@@ -139,7 +146,7 @@ msm_func <- function(theta){
     
     ### Solve for policy function
     cfx = mclapply(xgrid, policyfunc, Vfx = Vfx, 
-                   B = B, beta = beta, R = R, y = y, gamma = gamma, cmin = cmin, mc.cores = 46)
+                   B = B, beta = beta, R = R, y = y, gamma = gamma, cmin = cmin, mc.cores = detectCores()-2)
     Vlist[[i]]$cfx = approxfun(xgrid, cfx, rule = 2)
     
     #print(i)
@@ -147,7 +154,7 @@ msm_func <- function(theta){
   }
   
   ### Calculate everyone's buffer stock and counterfactual consumption - 50000 right number to use?
-  bsx = mclapply(df$hhid, bufferstock, Vlist, mc.cores = 46)
+  bsx = mclapply(df$hhid, bufferstock, Vlist, mc.cores = detectCores()-2)
   cdist_pre = unlist(lapply(bsx, function(x) x[1]))
   cdist_post = unlist(lapply(bsx, function(x) x[2]))
   bsx_pre = unlist(lapply(bsx, function(x) x[3]))
@@ -175,7 +182,7 @@ objective <- function(theta) {
 
 nlprob <- OP(F_objective(objective, 6),
              bounds = V_bound(li = c(1,2,3,4,5,6), lb = c(1,.5,1,0,0,0),
-                              ui = c(2,3,5), ub = c(1,2,1)))
+                              ui = c(2,3,4,5), ub = c(1,2,1,1)))
 sol <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = theta)
 solution(sol)
 
