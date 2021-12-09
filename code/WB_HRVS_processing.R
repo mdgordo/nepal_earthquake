@@ -139,6 +139,16 @@ df.wards <- df.wards %>% mutate(strata = if_else(district %in% c(69,70,74), 21,
                                                                                                   if_else(district %in% c(17:19,33,34), 990.5319444,
                                                                                                           if_else(district %in% c(4:6,15), 898.6458333, 585.5533333)))))))))))
 
+### Add remote sensing damage measures - 250 and 500 pretty well correlated, 100 a bit noisier
+
+df.RS <- read_csv("remote_sensing/UF1416_masked.csv") %>%
+  mutate(UFchg_100m = UF16_100m_mean - UF14_100m_mean,
+         UFchg_250m = UF16_250m_mean - UF14_250m_mean,
+         UFchg_500m = UF16_500m_mean - UF14_500m_mean)
+
+df.wards <- merge(df.wards, df.RS[,c("district", "distname", "vdc", "ward", "long", "lat", "UFchg_100m", "UFchg_250m", "UFchg_500m")], 
+                  by = c("district", "distname", "vdc", "ward", "long", "lat"))
+
 ### Process survey data
 setwd("NPL_2016-2018_HRVS_v01_M_STATA12")
 folders <- c("Wave 1 - Household", "Wave 2 - Household", "Wave 3 - Household")

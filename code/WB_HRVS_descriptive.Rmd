@@ -75,15 +75,17 @@ aidtab <- df.hh %>%
 
 ggplot(filter(aidtab, between(quake_aid, 1, 250000))) +
   geom_col(aes(x = as.factor(quake_aid/1000), y = n, fill = as.factor(wave), group = as.factor(wave)), position = "dodge") +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), text = element_text(size = 20)) + 
+  labs(x = "Aid (000s NPR)", fill = "Wave")
+ggsave(paste(rootdir, "/presentation_materials/aid_hist.png", sep = ""), width = 10, height = 7)
 ```
 
 ### Risk sharing regressions
-Doesnt include remittances/transfers/loans or inputs
+Income doesnt include remittances/transfers/loans or inputs
 coefficients usually about .2 (see Morten/Townsend)
 
 ```{r}
-df <- filter(df.hh, !is.na(income_gross) & income_gross>0)
+df <- filter(df.hh, !is.na(income_gross) & income_gross>0 & food_consumption>0)
 
 risksharing_caste <- felm(log(consumption) ~ log(income_gross + 1) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh)
@@ -131,27 +133,24 @@ stargazer(mods, type = "text", style = "QJE", df = FALSE,
 
 Heterogeneity
 
-food consumption throws errors - plot stuff? need to create interaction as new variable? - looks same as subset regressioins now but not before
-age educ
-
 ```{r}
-risksharing_all <- felm(log(non_durables) ~ log(income_gross) 
+risksharing_all <- felm(log(food_consumption) ~ log(income_gross) 
                         | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-risksharing_hc1 <- felm(log(non_durables) ~ log(income_gross) + log(income_gross):caste_recode
+risksharing_hc1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):caste_recode
                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-risksharing_fh1 <- felm(log(non_durables) ~ log(income_gross) + log(income_gross):femalehh
+risksharing_fh1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):femalehh
                         | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-risksharing_l1 <- felm(log(non_durables) ~ log(income_gross) + log(income_gross):land_qtle
+risksharing_l1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):land_qtle
                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-risksharing_r1 <- felm(log(non_durables) ~ log(income_gross) + log(income_gross):region
+risksharing_r1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):region
                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
@@ -192,10 +191,10 @@ ngoreg <- felm(log(NGO_transfers + 1) ~ log(income_gross) | as.factor(hhid) | 0 
 ngoregvdc <- felm(log(NGO_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-migreg <- felm(migrants_past_year ~ log(income_gross) | as.factor(hhid) | 0 | strata,
+migreg <- felm(log(migrants_past_year+1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-migregvdc <- felm(migrants_past_year ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
+migregvdc <- felm(log(migrants_past_year+1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
 remreg2 <- felm(log(remittance_income + 1) ~ log(income_gross) + log(lag_remitt + 1) | as.factor(hhid) | 0 | strata,
@@ -212,13 +211,13 @@ loanregvdc <- felm(log(loans_taken_past_year+1) ~ log(income_gross) | as.factor(
 
 mods1 <- list(aidreg, pubtransreg, inftransreg, ngoreg, remreg2, migreg, loanreg2)
 
-stargazer(mods1, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods1, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Household", 7)),
                            c("Cluster", rep("Ward", 7))))
 
 mods2 <- list(aidregvdc, pubtransregvdc, inftransregvdc, ngoregvdc, remregvdc, migregvdc, loanregvdc)
 
-stargazer(mods2, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods2, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Village-Year", 7)),
                            c("Cluster", rep("Ward", 7))))
 
@@ -623,3 +622,25 @@ vdcmap <- ggplot() +
         theme_light() + theme(legend.title = element_blank(), axis.text = element_blank()) + xlim(82,88) + ylim(26.4,29)
 vdcmap
 ```
+```{r}
+df.RS <- read_csv(paste(rootdir, "/data/remote_sensing/UF1416_masked.csv", sep = "")) %>%
+  mutate(UFchg_100m = UF16_100m_mean - UF14_100m_mean,
+         UFchg_250m = UF16_250m_mean - UF14_250m_mean,
+         UFchg_500m = UF16_500m_mean - UF14_500m_mean)
+
+df.wards <- merge(df.wards, df.RS[,c("district", "distname", "vdc", "ward", "UFchg_100m", "UFchg_250m", "UFchg_500m")], 
+                  by = c("district", "distname", "vdc", "ward"))
+```
+
+```{r}
+RSmap <- ggplot() +
+        geom_sf(data = df.shp) +
+        geom_sf(data = df.designations, aes(color = designation, fill = designation), alpha = .3) +
+        scale_color_manual(values = c("red", "orange", "yellow", "green", "blue")) +
+        scale_fill_manual(values = c("red", "orange", "yellow", "green", "blue")) +
+        new_scale_color() +
+        geom_sf(data = df.wards, aes(color = UFchg_250m)) + scale_color_gradient2(low = "red", high = "blue") +
+        theme_light() + theme(legend.title = element_blank(), axis.text = element_blank())
+RSmap
+```
+

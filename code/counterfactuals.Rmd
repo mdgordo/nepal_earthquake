@@ -3,34 +3,146 @@ title: "Predicting Vulnerability"
 output: html_notebook
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+rootdir <- dirname(getwd())
+```
 
 ```{r}
 library(tidyverse)
+
+Vlist <- readRDS(paste(rootdir, "/data/model_output/Vlist.rds", sep = ""))
+df.wtps <- readRDS(paste(rootdir, "/data/model_output/df_wtps.rds", sep = ""))
+```
+
+Show sample value function and consumption function
+
+```{r}
+i <- median(c(1:length(Vlist)))
+mu <- Vlist[[i]]$mu
+Vfx <- Vlist[[i]]$Vfx
+cfx <- Vlist[[i]]$cfx
+xgrid <- Vlist[[i]]$xgrid
+
+ggplot() + geom_line(aes(x = xgrid, y = Vfx(xgrid))) +
+  theme_bw() + xlim(0, 250000)
+
+ggplot() + geom_line(aes(x = xgrid, y = cfx(xgrid))) +
+  theme_bw() + xlim(0, 250000)
+
+ggplot() + geom_line(aes(x = xgrid, y = cfx(xgrid+300000) - cfx(xgrid))) +
+  theme_bw() + xlim(0, 250000)
+
+```
+Plot a bunch of functions
+
+```{r}
+vfxlist <- function(x){
+  f = x$Vfx
+  xs = x$xgrid
+  fx = f(xs)
+  mu = rep(x$mu, length(xs))
+  return(cbind(xs, fx, mu))
+}
+
+l <- lapply(Vlist, vfxlist)
+df.vlist <- as.data.frame(do.call(rbind, l))
+
+ggplot(filter(df.vlist, between(mu, 10.5,11), between(xs, 1000, 100000))) + 
+  geom_line(aes(x = xs, y = fx, color = mu, group = mu)) +
+  theme_bw()
+
 ```
 
 ### Predicting Vulnerability
 
 Histogram of WTPs
 
+```{r}
+#df.wtps = filter(df.hh, wave==1 & !is.na(income_gross) & !is.na(age_hh) & !is.na(class5) & !is.na(class10) & !is.na(femalehh) & !is.na(caste_recode))
+
+#df.wtps$wtp = do.call(c, lapply(wtps, function(x) {if (is.null(x)|length(x)==0) {NA} else {x}}))
+
+ggplot() + geom_histogram(aes(x = df.wtps$wtp), bins = 100) + theme_bw()
+
+ggplot(df.wtps) + geom_point(aes(x = wtp, y = food_consumption)) + theme_bw()
+
+```
+
 Actual WTP
+
+```{r}
+## fraction receiving aid
+af <- weighted.mean(df.wtps$quake_aid_bin, df.wtps$wt_hh)
+af
+## avg WTP
+weighted.mean(df.wtps$wtp, df.wtps$wt_hh, na.rm = TRUE)
+
+## WTP for those receiving aid
+weighted.mean(df.wtps$wtp[df.wtps$quake_aid_bin==1], df.wtps$wt_hh[df.wtps$quake_aid_bin==1], na.rm = TRUE)
+
+## WTP for those receiving NGO aid
+weighted.mean(df.wtps$wtp[df.wtps$NGO_transfers>0], df.wtps$wt_hh[df.wtps$NGO_transfers>0], na.rm = TRUE)
+```
+
+
 - heterogeneity by district
 - heterogeneity by wave
 
 Perfect targeting Benchmark - and value of tech that could get you there
 
-Remote sensing Allocations
-- everyone in village
-- adding some vulnerability measures within villages
-
-Confusion matrices
-
 ```{r}
+qt <- quantile(df.wtps$wtp, probs = 1-af, na.rm = TRUE)
+qt
 
-
+weighted.mean(df.wtps$wtp[df.wtps$wtp>qt], df.wtps$wt_hh[df.wtps$wtp>qt], na.rm = TRUE)
 ```
 
 
+Remote sensing Allocations
+- everyone in village
+
+```{r}
+q <- quantile(df.wtps$UFchg_500m, probs = af, na.rm = TRUE)
+q
+
+weighted.mean(df.wtps$wtp[df.wtps$UFchg_500m<q], df.wtps$wt_hh[df.wtps$UFchg_500m<q], na.rm = TRUE)
+```
+
+-Highest WTPs within villages
+
+```{r}
+## Fraction of villages damaged
+vd <- weighted.mean(df.wtps$UFchg_500m<0, df.wtps$wt_hh, na.rm = TRUE)
+
+## Percent of individuals in those villages that can get aid holding budget constant
+p <- af/vd
+
+## WTP cutoff
+q <- quantile(df.wtps$wtp[df.wtps$UFchg_500m<0], p, na.rm = TRUE)
+
+weighted.mean(df.wtps$wtp[df.wtps$UFchg_500m < 0 & df.wtps$wtp >q], df.wtps$wt_hh[df.wtps$UFchg_500m<0 & df.wtps$wtp >q], na.rm = TRUE)
+```
+
+Confusion matrices
+Get the ordering right
+
+```{r}
+tclass <- c("High WTP", "High WTP", "Low WTP", "Low WTP")
+pclass <- c("Received Aid", "No Aid", "Received Aid", "No Aid")
+
+y <- c(sum(df.wtps$wt_hh[df.wtps$quake_aid_bin==1 & df.wtps$wtp > qt], na.rm = TRUE),
+       sum(df.wtps$wt_hh[df.wtps$quake_aid_bin==0 & df.wtps$wtp > qt], na.rm = TRUE),
+       sum(df.wtps$wt_hh[df.wtps$quake_aid_bin==1 & df.wtps$wtp < qt], na.rm = TRUE),
+       sum(df.wtps$wt_hh[df.wtps$quake_aid_bin==0 & df.wtps$wtp < qt], na.rm = TRUE))
+
+ggplot() +
+  geom_tile(aes(x = ordered(tclass, levels = unique(tclass)), y = pclass, fill = y)) +
+  geom_text(aes(x = ordered(tclass, levels = unique(tclass)), y = pclass, 
+                label = round(y,3)), vjust = 1, color = "white") + 
+  theme_bw() + guides(fill = FALSE) + labs(x = "", y = "", title = "Actual Allocations") +
+  theme(text = element_text(size = 22))
 
 
-
+```
 

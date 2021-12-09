@@ -8,9 +8,6 @@
 *.vrt
 *.csv
 !full_panel.csv
-!Wave 1 - Household.csv
-!Wave 2 - Household.csv
-!Wave 3 - Household.csv
 *.txt
 *.flt
 *.hdr
@@ -25,4 +22,5 @@
 *.sbn
 *.sbx
 *.xlsx
+*.html
 .DS_Store
