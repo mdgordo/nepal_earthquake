@@ -10,7 +10,14 @@ rootdir <- dirname(getwd())
 
 ```{r}
 library(tidyverse)
-
+gamma <- 4.49
+beta <- .934
+R <- 1.026
+cbar <- .54
+lambda <- .418
+sigma <- 7.418
+mus <- seq(8.5,13,.01)
+source(paste(rootdir, "/code/VFIfunctions.R", sep = ""))
 Vlist <- readRDS(paste(rootdir, "/data/model_output/Vlist.rds", sep = ""))
 df.wtps <- readRDS(paste(rootdir, "/data/model_output/df_wtps.rds", sep = ""))
 ```
@@ -25,15 +32,20 @@ cfx <- Vlist[[i]]$cfx
 xgrid <- Vlist[[i]]$xgrid
 
 ggplot() + geom_line(aes(x = xgrid, y = Vfx(xgrid))) +
-  theme_bw() + xlim(0, 250000)
+  theme_bw()
 
 ggplot() + geom_line(aes(x = xgrid, y = cfx(xgrid))) +
-  theme_bw() + xlim(0, 250000)
+  theme_bw()
 
-ggplot() + geom_line(aes(x = xgrid, y = cfx(xgrid+300000) - cfx(xgrid))) +
-  theme_bw() + xlim(0, 250000)
+ggplot() + geom_line(aes(x = xgrid, y = cfx(xgrid+50000) - cfx(xgrid))) +
+  theme_bw()
+
+ggplot() + geom_line(aes(x = xgrid, y = wtpcurve(xgrid, mu = mu))) +
+  theme_bw()
 
 ```
+
+
 Plot a bunch of functions
 
 ```{r}
@@ -59,10 +71,6 @@ ggplot(filter(df.vlist, between(mu, 10.5,11), between(xs, 1000, 100000))) +
 Histogram of WTPs
 
 ```{r}
-#df.wtps = filter(df.hh, wave==1 & !is.na(income_gross) & !is.na(age_hh) & !is.na(class5) & !is.na(class10) & !is.na(femalehh) & !is.na(caste_recode))
-
-#df.wtps$wtp = do.call(c, lapply(wtps, function(x) {if (is.null(x)|length(x)==0) {NA} else {x}}))
-
 ggplot() + geom_histogram(aes(x = df.wtps$wtp), bins = 100) + theme_bw()
 
 ggplot(df.wtps) + geom_point(aes(x = wtp, y = food_consumption)) + theme_bw()
@@ -104,7 +112,7 @@ Remote sensing Allocations
 
 ```{r}
 q <- quantile(df.wtps$UFchg_500m, probs = af, na.rm = TRUE)
-q
+
 
 weighted.mean(df.wtps$wtp[df.wtps$UFchg_500m<q], df.wtps$wt_hh[df.wtps$UFchg_500m<q], na.rm = TRUE)
 ```

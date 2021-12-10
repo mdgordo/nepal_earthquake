@@ -2,7 +2,7 @@
 bellman_operator <- function(grid, w){
   Valfunc = approxfun(grid, w, rule = 2)
   optimizer <- function(x){
-    if (x-B < cmin) {
+    if (x-B <= cmin) {
       return(u(cmin) + beta*Valfunc(B))
       } else {
       objective <- function(c) {
@@ -22,7 +22,7 @@ bellman_operator <- function(grid, w){
 
 ### Policy function Deaton
 policyfunc <- function(x, Vfx){
-  if (x-B < cmin) {return(cmin)} else{
+  if (x-B <= cmin) {return(cmin)} else{
     objective <- function(c) {
       xtplus1 = R*(x - c) + y
       xtplus1 = if_else(xtplus1<B, B, xtplus1)
@@ -67,7 +67,7 @@ bellman_operator_BD <- function(grid, w){
 
 ####
 
-VFI <- function(grid, vinit, tol = 1e-13, maxiter = 300, bd = FALSE){
+VFI <- function(grid, vinit, tol = 1e-30, maxiter = 50, bd = FALSE){
   w = matrix(0, length(grid), 1)
   w[,1] = vinit
   d = 1
@@ -116,3 +116,34 @@ bufferstock <- function(hhid, Vlist){
   cdist_post = cfx(bsx_post)
   return(c(cdist_pre, cdist_post, bsx_pre, bsx_post, bsx_actual))
 }
+
+wtp100k <- function(hhid){
+  x = bsx_pre[df$hhid==hhid]
+  mu = df$mu[df$hhid==hhid]
+  i = which(unlist(lapply(Vlist, function(x) x$mu))==mu)
+  Vfx = Vlist[[i]]$Vfx
+  V = Vfx(x)
+  val4aid = unlist(lapply(Vlist, function(f) f$Vfx(x+100000)))
+  vi = which.min(abs(V - val4aid))
+  mu0 = exp(mu + (sigma/mu)^2/2)
+  muprime = exp(mus[vi] + (sigma/mu)^2/2)
+  return((mu0 - muprime)/(1 - beta))
+}
+
+wtpcurve <- function(x, mu){
+  i = which(unlist(lapply(Vlist, function(x) x$mu))==mu)
+  Vfx = Vlist[[i]]$Vfx
+  V = Vfx(x)
+  val4aid = unlist(lapply(Vlist, function(f) f$Vfx(x+100000)))
+  vi = which.min(abs(V - val4aid))
+  mu0 = exp(mu + (sigma/mu)^2/2)
+  muprime = exp(mus[vi] + (sigma/mu)^2/2)
+  return((mu0 - muprime)/(1 - beta))
+}
+
+u <- function(x){
+  u <- x^(1-gamma)/(1-gamma)
+  return(u)
+}
+
+

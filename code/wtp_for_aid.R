@@ -5,16 +5,11 @@ library(parallel)
 gamma <- 4.49
 beta <- .934
 R <- 1.026
-cbar <- .5
+cbar <- .54
 lambda <- .418
 sigma <- 7.418
 
-u <- function(x){
-  u <- x^(1-gamma)/(1-gamma)
-  return(u)
-}
-
-#df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
+#df.hh <- read_csv(paste(getwd(), "/full_panel.csv", sep = ""), guess_max = 7500)
 df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
 
 ### we want to match on non durable consumption and non transfer income - percapita? - use machine learning? - doing wave 1 at the moment
@@ -25,7 +20,7 @@ cissebarret <- lm(log(income_gross+1) ~ as.factor(caste_recode) + poly(age_hh, 2
 
 ### coarsen for feasibility
 df$mu <- round(cissebarret$fitted.values,1)
-mus <- seq(8.5,13,.0025)
+mus <- seq(8.5,13,.01)
 
 ### VFI functions
 source("/home/mdg59/project/WBHRVS/VFIfunctions.R")
@@ -43,7 +38,7 @@ for (i in c(1:length(mus))){
   cmin = cbar*mean(y)
   
   ### Initial grid and guess
-  xgrid <- seq(B, 10*max(y), len = 7000)
+  xgrid <- seq(B, 10*max(y), len = 2000)
   Vlist[[i]]$xgrid = xgrid
   v0 <- rep(0, length(xgrid))
   
@@ -71,21 +66,10 @@ bsx_pre = unlist(lapply(bsx, function(x) x[3]))
 bsx_post = unlist(lapply(bsx, function(x) x[4]))
 bsx_actual = unlist(lapply(bsx, function(x) x[5]))
 
-wtp100k <- function(hhid){
-  x = bsx_pre[df$hhid==hhid]
-  mu = df$mu[df$hhid==hhid]
-  i = which(unlist(lapply(Vlist, function(x) x$mu))==mu)
-  Vfx = Vlist[[i]]$Vfx
-  V = Vfx(x)
-  val4aid = unlist(lapply(Vlist, function(f) f$Vfx(x+100000)))
-  vi = which.min(abs(V - val4aid))
-  mu0 = exp(mu + (sigma/mu)^2/2)
-  muprime = exp(mus[vi] + (sigma/mu)^2/2)
-  return((mu0 - muprime)/(1 - beta))
-}
-
 wtps <- mclapply(df$hhid, wtp100k, mc.cores = detectCores()-2)
-saveRDS(wtps, "wtps.rds")
 
+df$bsx_pre <- do.call(c, lapply(bsx_pre, function(x) {if (is.null(x) | length(x)==0) {NA} else {x}}))
+df$wtp <- do.call(c, lapply(wtps, function(x) {if (is.null(x) | length(x)==0) {NA} else {x}}))
 
+saveRDS(df, "df_wtps.rds")
 

@@ -11,14 +11,14 @@ df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
 ### parameter vector
 
 ### initial guesses
-gamma <- 3
-beta <- .95
-R <- 1.03
-cbar = .5
-lambda = .2
-sigma = 3.85
+gamma0 <- 3
+beta0 <- .95
+R0 <- 1.03
+cbar0 = .5
+lambda0 = .2
+sigma0 = 3.85
 
-theta <- c(gamma, beta, R, cbar, lambda, sigma)
+theta0 <- c(gamma0, beta0, R0, cbar0, lambda0, sigma0)
 
 u <- function(x, gamma){x^(1-gamma)/(1-gamma)}
 
@@ -45,8 +45,8 @@ moments <- c(pdfmoments_t, pdfmoments_u, mkt_clear)
 bellman_operator <- function(grid, w, B, beta, R, y, gamma, cmin){
   Valfunc = approxfun(grid, w, rule = 2)
   optimizer <- function(x){
-    if (x-B < cmin) {
-      return(u(cmin) + beta*Valfunc(B))
+    if (x-B <= cmin) {
+      return(u(cmin, gamma) + beta*Valfunc(B))
     } else {
       objective <- function(c) {
         xtplus1 = R*(x - c) + y
@@ -63,7 +63,7 @@ bellman_operator <- function(grid, w, B, beta, R, y, gamma, cmin){
   return(unlist(Tw))
 }
 
-VFI <- function(grid, vinit, tol = 1e-9, maxiter = 300, B, beta, R, y, gamma, cmin){
+VFI <- function(grid, vinit, tol = 1e-30, maxiter = 50, B, beta, R, y, gamma, cmin){
   w = matrix(0, length(grid), 1)
   w[,1] = vinit
   d = 1
@@ -78,7 +78,7 @@ VFI <- function(grid, vinit, tol = 1e-9, maxiter = 300, B, beta, R, y, gamma, cm
 }
 
 policyfunc <- function(x, Vfx, B, beta, R, y, gamma, cmin){
-  if (x - B < cmin) {return(cmin)} else{
+  if (x - B <= cmin) {return(cmin)} else{
     objective <- function(c) {
       xtplus1 = R*(x - c) + y
       xtplus1 = if_else(xtplus1<B, B, xtplus1)
@@ -135,12 +135,13 @@ msm_func <- function(theta){
     cmin = cbar*mean(y)
     
     ### Initial grid and guess
-    xgrid <- seq(B, 10*max(y), len = 5000)
+    xgrid <- seq(B, 10*max(y), len = 2000)
     Vlist[[i]]$xgrid = xgrid
     v0 <- rep(0, length(xgrid))
     
     ### Solve for value function
-    V = VFI(grid = xgrid, vinit = v0, B = B, beta = beta, R = R, y = y, gamma = gamma, cmin = cmin)
+    V = VFI(grid = xgrid, vinit = v0, B = B, beta = beta, R = R, y = y, 
+            gamma = gamma, cmin = cmin)
     Vfx = approxfun(xgrid, V[,dim(V)[2]])
     Vlist[[i]]$Vfx = Vfx
     
@@ -149,7 +150,7 @@ msm_func <- function(theta){
                    B = B, beta = beta, R = R, y = y, gamma = gamma, cmin = cmin, mc.cores = detectCores()-2)
     Vlist[[i]]$cfx = approxfun(xgrid, cfx, rule = 2)
     
-    #print(i)
+    print(i)
     #saveRDS(Vlist, "Vlist.rds")
   }
   
@@ -173,17 +174,19 @@ msm_func <- function(theta){
   return(g)
 }
 
-print(msm_func(theta))
+#print(msm_func(theta0))
 
 objective <- function(theta) {
-  sse = sum(msm_func(theta)^2)
+  g = msm_func(theta)
+  sse = sum(g^2)
   return(sse)
 }
 
 nlprob <- OP(F_objective(objective, 6),
              bounds = V_bound(li = c(1,2,3,4,5,6), lb = c(1,.5,1,0,0,0),
                               ui = c(2,3,4,5), ub = c(1,2,1,1)))
-sol <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = theta)
+sol <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = theta0)
+sol
 solution(sol)
 
 
