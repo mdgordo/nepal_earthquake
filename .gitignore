@@ -23,4 +23,5 @@
 *.sbx
 *.xlsx
 *.html
+presentation_materials/
 .DS_Store
