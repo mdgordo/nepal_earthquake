@@ -156,7 +156,7 @@ risksharing_r1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gr
 
 mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_r1)
 
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include household and village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
 
 weighted.mean(df.hh$remittance_income[df.hh$femalehh==1]>0, df.hh$wt_hh[df.hh$femalehh==1], na.rm = TRUE)
@@ -257,7 +257,7 @@ df.inc$source <- factor(df.inc$source, levels = c("home_food_production", "agric
                                                   "quake_aid", "remittance", "pub_aid", "inf_aid", "NGO_aid"))
 
 g1 <- ggplot(df.inc) + geom_bar(aes(x = source, weight = fraction, fill = source)) +
-      theme_light() + theme(legend.position = "none", text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
+      theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
       labs(y = "fraction of HHs with income", x = "")
 
 df.inc <- df.hh %>% 
@@ -293,10 +293,11 @@ df.inc$source <- factor(df.inc$source, levels = c("home_food_production", "agric
                                                   "wages", "business", "business_costs", "rental", "remittance", "quake_aid", "pub_aid", "inf_aid", "NGO_aid", "income"))
 
 g2 <- ggplot(df.inc) + geom_bar(aes(x = source, weight = fraction, fill = source)) +
-      theme_light() + theme(legend.position = "none", text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
+      theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
       labs(y = "Avg Income | source > 0", x = "")
 
 plot_grid(g1, g2, nrow = 1, rel_widths = c(4/9, 5/9))
+ggsave(paste(rootdir, "/presentation_materials/income.png", sep = ""), width = 10, height = 7)
 ```
 
 ### types of assets
@@ -322,7 +323,7 @@ df.assets <- df.hh %>%
   pivot_longer(cols = colnames(.), names_to = "asset_type", values_to = "fraction")
 
 g1 <- ggplot(df.assets) + geom_bar(aes(x = asset_type, weight = fraction, fill = asset_type)) +
-      theme_light() + theme(legend.position = "none", text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
+      theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
       labs(y = "fraction of HHs with asset", x = "")
 
 df.assets <- df.hh %>% 
@@ -345,10 +346,11 @@ df.assets <- df.hh %>%
   pivot_longer(cols = colnames(.), names_to = "asset_type", values_to = "fraction")
 
 g2 <- ggplot(df.assets) + geom_bar(aes(x = asset_type, weight = fraction, fill = asset_type)) +
-      theme_light() + theme(legend.position = "none", text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
+      theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
       labs(y = "Avg Value | asset_type > 0", x = "")
 
 plot_grid(g1, g2, nrow = 1, rel_widths = c(4/9, 5/9))
+ggsave(paste(rootdir, "/presentation_materials/assets.png", sep = ""), width = 10, height = 7)
 ```
 
 ### Investments
@@ -379,7 +381,7 @@ df.investments <- df.hh %>%
   pivot_longer(cols = colnames(.), names_to = "investment_type", values_to = "fraction")
 
 g1 <- ggplot(df.investments) + geom_bar(aes(x = investment_type, weight = fraction, fill = investment_type)) +
-      theme_light() + theme(legend.position = "none", text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
+      theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
       labs(y = "fraction of HHs making investment", x = "")
 
 df.investments <- df.hh %>% 
@@ -406,10 +408,11 @@ df.investments <- df.hh %>%
   pivot_longer(cols = colnames(.), names_to = "investment_type", values_to = "fraction")
 
 g2 <- ggplot(df.investments) + geom_bar(aes(x = investment_type, weight = fraction, fill = investment_type)) +
-      theme_light() + theme(legend.position = "none", text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
+      theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
       labs(y = "Avg Amount | investment > 0", x = "")
 
 plot_grid(g1, g2, nrow = 1, rel_widths = c(4/9, 5/9))
+ggsave(paste(rootdir, "/presentation_materials/investments.png", sep = ""), width = 10, height = 7)
 ```
 
 ### Consumption
@@ -436,8 +439,9 @@ df.consumption$consumption_type <- factor(df.consumption$consumption_type, level
                                                                                       "taxes", "other"))
 
 ggplot(df.consumption) + geom_bar(aes(x = consumption_type, weight = average_spending, fill = consumption_type)) +
-      theme_light() + theme(legend.position = "none", text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
+      theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
       labs(y = "average_consumption", x = "")
+ggsave(paste(rootdir, "/presentation_materials/consumption.png", sep = ""), width = 10, height = 7)
 
 df.hh %>% mutate(food_share = (food_market + food_home_production)/consumption) %>% ggplot() +
   geom_point(aes(x = log(consumption), y = food_share))
@@ -462,7 +466,7 @@ df.shocks <- df.hh %>%
 g1 <- ggplot(df.shocks) +
   geom_col(aes(x = shock_type, y = fraction_of_hh, group = as.factor(wave), fill = as.factor(wave)), position = "dodge") +
   scale_fill_viridis_d() +
-  theme_light() + labs(fill = "wave", x = "") + theme(legend.position = "none", text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
+  theme_light() + labs(fill = "wave", x = "") + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
 
 df.shocks <- df.hh %>%
   group_by(wave) %>%
@@ -481,9 +485,10 @@ g2 <- ggplot(df.shocks) +
   geom_col(aes(x = shock_type, y = reported_losses, group = as.factor(wave), fill = as.factor(wave)), position = "dodge") +
   scale_fill_viridis_d() +
   theme_light() + labs(fill = "wave", y = "reported_losses | shock", x = "") + 
-  theme(text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
+  theme(text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
 
 plot_grid(g1, g2, nrow = 1, rel_widths = c(4/9, 5/9))
+ggsave(paste(rootdir, "/presentation_materials/shocks.png", sep = ""), width = 10, height = 7)
 ```
 
 ### Migration
@@ -557,7 +562,9 @@ df.coping$var <- factor(df.coping$var, levels = c("dissaving", "loans", "asset_s
 ggplot(df.coping) +
   geom_col(aes(x = var, y = frac_hh, group = as.factor(wave), fill = as.factor(wave)), position = "dodge") +
   scale_fill_viridis_d() + theme_light() + labs(x = "", y = "Fraction of households", fill = "Wave") +
-  theme(text = element_text(size = 13), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
+  theme(text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
+
+ggsave(paste(rootdir, "/presentation_materials/coping.png", sep = ""), width = 10, height = 7)
 ```
 ### Mapping district designations: 
 https://www.preventionweb.net/files/63268_18moderatelyaffecteddistrictsovervi.pdf 
@@ -601,7 +608,7 @@ epicenter <- st_sfc(st_point(x = c(84.731, 28.23)), crs = 4326)
 epicenter <- st_sf(district = c(36), distname = c("Gorkha"), vdc = c("na"), ward = c("na"), geometry = c(epicenter), location = c("epicenter"))
 df.wards <- rbind(df.wards, epicenter)
 
-df.sample <- filter(df.hh, abs(dist_2_seg13) <= 15)
+df.sample <- filter(df.hh, abs(dist_2_seg13) <= 38.6)
 samplewards <- unique(df.sample[,c("district", "vdc", "ward")])
 samplewards <- paste(samplewards$district, samplewards$vdc, samplewards$ward)
 df.wards <- mutate(df.wards, borderward14 = if_else(paste(district, vdc, ward) %in% samplewards, "border vdc", 
@@ -619,8 +626,9 @@ vdcmap <- ggplot() +
         scale_fill_manual(values = c("firebrick1", "cyan2", "grey32")) +
         scale_size_manual(values = c(5,2,2)) +
         scale_shape_manual(values = c(24,21,21)) + 
-        theme_light() + theme(legend.title = element_blank(), axis.text = element_blank()) + xlim(82,88) + ylim(26.4,29)
+        theme_light() + theme(text = element_text(size = 20), legend.title = element_blank(), axis.text = element_blank()) + xlim(82,88) + ylim(26.4,29)
 vdcmap
+ggsave(paste(rootdir, "/presentation_materials/map.png", sep = ""), width = 10, height = 7)
 ```
 ```{r}
 df.RS <- read_csv(paste(rootdir, "/data/remote_sensing/UF1416_masked.csv", sep = "")) %>%

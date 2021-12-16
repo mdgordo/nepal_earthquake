@@ -91,7 +91,7 @@ dfplot <- function(V){
   return(V)
 }
 
-bufferstock <- function(hhid, Vlist){
+bufferstock <- function(hhid, Vlist, df){
   ### pull right parameters
   c = df$food_consumption[df$hhid==hhid]
   mu = df$mu[df$hhid==hhid]
@@ -108,7 +108,7 @@ bufferstock <- function(hhid, Vlist){
   }
   ### pre and post aid buffer stock - aid = 300000?
   bsx_pre = r - df$quake_aid[df$hhid==hhid]
-  bsx_post = r + 50000
+  bsx_post = r + 100000
   bsx_actual = r
   
   ### Calculate counterfactual consumption
@@ -130,11 +130,11 @@ wtp100k <- function(hhid){
   return((mu0 - muprime)/(1 - beta))
 }
 
-wtpcurve <- function(x, mu){
+wtpcurve <- function(x, mu, amt){
   i = which(unlist(lapply(Vlist, function(x) x$mu))==mu)
   Vfx = Vlist[[i]]$Vfx
   V = Vfx(x)
-  val4aid = unlist(lapply(Vlist, function(f) f$Vfx(x+100000)))
+  val4aid = unlist(lapply(Vlist, function(f) f$Vfx(x+amt)))
   vi = which.min(abs(V - val4aid))
   mu0 = exp(mu + (sigma/mu)^2/2)
   muprime = exp(mus[vi] + (sigma/mu)^2/2)

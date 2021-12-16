@@ -11,18 +11,18 @@ df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
 ### parameter vector
 
 ### initial guesses
-gamma0 <- 3
-beta0 <- .95
-R0 <- 1.03
-cbar0 = .5
-lambda0 = .2
-sigma0 = 3.85
+gamma0 <- 2.988
+beta0 <- .9
+R0 <- 1.012
+cbar0 <- .733
+lambda0 <- 1.55
+sigma0 <- .032
 
 theta0 <- c(gamma0, beta0, R0, cbar0, lambda0, sigma0)
 
 u <- function(x, gamma){x^(1-gamma)/(1-gamma)}
 
-aid_amt = 300000
+aid_amt = 100000
 
 ### we want to match on non durable consumption and non transfer income - percapita? - use machine learning? - doing wave 1 at the moment
 df <- filter(df.hh, wave==1 & !is.na(income_gross) & !is.na(age_hh) & !is.na(class5) & !is.na(class10) & !is.na(femalehh) & !is.na(caste_recode))
@@ -36,10 +36,10 @@ df$mu <- round(cissebarret$fitted.values,1)
 ### Moments
 thresholds <- seq(40000, 200000, 20000)
 pdfmoments_t <- c(0, 0, 0, .04, .25, .52, .64, .77, .86)
-pdfmoments_u <- c(0.05, 0.18, 0.32, 0.57, 0.63, 0.79, 0.77, 0.86, 0.92)
+#pdfmoments_u <- c(0.05, 0.18, 0.32, 0.57, 0.63, 0.77, 0.79, 0.86, 0.92)
 mkt_clear <- 0
 
-moments <- c(pdfmoments_t, pdfmoments_u, mkt_clear)
+moments <- c(pdfmoments_t, mkt_clear)
 
 ### Optimization setup
 bellman_operator <- function(grid, w, B, beta, R, y, gamma, cmin){
@@ -116,10 +116,23 @@ bufferstock <- function(hhid, Vlist){
   return(c(cdist_pre, cdist_post, bsx_pre, bsx_post, bsx_actual))
 }
 
+### start with good initial guess
+
+y0 = rlnorm(1000, meanlog = 10.5, sd = sigma0*10.5)
+B0 = -lambda0*mean(y0)
+cmin0 = cbar0*mean(y0)
+xgrid0 <- seq(B0, 10*max(y0), len = 2000)
+v0 <- rep(0, length(xgrid0))
+V0 = VFI(grid = xgrid0, vinit = v0, B = B0, beta = beta0, R = R0, y = y0, 
+        gamma = gamma0, cmin = cmin0)
+Vfx0 = approxfun(xgrid0, V0[,dim(V0)[2]], rule = 2)
+
+rm(y0, B0, cmin0, xgrid0, v0, V0)
 
 ### MSM
 
 msm_func <- function(theta){
+  print(theta)
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; lambda = theta[5]; sigma = theta[6]
   
   Vlist = rep(list(list("mu" = NA, "xgrid" = NA, "Vfx" = NA, "cfx" = NA)), length(unique(df$mu)))
@@ -130,14 +143,14 @@ msm_func <- function(theta){
     Vlist[[i]]$mu = mu
     
     ### productivity draws and lower bound
-    y = rlnorm(1000, meanlog = mu, sd = sigma/mu)
+    y = rlnorm(1000, meanlog = mu, sd = sigma*mu)
     B = -lambda*mean(y)
     cmin = cbar*mean(y)
     
     ### Initial grid and guess
     xgrid <- seq(B, 10*max(y), len = 2000)
     Vlist[[i]]$xgrid = xgrid
-    v0 <- rep(0, length(xgrid))
+    v0 <- Vfx0(xgrid)
     
     ### Solve for value function
     V = VFI(grid = xgrid, vinit = v0, B = B, beta = beta, R = R, y = y, 
@@ -150,26 +163,22 @@ msm_func <- function(theta){
                    B = B, beta = beta, R = R, y = y, gamma = gamma, cmin = cmin, mc.cores = detectCores()-2)
     Vlist[[i]]$cfx = approxfun(xgrid, cfx, rule = 2)
     
-    print(i)
+    #print(i)
     #saveRDS(Vlist, "Vlist.rds")
   }
   
   ### Calculate everyone's buffer stock and counterfactual consumption - 50000 right number to use?
   bsx = mclapply(df$hhid, bufferstock, Vlist, mc.cores = detectCores()-2)
-  cdist_pre = unlist(lapply(bsx, function(x) x[1]))
   cdist_post = unlist(lapply(bsx, function(x) x[2]))
-  bsx_pre = unlist(lapply(bsx, function(x) x[3]))
-  bsx_post = unlist(lapply(bsx, function(x) x[4]))
   bsx_actual = unlist(lapply(bsx, function(x) x[5]))
   
   ### Calculate fraction of hhs under each threshold with and without aid
-  pdf_pre = unlist(lapply(thresholds, function(x) sum(cdist_pre < x)/length(cdist_pre)))
   pdf_post = unlist(lapply(thresholds, function(x) sum(cdist_post < x)/length(cdist_post)))
   
   ### Does market clear? 
   mkt_mod = sum(bsx_actual - df$food_consumption)
   
-  modeledmoments = c(pdf_post, pdf_pre, mkt_mod)
+  modeledmoments = c(pdf_post, mkt_mod)
   g = modeledmoments - moments
   return(g)
 }
@@ -184,9 +193,9 @@ objective <- function(theta) {
 
 nlprob <- OP(F_objective(objective, 6),
              bounds = V_bound(li = c(1,2,3,4,5,6), lb = c(1,.5,1,0,0,0),
-                              ui = c(2,3,4,5), ub = c(1,2,1,1)))
+                              ui = c(2,3,4), ub = c(1,2,1)))
 sol <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = theta0)
 sol
-solution(sol)
-
+thetafin <- solution(sol)
+saveRDS(thetafin, "theta.rds")
 

@@ -2,12 +2,14 @@ library(tidyverse)
 library(parallel)
 
 ### parameters from MSM.R
-gamma <- 4.49
-beta <- .934
-R <- 1.026
-cbar <- .54
-lambda <- .418
-sigma <- 7.418
+theta <- readRDS("/home/mdg59/project/WBHRVS/theta.rds")
+
+gamma <- theta[1]
+beta <- theta[2]
+R <- theta[3]
+cbar <- theta[4]
+lambda <- theta[5]
+sigma <- theta[6]
 
 #df.hh <- read_csv(paste(getwd(), "/full_panel.csv", sep = ""), guess_max = 7500)
 df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
@@ -33,7 +35,7 @@ for (i in c(1:length(mus))){
   Vlist[[i]]$mu = mu
   
   ### productivity draws and lower bound
-  y = rlnorm(1000, meanlog = mu, sd = sigma/mu)
+  y = rlnorm(1000, meanlog = mu, sd = sigma*mu)
   B = -lambda*mean(y)
   cmin = cbar*mean(y)
   
@@ -59,7 +61,7 @@ saveRDS(Vlist, "Vlist.rds")
 
 ### Solve for each hhs buffer stock
 
-bsx = mclapply(df$hhid, bufferstock, Vlist, mc.cores = detectCores()-2)
+bsx = mclapply(df$hhid, bufferstock, Vlist = Vlist, df = df, mc.cores = detectCores()-2)
 cdist_pre = unlist(lapply(bsx, function(x) x[1]))
 cdist_post = unlist(lapply(bsx, function(x) x[2]))
 bsx_pre = unlist(lapply(bsx, function(x) x[3]))
