@@ -8,6 +8,11 @@ library(ROI.plugin.deoptim)
 #df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
 df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
 
+### Functional forms
+source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
+rm(bellman_operator, bellman_operator_BD, bufferstock, dfplot, policyfunc, ROI_setup, VFI, wtp100k, wtpcurve, u)
+
+u <- function(c, h, gamma, alpha){(c^alpha * h^(1-alpha))^(1-gamma)/(1-gamma)}
 ### parameter vector
 
 ### initial guesses
@@ -17,13 +22,15 @@ R0 <- 1.012
 cbar0 <- .733
 lambda0 <- 1.55
 sigma0 <- .032
+alpha0 <- .9
 
-theta0 <- c(gamma0, beta0, R0, cbar0, lambda0, sigma0)
-
-u <- function(x, gamma){x^(1-gamma)/(1-gamma)}
+theta0 <- c(gamma0, beta0, R0, cbar0, lambda0, sigma0, alpha0)
 
 aid_amt = 100000
 
+### State vars
+
+## Permanent income
 ### we want to match on non durable consumption and non transfer income - percapita? - use machine learning? - doing wave 1 at the moment
 df <- filter(df.hh, wave==1 & !is.na(income_gross) & !is.na(age_hh) & !is.na(class5) & !is.na(class10) & !is.na(femalehh) & !is.na(caste_recode))
 cissebarret <- lm(log(income_gross+1) ~ as.factor(caste_recode) + poly(age_hh, 2) + femalehh + class5 + class10 +
@@ -32,6 +39,9 @@ cissebarret <- lm(log(income_gross+1) ~ as.factor(caste_recode) + poly(age_hh, 2
 
 ### coarsen for feasibility
 df$mu <- round(cissebarret$fitted.values,1)
+
+## Housing - do I want to do a regression here on housing characteristics?
+
 
 ### Moments
 thresholds <- seq(40000, 200000, 20000)
@@ -42,26 +52,71 @@ mkt_clear <- 0
 moments <- c(pdfmoments_t, mkt_clear)
 
 ### Optimization setup
-bellman_operator <- function(grid, w, B, beta, R, y, gamma, cmin){
-  Valfunc = approxfun(grid, w, rule = 2)
-  optimizer <- function(x){
+beta = beta0; R = R0; gamma=gamma0; alpha=alpha0; sigma = sigma0; lambda = lambda0; cbar = cbar0
+ygrid = sort(unique(df$mu))
+hgrid = sort(unique(df$home_value)) + 1
+yveclist = lapply(ygrid, function(y) rlnorm(1000, meanlog = y, sd = sigma*y))
+Blist = lapply(yveclist, function(yvec) -lambda*mean(yvec))
+cminlist = lapply(yveclist, function(yvec) cbar*mean(yvec))
+xgridlist <- lapply(yveclist, function(yvec) seq(-lambda*mean(yvec), 10*max(yvec), len = 300))
+w = array(0, dim = c(length(hgrid), 300, length(ygrid)))
+
+bellman_operator <- function(xgridlist, yveclist, ygrid, hgrid, w, Blist, beta, R, gamma, alpha, cminlist, sigma){
+  optimizer <- function(x, h, yvec, Valfunc, B, cmin){
     if (x-B <= cmin) {
-      return(u(cmin, gamma) + beta*Valfunc(B))
+      return(u(cmin, h, gamma, alpha) + beta*Valfunc(B, h))
     } else {
-      objective <- function(c) {
-        xtplus1 = R*(x - c) + y
-        xtplus1 = if_else(xtplus1<B, B, xtplus1)
-        r = u(c, gamma) + beta*mean(Valfunc(xtplus1))
+      hhprob = function(ci) {
+        c = ci[1]
+        i = ci[2]
+        xtplus1 = R*(x - c - i) + yvec
+        xtplus1[xtplus1<B] = B
+        hp = h + i
+        r = u(c, hp, gamma, alpha) + beta*mean(Valfunc(xtplus1, rep(hp, length(xtplus1))))
         return(r)
       }
-      l <- optimize(objective, interval = c(cmin, x - B), maximum = TRUE)
-      return(l$objective)
+      constraint = function(ci){
+        c <- ci[1]
+        i <- ci[2]
+        return(x - c - i - B)
+      }
+      nlprob = OP(F_objective(hhprob, 2),
+                   F_constraint(constraint, dir = ">=", rhs = 0),
+                   maximum = TRUE,
+                   bounds = V_bound(li = c(1,2), lb = c(cmin,0),
+                                    ui = c(1,2), ub = c(x-B, x-B)))
+      ROI_solve(nlprob, solver = "nloptr.cobyla", start = c(cmin + 1, 1))
+      return(r$objval)
     }
   }
-  Tw = rep(NA, length(grid))
-  Tw = mclapply(grid, optimizer, mc.cores = detectCores()-2)
+  for (j in c(1:length(ygrid))) {
+    yvec = yveclist[[j]]
+    B = Blist[[j]]
+    cmin = cminlist[[j]]
+    xgrid = xgridlist[[j]]
+    Valfunc = approxfun2(xgrid, hgrid, w[,,j])
+    for (i in c(1:length(hgrid))) {
+      Tw = mclapply(xgrid, optimizer, h = hgrid[i], yvec = yvec, Valfunc = Valfunc, B = B, cmin = cmin, mc.cores = detectCores()-2)
+    }
+  }
+  ### ORRR - but this doesn't seem to make a difference. cobyla fastest solver, tolerance doesn't seem to matter, parallelize multiple levels?
+  hfunc = function(h, yvec, Valfunc, xgrid, B, cmin){
+    Tw = mclapply(xgrid, optimizer, h = h, yvec = yvec, Valfunc = Valfunc, B = B, cmin = cmin, mc.cores = detectCores()-2)
+    return(unlist(Tw))
+  }
+  yfunc = function(mu){
+    yvec = 
+    B = 
+    cmin = 
+    xgrid = 
+    Valfunc = approxfun2(xgrid, hgrid, w[,,which(ygrid == mu)])
+    Twh = lapply(hgrid, hfunc, yvec = yvec, B = B, cmin = cmin, Valfunc = Valfunc, xgrid = xgrid)
+    return(Twh)
+  }
+  Twy = lapply(ygrid[1:3], yfunc)
   return(unlist(Tw))
 }
+
 
 VFI <- function(grid, vinit, tol = 1e-30, maxiter = 50, B, beta, R, y, gamma, cmin){
   w = matrix(0, length(grid), 1)
