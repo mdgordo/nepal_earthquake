@@ -5,8 +5,8 @@ library(ROI.plugin.alabama)
 library(ROI.plugin.nloptr)
 library(ROI.plugin.deoptim)
 
-#df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
-df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
+df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
+#df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
 
 ### Functional forms
 source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
@@ -55,11 +55,7 @@ moments <- c(pdfmoments_t, mkt_clear)
 beta = beta0; R = R0; gamma=gamma0; alpha=alpha0; sigma = sigma0; lambda = lambda0; cbar = cbar0
 ygrid = sort(unique(df$mu))
 hgrid = sort(unique(df$home_value)) + 1
-yveclist = lapply(ygrid, function(y) rlnorm(1000, meanlog = y, sd = sigma*y))
-Blist = lapply(yveclist, function(yvec) -lambda*mean(yvec))
-cminlist = lapply(yveclist, function(yvec) cbar*mean(yvec))
-xgridlist <- lapply(yveclist, function(yvec) seq(-lambda*mean(yvec), 10*max(yvec), len = 300))
-w = array(0, dim = c(length(hgrid), 300, length(ygrid)))
+v0 = array(0, dim = c(length(hgrid), 300, length(ygrid)))
 
 bellman_operator <- function(xgridlist, yveclist, ygrid, hgrid, w, Blist, beta, R, gamma, alpha, cminlist, sigma){
   optimizer <- function(x, h, yvec, Valfunc, B, cmin){
@@ -85,52 +81,48 @@ bellman_operator <- function(xgridlist, yveclist, ygrid, hgrid, w, Blist, beta, 
                    maximum = TRUE,
                    bounds = V_bound(li = c(1,2), lb = c(cmin,0),
                                     ui = c(1,2), ub = c(x-B, x-B)))
-      ROI_solve(nlprob, solver = "nloptr.cobyla", start = c(cmin + 1, 1))
-      return(r$objval)
+      rsol = ROI_solve(nlprob, solver = "nloptr.cobyla", start = c(cmin + 1, 1))
+      return(rsol$objval)
     }
   }
+  
+  wp = vector(mode = "list", length = length(ygrid))
+  
   for (j in c(1:length(ygrid))) {
     yvec = yveclist[[j]]
     B = Blist[[j]]
     cmin = cminlist[[j]]
     xgrid = xgridlist[[j]]
     Valfunc = approxfun2(xgrid, hgrid, w[,,j])
-    for (i in c(1:length(hgrid))) {
-      Tw = mclapply(xgrid, optimizer, h = hgrid[i], yvec = yvec, Valfunc = Valfunc, B = B, cmin = cmin, mc.cores = detectCores()-2)
-    }
+    xhcross = crossing(x = xgrid, h = hgrid)
+    xhcross$Tw = mcmapply(optimizer, x = xhcross$x, h = xhcross$h, yvec = list(yvec), 
+                  Valfunc = list(Valfunc), B = list(B), cmin = list(cmin), mc.cores = detectCores()-2)
+    wp[[j]] = as.matrix(pivot_wider(xhcross, id_cols = x, names_from = h, values_from = Tw) %>% 
+            column_to_rownames(var="x"))
+    
   }
-  ### ORRR - but this doesn't seem to make a difference. cobyla fastest solver, tolerance doesn't seem to matter, parallelize multiple levels?
-  hfunc = function(h, yvec, Valfunc, xgrid, B, cmin){
-    Tw = mclapply(xgrid, optimizer, h = h, yvec = yvec, Valfunc = Valfunc, B = B, cmin = cmin, mc.cores = detectCores()-2)
-    return(unlist(Tw))
-  }
-  yfunc = function(mu){
-    yvec = 
-    B = 
-    cmin = 
-    xgrid = 
-    Valfunc = approxfun2(xgrid, hgrid, w[,,which(ygrid == mu)])
-    Twh = lapply(hgrid, hfunc, yvec = yvec, B = B, cmin = cmin, Valfunc = Valfunc, xgrid = xgrid)
-    return(Twh)
-  }
-  Twy = lapply(ygrid[1:3], yfunc)
-  return(unlist(Tw))
+  wp = abind(wp, along = 3)
+  return(wp)
 }
 
 
-VFI <- function(grid, vinit, tol = 1e-30, maxiter = 50, B, beta, R, y, gamma, cmin){
-  w = matrix(0, length(grid), 1)
-  w[,1] = vinit
-  d = 1
-  i = 2
+VFI <- function(ygrid, hgrid, vinit, tol = 1e-30, maxiter = 50, beta, R, gamma, alpha, sigma){
+  yveclist = lapply(ygrid, function(y) rlnorm(1000, meanlog = y, sd = sigma*y))
+  Blist = lapply(yveclist, function(yvec) -lambda*mean(yvec))
+  cminlist = lapply(yveclist, function(yvec) cbar*mean(yvec))
+  xgridlist <- lapply(yveclist, function(yvec) seq(-lambda*mean(yvec), 10*max(yvec), len = 300))
+  w = vector(mode = "list", length = maxiter-1)
+  w[[1]] = vinit
+  d = 1; i = 2
   while (d > tol & i < maxiter){
-    w = cbind(w, rep(0, length(grid)))
-    w[,i] = bellman_operator(grid, w[,i-1], B, beta, R, y, gamma, cmin)
-    d = sqrt(sum((w[,i] - w[,i-1])^2))
+    w[[i]] = bellman_operator(xgridlist, yveclist, ygrid, hgrid, w[[i-1]], Blist, cminlist, beta, R, gamma, alpha, sigma)
+    d = sqrt(sum((w[[i]] - w[[i-1]])^2))
     i = i+1
   }
-  return(w)
+  return(pylr::compact(w))
 }
+
+VFI(ygrid, hgrid, v0, tol = 1e-30, maxiter = 3, beta, gamma, R, alpha, sigma)
 
 policyfunc <- function(x, Vfx, B, beta, R, y, gamma, cmin){
   if (x - B <= cmin) {return(cmin)} else{

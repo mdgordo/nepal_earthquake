@@ -12,7 +12,7 @@ rootdir <- dirname(getwd())
 
 ### Load packages and data
 
-```{r, message=FALSE, echo=FALSE, warning=FALSE}
+```{r, messages=FALSE, echo=FALSE, warnings=FALSE}
 library(tidyverse)
 library(sf)
 library(lfe)
@@ -156,45 +156,30 @@ risksharing_r1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gr
 
 mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_r1)
 
-stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include household and village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
 
 weighted.mean(df.hh$remittance_income[df.hh$femalehh==1]>0, df.hh$wt_hh[df.hh$femalehh==1], na.rm = TRUE)
 weighted.mean(df.hh$remittance_income[df.hh$femalehh==0]>0, df.hh$wt_hh[df.hh$femalehh==0], na.rm = TRUE)
 ```
 
-
-### Transfers and targetting
+### Cyclicality - ways of smoothing- HH FE
+Interestingly, more likely to sell livestock than buy in a good year, but must be investing in other assets
 
 ```{r}
 pubtransreg <- felm(log(pub_transfers + 1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-pubtransregvdc <- felm(log(pub_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
 inftransreg <- felm(log(inf_transfers + 1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-inftransregvdc <- felm(log(inf_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
 aidreg <- felm(log(quake_aid + 1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-aidregvdc <- felm(log(quake_aid + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
 ngoreg <- felm(log(NGO_transfers + 1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-ngoregvdc <- felm(log(NGO_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
 migreg <- felm(log(migrants_past_year+1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-migregvdc <- felm(log(migrants_past_year+1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
 remreg2 <- felm(log(remittance_income + 1) ~ log(income_gross) + log(lag_remitt + 1) | as.factor(hhid) | 0 | strata,
@@ -203,24 +188,159 @@ remreg2 <- felm(log(remittance_income + 1) ~ log(income_gross) + log(lag_remitt 
 loanreg2 <- felm(log(loans_taken_past_year + 1) ~ log(income_gross) + log(lag_loan + 1) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
+livereg2 <- felm(log(productive_assets+1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(aidreg, pubtransreg, inftransreg, ngoreg, remreg2, migreg, loanreg2, livereg2)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Household", 8)),
+                           c("Cluster", rep("Ward", 8))))
+```
+
+### Progressivity - Income - VDC-YR FE
+
+```{r}
+pubtransregvdc <- felm(log(pub_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+inftransregvdc <- felm(log(inf_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+aidregvdc <- felm(log(quake_aid + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+ngoregvdc <- felm(log(NGO_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+migregvdc <- felm(log(migrants_past_year+1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
 remregvdc <- felm(log(remittance_income + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
 loanregvdc <- felm(log(loans_taken_past_year+1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-mods1 <- list(aidreg, pubtransreg, inftransreg, ngoreg, remreg2, migreg, loanreg2)
+livereg <- felm(log(productive_assets + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
 
-stargazer(mods1, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
-          add.lines = list(c("Fixed Effects", rep("Household", 7)),
-                           c("Cluster", rep("Ward", 7))))
+mods <- list(aidregvdc, pubtransregvdc, inftransregvdc, ngoregvdc, remregvdc, migregvdc, loanregvdc, livereg)
 
-mods2 <- list(aidregvdc, pubtransregvdc, inftransregvdc, ngoregvdc, remregvdc, migregvdc, loanregvdc)
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
+                           c("Cluster", rep("Ward", 8))))
+```
 
-stargazer(mods2, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
-          add.lines = list(c("Fixed Effects", rep("Village-Year", 7)),
-                           c("Cluster", rep("Ward", 7))))
+### Progressivity - Consumption - VDC-YR FE
+Obviously could be reverse causal, but within a village year - high consumption/income correlated with aid received
 
+```{r}
+cpubtransregvdc <- felm(log(pub_transfers + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cinftransregvdc <- felm(log(inf_transfers + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+caidregvdc <- felm(log(quake_aid + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cngoregvdc <- felm(log(NGO_transfers + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cmigregvdc <- felm(log(migrants_past_year+1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cremregvdc <- felm(log(remittance_income + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cloanregvdc <- felm(log(loans_taken_past_year+1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cliveregvdc <- felm(log(productive_assets+1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(caidregvdc, cpubtransregvdc, cinftransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc, cliveregvdc)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
+                           c("Cluster", rep("Ward", 8))))
+```
+
+### Determinants of Damages - VDC FE control for shaking
+Supplement with Eq survey analysis
+Damages uncorrelated with assets/home materials, but positive correlation with consumption - is this bc aid went to richer hhs or bc aid increased consumption
+
+```{r}
+pdam1 <- felm(log(gorkha_loss_ever+1) ~ log(durables_stock+1)
+                        | as.factor(vdc) | 0 | strata,
+                    data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
+
+pdam2 <- felm(log(gorkha_loss_ever+1) ~ n_rooms
+                       | as.factor(vdc) | 0 | strata,
+                    data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
+
+pdam3 <- felm(log(gorkha_loss_ever+1) ~ iron_cement_roof
+                       | as.factor(vdc) | 0 | strata,
+                    data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
+
+pdam4 <- felm(log(gorkha_loss_ever+1) ~ cement_walls
+                        | as.factor(vdc) | 0 | strata,
+                    data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
+
+pdam5 <- felm(log(gorkha_loss_ever+1) ~ land_qtle
+                        | as.factor(vdc) | 0 | strata,
+                    data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
+
+pdam6 <- felm(log(gorkha_loss_ever+1) ~ log(asset_stock+1)
+                       | as.factor(vdc) | 0 | strata,
+                    data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
+
+pdam7 <- felm(log(gorkha_loss_ever+1) ~ log(productive_assets+1)
+                       | as.factor(vdc) | 0 | strata,
+                    data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
+
+pdam8 <- felm(log(gorkha_loss_ever+1) ~ log(consumption)
+                       | as.factor(vdc) | 0 | strata,
+                    data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
+
+mods <- list(pdam2, pdam3, pdam4, pdam5, pdam6, pdam7, pdam1, pdam8)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          notes = c("All regressions include village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
+```
+
+### Probability of Getting aid
+VDC-yr FE - wave of aid and earthquake shaking constant
+
+```{r}
+paid1 <- felm(received_aid ~ log(gorkha_loss_ever+1)
+                        | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+paid2 <- felm(received_aid ~ log(gorkha_loss_ever+1) + caste_recode
+                       | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+paid3 <- felm(received_aid ~ log(gorkha_loss_ever+1) + femalehh
+                        | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+paid4 <- felm(received_aid ~ log(gorkha_loss_ever+1) + land_qtle
+                       | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+paid5 <- felm(received_aid ~ log(gorkha_loss_ever+1) + log(consumption)
+                       | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(paid1, paid2, paid3, paid4, paid5)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          notes = c("All regressions include village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
+
+weighted.mean(df.hh$received_aid[df.hh$gorkha_loss_ever>0], df.hh$wt_hh[df.hh$gorkha_loss_ever>0], na.rm = TRUE)
+weighted.mean(df.hh$received_aid[df.hh$gorkha_loss_ever==0], df.hh$wt_hh[df.hh$gorkha_loss_ever==0], na.rm = TRUE)
 ```
 
 ### sources of income

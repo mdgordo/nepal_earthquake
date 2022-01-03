@@ -286,8 +286,10 @@ for (i in c(1:3)) {
       df.housing <- df.hrvs_4 %>% 
               mutate(utilities = rowSums(.[,c("s04q21", "s04q23")], na.rm = TRUE) + 12*s04q24b,
                      steep_slope = if_else(s04q01==3, 1, 0),
-                     unimproved_roof = if_else(s04q17 %in% c(1, 2, 8), 1, 0),
-                     unimproved_walls = if_else(s04q15 %in% c(2, 4, 6, 7), 1, 0)) %>%
+                     home_sqft = s04q13*s04q14*s04q02,
+                     cement_walls = if_else(s04q15==1,1,0),
+                     cement_foundation = if_else(s04q16==2,1,0),
+                     iron_cement_roof = if_else(s04q17 %in% c(4,5,6),1,0)) %>%
               group_by(hhid) %>%
               summarize(always_lived_house = sum(s04q09a==1, na.rm = TRUE),
                         always_lived_vdc = sum(s04q09b!=2, na.rm = TRUE),
@@ -299,11 +301,16 @@ for (i in c(1:3)) {
                         utilities_paid = sum(utilities, na.rm = TRUE),
                         steep_slope = sum(steep_slope, na.rm = TRUE), 
                         walls = sum(s04q15, na.rm = TRUE),
-                        temp_earth_housing = if_else(unimproved_roof==1 | unimproved_walls==1, 1, 0), 
                         foundation = sum(s04q16, na.rm = TRUE),
                         roof = sum(s04q17, na.rm = TRUE),
+                        cement_walls = sum(cement_walls, na.rm = TRUE),
+                        cement_foundation = sum(cement_foundation, na.rm = TRUE),
+                        iron_cement_roof = sum(iron_cement_roof, na.rm = TRUE),
                         fuel = sum(s04q25, na.rm = TRUE),
                         stove = sum(s04q26, na.rm = TRUE),
+                        n_floors = sum(s04q02, na.rm = TRUE),
+                        n_rooms = sum(s04q08, na.rm = TRUE),
+                        home_sqft = sum(home_sqft, na.rm = TRUE),
                         time_to_market = sum(time_to_market, na.rm = TRUE),
                         time_to_bank = sum(time_to_bank, na.rm = TRUE),
                         time_to_school = sum(time_to_school, na.rm = TRUE),
@@ -844,7 +851,7 @@ for (i in c(1:3)) {
                      job_default_losses = if_else(shockid %in% c("Loss of a regular job of a household member", "Failure or bankruptcy",
                                                                     "Loss of contract or default by creditor", "Withdrawal of government assistance"),s15q03,0),
                      job_default_shock = if_else(shockid %in% c("Loss of a regular job of a household member", "Failure or bankruptcy",
-                                                                   "Loss of contract or default by creditor", "Withdrawal of government assistance"),1,0),,
+                                                                   "Loss of contract or default by creditor", "Withdrawal of government assistance"),1,0),
                      violence_losses = if_else(shockid %in% c("Forced Displacement", "Theft"),s15q03,0),
                      violence_shock = if_else(shockid %in% c("Forced Displacement", "Theft"),1,0),
                      other_nat_disaster_losses = if_else(shockid %in% c("Hail/Lightening", "Flood", "Fire", "Drought"),s15q03,0),
@@ -932,6 +939,7 @@ for (i in c(1:3)) {
                       investments = land_purchased + business_investment + livestock_purchases + equip_purchases,
                       asset_sales = land_sales + business_asset_sales + livestock_sales + equip_sales,
                       net_asset_investment = investments - asset_sales,
+                      net_livestock_sales = livestock_sales - livestock_purchases,
                       net_loans = loans_taken_past_year - loans_made_past_year,
                       net_loan_payments = loan_payments - loan_payments_received,
                       prev_loans = prev_loans_taken - prev_loans_made,
@@ -955,6 +963,8 @@ for (i in c(1:3)) {
       rm(df.hh, path)
       setwd("..")
 }
+
+## Total loans, total remittances, hh size vars
 
 setwd("..")
 setwd("processed")
@@ -988,10 +998,12 @@ df.aid <- df.hh %>% arrange(wave) %>%
   summarize(aid_total = sum(quake_aid),
           var_cons = var(log(consumption)),
           avg_cons = mean(log(consumption)),
-          avg_land = mean(landvalue),
           var_cons_pc = var(log(consumption_pc)),
           avg_cons_pc = mean(log(consumption_pc)),
-          gorkha_loss_ever = sum(gorkha_loss))
+          gorkha_loss_ever = sum(gorkha_loss),
+          total_remit = sum(remittance_income), 
+          total_loans_taken = sum(loans_taken_past_year),
+          avg_land = mean(landvalue))
 
 df.ward_losses <- df.hh %>% 
   group_by(district, vdc, ward) %>%

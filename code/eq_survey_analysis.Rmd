@@ -1,0 +1,136 @@
+---
+title: "EQ survey analysis"
+author: "Matthew Gordon"
+date: "1/3/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+rootdir <- dirname(getwd())
+```
+
+### Load packages and data
+Data source: https://eq2015.npc.gov.np/#/
+
+```{r, messages=FALSE, echo=FALSE, warnings=FALSE}
+library(tidyverse)
+library(lfe)
+library(stargazer)
+library(sandwich)
+
+df.bldg <- read_csv(paste(rootdir, "/data/earthquake_survey/csv_building_structure.csv", sep = ""), guess_max = 7500)
+df.hh1 <- read_csv(paste(rootdir, "/data/earthquake_survey/csv_household_demographics.csv", sep = ""), guess_max = 7500)
+df.hh2 <- read_csv(paste(rootdir, "/data/earthquake_survey/csv_household_earthquake_impact.csv", sep = ""), guess_max = 7500)
+df.hh3 <- read_csv(paste(rootdir, "/data/earthquake_survey/csv_household_resources.csv", sep = ""), guess_max = 7500)
+df.indiv1 <- read_csv(paste(rootdir, "/data/earthquake_survey/csv_individual_demographics.csv", sep = ""), guess_max = 7500)
+df.indiv2 <- read_csv(paste(rootdir, "/data/earthquake_survey/csv_individual_social_security.csv", sep = ""), guess_max = 7500)
+df.map <- read_csv(paste(rootdir, "/data/earthquake_survey/mapping.csv", sep = ""), guess_max = 7500)
+```
+
+### Preprocessing
+
+```{r}
+df.eqsvy <- merge(df.indiv1, df.map, by = "individual_id") %>%
+  mutate(migrant = if_else(presence_in_household!="Mostly Present",1,0)) %>%
+  group_by(household_id) %>%
+  summarize(migrants = sum(migrant, na.rm = TRUE)) %>%
+  mutate(has_migrant = if_else(migrants>0,1,0))
+
+df.indiv2 <- merge(df.indiv2, df.map, by = "individual_id") %>%
+  mutate(socialsecurity = if_else(rowSums(.[,c(5:11)])>0,1,0)) %>%
+  group_by(household_id) %>%
+  summarize(socialsecurity = sum(socialsecurity, na.rm = TRUE)) %>%
+  mutate(socialsecurity = if_else(socialsecurity>0,1,0))
+
+df.eqsvy <- merge(df.eqsvy, df.indiv2, by = "household_id") %>%
+  merge(df.hh1, by = c("household_id")) %>%
+  merge(df.hh2, by = c("household_id", "district_id", "vdcmun_id", "ward_id")) %>%
+  merge(df.hh3, by = c("household_id", "district_id", "vdcmun_id", "ward_id"))
+
+df.eqsvy <- merge(df.eqsvy, unique(df.map[,c(2:3)]), by = "household_id") %>%
+  merge(df.bldg, by = c("building_id", "district_id", "vdcmun_id", "ward_id")) 
+
+df.eqsvy <- df.eqsvy %>%
+  mutate(aid_eligible = if_else(damage_grade %in% c("Grade 4", "Grade 5"),1,0),
+         tot_sqft = plinth_area_sq_ft*count_floors_pre_eq,
+         caste_recode = if_else(caste_household %in% c("Brahman-Hill", "Brahman-Tarai", "Brahmu/Baramo", "Chhetree", "Kayastha", "Rajput", "Sanyasi/Dashnami", "Thakuri"),
+                                "High Caste", if_else(caste_household=="Newar", "Newar", "Other")),
+         education_recode = if_else(education_level_household_head %in% 
+                                      c("SLC or equivalent", "Bachelors or equivalent", "Masters or equivalent", "Ph.D. or equivalent"), "Finished High School", 
+                                    if_else(education_level_household_head %in% 
+                                              c("Illiterate", "Non-formal education", "Other", "Nursery/K.G./Kindergarten", "Class 1", "Class 2", "Class 3"), 
+                                            "Elementary or Less", "Some Middle/High")),
+         death_injury = if_else(has_death_occurred_last_12_months + has_injury_loss_occurred_last_12_months>0,1,0))
+
+rm(df.hh1, df.hh2, df.hh3, df.indiv2, df.indiv1, df.bldg, df.map)
+```
+
+### Predictors of Damage - Bamboo/Timber is excluded category
+
+```{r}
+pdam1 <- felm(aid_eligible ~ as.factor(foundation_type) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam2 <- felm(aid_eligible ~ as.factor(roof_type) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam3 <- felm(aid_eligible ~ tot_sqft | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam4 <- felm(aid_eligible ~ death_injury | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+mods <- list(pdam1, pdam2, pdam3, pdam4)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          notes = c("All regressions include vdc fixed effects"), notes.align = "l")
+```
+
+### Asset vars - < 10k excluded cat
+
+```{r}
+pdam1 <- felm(aid_eligible ~ as.factor(has_asset_tv_pre_eq) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam5 <- felm(aid_eligible ~ as.factor(has_asset_mobile_phone_pre_eq) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam2 <- felm(aid_eligible ~ as.factor(has_asset_land_pre_eq) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam3 <- felm(aid_eligible ~ as.factor(income_level_household) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam4 <- felm(aid_eligible ~ as.factor(is_bank_account_present_in_household) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+mods <- list(pdam1, pdam5, pdam2, pdam3, pdam4)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          notes = c("All regressions include vdc fixed effects"), notes.align = "l")
+```
+
+### Demographics
+
+```{r}
+pdam1 <- felm(aid_eligible ~ has_migrant | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam2 <- felm(aid_eligible ~ socialsecurity | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam3 <- felm(aid_eligible ~ as.factor(gender_household_head) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam4 <- felm(aid_eligible ~ as.factor(education_recode) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+pdam5 <- felm(aid_eligible ~ as.factor(caste_recode) | as.factor(vdcmun_id),
+                    data = df.eqsvy)
+
+mods <- list(pdam1, pdam2, pdam3, pdam4, pdam5)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          notes = c("All regressions include vdc fixed effects"), notes.align = "l")
+```
