@@ -1000,7 +1000,7 @@ df.aid <- df.hh %>% arrange(wave) %>%
           avg_cons = mean(log(consumption)),
           var_cons_pc = var(log(consumption_pc)),
           avg_cons_pc = mean(log(consumption_pc)),
-          gorkha_loss_ever = sum(gorkha_loss),
+          gorkha_loss_ever = sum(gorkha_loss_amt),
           total_remit = sum(remittance_income), 
           total_loans_taken = sum(loans_taken_past_year),
           avg_land = mean(landvalue))
@@ -1013,6 +1013,7 @@ df.ward_losses <- df.hh %>%
 df.hh <- merge(df.hh, df.ward_losses, by = c("district", "vdc", "ward"))
 df.hh <- merge(df.hh, df.aid, by = "hhid") %>%
   mutate(received_aid = if_else(aid_total>0, 1, 0),
+         gorkha_hh = if_else(gorkha_loss_ever>0, 1, 0),
          caste_yr = paste(ethnicity, wave, sep = "_"),
          vdc_yr = paste(vdc, wave, sep = "_"),
          cons_shock = consumption - avg_cons) %>%

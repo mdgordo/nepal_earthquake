@@ -1,6 +1,7 @@
 ### RD functions
 
-plotvar <- function(v, b, df, h=40, ihs=FALSE, span = 1, k = "epanechnikov", weights = TRUE, donut = 0) {
+plotvar <- function(v, b, df, h=20, ihs=FALSE, span = 1, k = "epanechnikov", weights = TRUE, donut = 0, dist.exclude=NULL) {
+  if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
   df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "shake_pga", "wave")]
   df <- filter(df, abs(get(b))<h & complete.cases(df) & abs(get(b))>donut)
   Y <- unlist(df[, v])
@@ -28,8 +29,9 @@ plotvar <- function(v, b, df, h=40, ihs=FALSE, span = 1, k = "epanechnikov", wei
   return(r$rdplot)
 }
 
-histfunc <- function(b, df, h=40){
+histfunc <- function(b, df, h=40, dist.exclude=NULL){
   df <- filter(df, abs(get(b))<h)
+  if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
   X <- unlist(df[, b])
   W <- df$wt_hh
   freqdf <- aggregate(x = list(Freq = W), by = list(X = X), FUN = sum)
@@ -40,8 +42,9 @@ histfunc <- function(b, df, h=40){
     theme_light() + labs(y = "weighted count", x = paste("distance to ", b))
 }
 
-regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1"){
+regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL){
   if (donut!=0) df <- filter(df, abs(get(b))>donut)
+  if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
   if (vce=="nn") c <- NULL else c <- df$strata
   if (fuzzy==TRUE) f <- df$aid_cumulative_bin else if (fuzzy==FALSE) f <- NULL else if (fuzzy=="inv") f <- 1-df$aid_cumulative_bin else f <- unlist(df[, fuzzy])
   if (!is.null(h) & is.null(b0)) b0 <- 2*h
@@ -62,8 +65,9 @@ regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, k 
   return(out)
 }
 
-optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1"){
+optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL){
   if (donut!=0) df <- filter(df, abs(get(b))>donut)
+  if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
   if (vce=="nn") c <- NULL else c <- df$strata
   Y <- unlist(df[, v])
   X <- unlist(df[, b])
@@ -101,10 +105,10 @@ rdgazer <- function(rdlist, dvlabs = NULL, xlines = NULL, se_r = "Robust", type 
                                     c("Bandwidth", bw)), xlines), ...)
 }
 
-qplot <- function(qvar){
-  qcovs <- model.matrix(~as.factor(df.hh$border_segment13)+as.factor(df.hh$border_segment13)*df.hh$dist_2_seg13 + df.hh$shake_pga + as.factor(df.hh$wave))[,-c(1,3)]
-  y <- unlist(df.hh[,qvar])
-  qtab <- rdquant(Y = y, x = df.hh$dist_2_seg13, c = 0, fuzzy = df.hh$aid_cumulative_bin, weights = df.hh$wt_hh, cluster = df.hh$strata, 
+qplot <- function(qvar, df){
+  qcovs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + df$shake_pga + as.factor(df$wave))[,-c(1,3)]
+  y <- unlist(df[,qvar])
+  qtab <- rdquant(Y = y, x = df$dist_2_seg13, c = 0, fuzzy = df$aid_cumulative_bin, weights = df$wt_hh, cluster = df$strata, 
                   vce = "hc3", covs = qcovs, kernel = "epanechnikov", h = h0, b = b0)
   qtiles <- quantile(y, seq(.1, .9, .1), na.rm = TRUE)
   
@@ -119,10 +123,10 @@ qplot <- function(qvar){
     theme_bw() + labs(x = qvar, y = "P(X < x)", fill = "Received Aid", color = "Received Aid")
 }
 
-cutvars <- function(cutpt, var){
-  ct = ifelse(df.hh[, var] < cutpt & df.hh$aid_cumulative_bin==1, 1, 0)
-  cu = ifelse(df.hh[, var] < cutpt & df.hh$aid_cumulative_bin==0, 1, 0)
-  c = ifelse(df.hh[, var] < cutpt, 1, 0)
+cutvars <- function(cutpt, var, df){
+  ct = ifelse(df[, var] < cutpt & df$aid_cumulative_bin==1, 1, 0)
+  cu = ifelse(df[, var] < cutpt & df$aid_cumulative_bin==0, 1, 0)
+  c = ifelse(df[, var] < cutpt, 1, 0)
   df <- cbind(ct, cu, c)
   colnames(df) <- paste(c("t", "u", "c"), cutpt, sep = "")
   return(df)

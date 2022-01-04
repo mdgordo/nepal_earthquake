@@ -28,47 +28,29 @@ library(readstata13)
 library(dumbells)
 
 df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
+df <- filter(df.hh, !is.na(income_gross) & income_gross>0 & food_consumption>0)
 ```
 
 #### Summary Stats
 
 ```{r}
-df <- df.hh[,c("consumption", "food_consumption", "income_gross", "productive_assets",
+dfsum <- df[,c("consumption", "food_consumption", "income_gross", "productive_assets",
               "loans_taken_past_year", "loans_made_past_year", "remittance_income",
               "currentlyliving", "n_migrants", "skipped_meal", "aid_cumulative", "received_aid", 
-              "NGO_transfers", "pub_transfers", "inf_transfers", "gorkha_loss_ever")]
+              "NGO_transfers", "pub_transfers", "inf_transfers", "gorkha_hh")]
 
-xtabwts <- sumstats.wtd(df, df.hh$wt_hh, d = 2, labs = c("Consumption", "Food Consumption", "Income", "Productive Assets", "Loans Taken Past Year",
+xtabwts <- sumstats.wtd(dfsum, df$wt_hh, d = 2, labs = c("Consumption", "Food Consumption", "Income", "Productive Assets", "Loans Taken Past Year",
                               "Loans Made Past Year", "Remittance Income", "Household Members", "Connected Migrants", "Skipped Meal(%)",
                               "Earthquake Aid", "Earthquake Aid(%)", "NGO Aid", 
                               "Public Transfers", "Informal Transfers", "Affected by Earthquake"))
 print(xtabwts, include.rownames = FALSE)
 
-weighted.mean(df.hh$n_migrants > 0, df.hh$wt_hh)
-weighted.mean(df.hh$migrants_overseas, df.hh$wt_hh)/weighted.mean(df.hh$n_migrants, df.hh$wt_hh)
-weighted.mean(df.hh$migrants_past_year, df.hh$wt_hh)/weighted.mean(df.hh$n_migrants, df.hh$wt_hh)
+weighted.mean(df$n_migrants > 0, df$wt_hh)
+weighted.mean(df$migrants_overseas, df$wt_hh)/weighted.mean(df$n_migrants, df$wt_hh)
+weighted.mean(df$migrants_past_year, df$wt_hh)/weighted.mean(df$n_migrants, df$wt_hh)
 ```
 
 ```{r}
-ggplot(df.hh) +
-  geom_histogram(aes(x = log(consumption) - avg_cons), bins = 1000)
-
-ggplot(df.hh) +
-  geom_point(aes(x = avg_cons, y = var_cons))
-
-ggplot(df.hh) +
-  geom_point(aes(x = ihs(income_gross), y = log(food_consumption)))
-
-ggplot() +
-  geom_density(data = filter(df.hh, high_caste==1), aes(x = avg_cons, weight = wt_hh), fill = "red", position = "identity", bins = 100, alpha = .3) + 
-  geom_density(data = filter(df.hh, high_caste==0), aes(x = avg_cons, weight = wt_hh), fill = "blue", position = "identity", bins = 100, alpha = .3) +
-  xlim(8,15)
-
-ggplot() +
-  geom_density(data = filter(df.hh, high_caste==1, wave==1), aes(x = income, weight = wt_hh), fill = "red", position = "identity", bins = 100, alpha = .3) + 
-  geom_density(data = filter(df.hh, high_caste==0, wave==1), aes(x = income, weight = wt_hh), fill = "blue", position = "identity", bins = 100, alpha = .3) +
-  xlim(0, 1000000)
-
 aidtab <- df.hh %>%
   group_by(wave, quake_aid) %>%
   summarize(n = n())
@@ -81,55 +63,8 @@ ggsave(paste(rootdir, "/presentation_materials/aid_hist.png", sep = ""), width =
 ```
 
 ### Risk sharing regressions
-Income doesnt include remittances/transfers/loans or inputs
+Income doesnt include remittances/transfers/loans or inputs - zeros dropped
 coefficients usually about .2 (see Morten/Townsend)
-
-```{r}
-df <- filter(df.hh, !is.na(income_gross) & income_gross>0 & food_consumption>0)
-
-risksharing_caste <- felm(log(consumption) ~ log(income_gross + 1) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-risksharing_vdc <- felm(log(consumption) ~ log(income_gross + 1) | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-basic_caste <- felm(log(non_durables) ~ log(income_gross + 1) | as.factor(hhid) | 0 | strata, 
-                    data = df, weights = df$wt_hh)
-
-basic_vdc <- felm(log(non_durables) ~ log(income_gross + 1) | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-assets_caste <- felm(log(productive_assets+1) ~ log(income_gross + 1) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-assets_vdc <- felm(log(productive_assets+1) ~ log(income_gross + 1) | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-invest_caste <- felm(ihs(net_asset_investment) ~ log(income_gross + 1) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-invest_vdc <- felm(ihs(net_asset_investment) ~ log(income_gross + 1) | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-input_caste <- felm(log(inputs+1) ~ log(income_gross + 1) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-input_vdc <- felm(log(inputs+1) ~ log(income_gross + 1) | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-loans_caste <- felm(ihs(net_loans) ~ log(income_gross + 1) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-loans_vdc <- felm(ihs(net_loans) ~ log(income_gross + 1) | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh)
-
-mods <- list(risksharing_caste, risksharing_vdc, basic_caste, basic_vdc, assets_caste, assets_vdc, 
-             invest_caste, invest_vdc, input_caste, input_vdc, loans_caste, loans_vdc)
-
-stargazer(mods, type = "text", style = "QJE", df = FALSE,
-          add.lines = list(c("Fixed Effects", rep(c("HH only", "Village-Year"), 6)),
-                           c("Cluster", rep("Ward", 12))))
-```
 
 Heterogeneity
 
@@ -222,10 +157,7 @@ remregvdc <- felm(log(remittance_income + 1) ~ log(income_gross) | as.factor(vdc
 loanregvdc <- felm(log(loans_taken_past_year+1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-livereg <- felm(log(productive_assets + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-mods <- list(aidregvdc, pubtransregvdc, inftransregvdc, ngoregvdc, remregvdc, migregvdc, loanregvdc, livereg)
+mods <- list(aidregvdc, pubtransregvdc, inftransregvdc, ngoregvdc, remregvdc, migregvdc, loanregvdc)
 
 stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
@@ -257,10 +189,7 @@ cremregvdc <- felm(log(remittance_income + 1) ~ log(consumption) | as.factor(vdc
 cloanregvdc <- felm(log(loans_taken_past_year+1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-cliveregvdc <- felm(log(productive_assets+1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-mods <- list(caidregvdc, cpubtransregvdc, cinftransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc, cliveregvdc)
+mods <- list(caidregvdc, cpubtransregvdc, cinftransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
 
 stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
@@ -272,39 +201,35 @@ Supplement with Eq survey analysis
 Damages uncorrelated with assets/home materials, but positive correlation with consumption - is this bc aid went to richer hhs or bc aid increased consumption
 
 ```{r}
-pdam1 <- felm(log(gorkha_loss_ever+1) ~ log(durables_stock+1)
+pdam1 <- felm(gorkha_loss ~ log(durables_stock+1)
                         | as.factor(vdc) | 0 | strata,
                     data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
 
-pdam2 <- felm(log(gorkha_loss_ever+1) ~ n_rooms
+pdam2 <- felm(gorkha_loss ~ home_sqft
                        | as.factor(vdc) | 0 | strata,
                     data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
 
-pdam3 <- felm(log(gorkha_loss_ever+1) ~ iron_cement_roof
+pdam3 <- felm(gorkha_loss ~ as.factor(caste_recode)
                        | as.factor(vdc) | 0 | strata,
                     data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
 
-pdam4 <- felm(log(gorkha_loss_ever+1) ~ cement_walls
+pdam4 <- felm(gorkha_loss ~ as.factor(femalehh)
                         | as.factor(vdc) | 0 | strata,
                     data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
 
-pdam5 <- felm(log(gorkha_loss_ever+1) ~ land_qtle
+pdam5 <- felm(gorkha_loss ~ land_qtle
                         | as.factor(vdc) | 0 | strata,
                     data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
 
-pdam6 <- felm(log(gorkha_loss_ever+1) ~ log(asset_stock+1)
+pdam6 <- felm(gorkha_loss ~ log(asset_stock+1)
                        | as.factor(vdc) | 0 | strata,
                     data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
 
-pdam7 <- felm(log(gorkha_loss_ever+1) ~ log(productive_assets+1)
+pdam7 <- felm(gorkha_loss ~ log(productive_assets+1)
                        | as.factor(vdc) | 0 | strata,
                     data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
 
-pdam8 <- felm(log(gorkha_loss_ever+1) ~ log(consumption)
-                       | as.factor(vdc) | 0 | strata,
-                    data = df, weights = df$wt_hh[df$wave==1], subset = df$wave==1, na.action = na.omit)
-
-mods <- list(pdam2, pdam3, pdam4, pdam5, pdam6, pdam7, pdam1, pdam8)
+mods <- list(pdam2, pdam3, pdam4, pdam5, pdam6, pdam7, pdam1)
 
 stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
@@ -314,34 +239,44 @@ stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq
 VDC-yr FE - wave of aid and earthquake shaking constant
 
 ```{r}
-paid1 <- felm(received_aid ~ log(gorkha_loss_ever+1)
+paid1 <- felm(received_aid ~ gorkha_hh
                         | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-paid2 <- felm(received_aid ~ log(gorkha_loss_ever+1) + caste_recode
+paid2 <- felm(received_aid ~ gorkha_hh + caste_recode
                        | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-paid3 <- felm(received_aid ~ log(gorkha_loss_ever+1) + femalehh
+paid3 <- felm(received_aid ~ gorkha_hh + femalehh
                         | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-paid4 <- felm(received_aid ~ log(gorkha_loss_ever+1) + land_qtle
+paid4 <- felm(received_aid ~ gorkha_hh + land_qtle
                        | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-paid5 <- felm(received_aid ~ log(gorkha_loss_ever+1) + log(consumption)
-                       | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-mods <- list(paid1, paid2, paid3, paid4, paid5)
+mods <- list(paid1, paid2, paid3, paid4)
 
 stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
 
-weighted.mean(df.hh$received_aid[df.hh$gorkha_loss_ever>0], df.hh$wt_hh[df.hh$gorkha_loss_ever>0], na.rm = TRUE)
-weighted.mean(df.hh$received_aid[df.hh$gorkha_loss_ever==0], df.hh$wt_hh[df.hh$gorkha_loss_ever==0], na.rm = TRUE)
+weighted.mean(df.hh$received_aid[df.hh$gorkha_hh==1], df.hh$wt_hh[df.hh$gorkha_hh==1], na.rm = TRUE)
+weighted.mean(df.hh$received_aid[df.hh$gorkha_hh==0], df.hh$wt_hh[df.hh$gorkha_hh==0], na.rm = TRUE)
 ```
+
+Summarizing:
+Remittances, loans, migration are counter cyclical
+Productive assets are procyclical
+Within village aid is positively correlated with income/consumption - could be reverse causal
+Within village loans uncorrelated w income but strong correlation w consumption, remittances negative w income, positive w consumption
+From eq survey, damages correlated w measures of poverty, somewhat contradictory from this survey?
+Damage is most robust predictor of receiving aid
+
+Argument: 
+Wealthy suffer lower damages, but even conditional on damage,
+damages are a noisy measure of need - wealthy hhs are insured through remittances/loans
+Disasters are double whammy for poor - more damage + less insured
+
 
 ### sources of income
 ~ 100 nepali rupees = 1 dollar in 2016
