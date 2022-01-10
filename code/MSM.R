@@ -1,9 +1,9 @@
 library(tidyverse)
 library(parallel)
-library(ROI)
-library(ROI.plugin.alabama)
-library(ROI.plugin.nloptr)
-library(ROI.plugin.deoptim)
+library(akima)
+library(abind)
+library(nloptr)
+options('nloptr.show.inequality.warning'=FALSE)
 
 df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
 #df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
@@ -53,9 +53,12 @@ moments <- c(pdfmoments_t, mkt_clear)
 
 ### Optimization setup
 beta = beta0; R = R0; gamma=gamma0; alpha=alpha0; sigma = sigma0; lambda = lambda0; cbar = cbar0
-ygrid = sort(unique(df$mu))
-hgrid = sort(unique(df$home_value)) + 1
-v0 = array(0, dim = c(length(hgrid), 300, length(ygrid)))
+#ygrid = sort(unique(df$mu))
+#hgrid = sort(unique(df$home_value)) + 1
+xn = 55; yn = 20; hn = 50
+hgrid = exp(seq(0, log(max(df$home_value)), length = hn))
+ygrid = seq(8, max(df$mu), length = yn)
+v0 = array(0, dim = c(xn, hn, yn))
 
 bellman_operator <- function(xgridlist, yveclist, ygrid, hgrid, w, Blist, beta, R, gamma, alpha, cminlist, sigma){
   optimizer <- function(x, h, yvec, Valfunc, B, cmin){
@@ -69,20 +72,17 @@ bellman_operator <- function(xgridlist, yveclist, ygrid, hgrid, w, Blist, beta, 
         xtplus1[xtplus1<B] = B
         hp = h + i
         r = u(c, hp, gamma, alpha) + beta*mean(Valfunc(xtplus1, rep(hp, length(xtplus1))))
-        return(r)
+        return(-r)
       }
       constraint = function(ci){
         c <- ci[1]
         i <- ci[2]
         return(x - c - i - B)
       }
-      nlprob = OP(F_objective(hhprob, 2),
-                   F_constraint(constraint, dir = ">=", rhs = 0),
-                   maximum = TRUE,
-                   bounds = V_bound(li = c(1,2), lb = c(cmin,0),
-                                    ui = c(1,2), ub = c(x-B, x-B)))
-      rsol = ROI_solve(nlprob, solver = "nloptr.cobyla", start = c(cmin + 1, 1))
-      return(rsol$objval)
+      sol = cobyla(x0 = c(mean(c(cmin, x-B)),0), fn = hhprob, lower = c(cmin,0), upper = c(x-B, x-B), hin = constraint, 
+                   #localsolver = c("LBFGS"), localtol = 1e-2)
+                   control = list(xtol_rel = 1e-2))
+      return(-sol$value)
     }
   }
   
@@ -96,7 +96,7 @@ bellman_operator <- function(xgridlist, yveclist, ygrid, hgrid, w, Blist, beta, 
     Valfunc = approxfun2(xgrid, hgrid, w[,,j])
     xhcross = crossing(x = xgrid, h = hgrid)
     xhcross$Tw = mcmapply(optimizer, x = xhcross$x, h = xhcross$h, yvec = list(yvec), 
-                  Valfunc = list(Valfunc), B = list(B), cmin = list(cmin), mc.cores = detectCores()-2)
+                  Valfunc = list(Valfunc), B = list(B), cmin = list(cmin), mc.cores = detectCores()-2, mc.preschedule = FALSE)
     wp[[j]] = as.matrix(pivot_wider(xhcross, id_cols = x, names_from = h, values_from = Tw) %>% 
             column_to_rownames(var="x"))
     
@@ -105,24 +105,28 @@ bellman_operator <- function(xgridlist, yveclist, ygrid, hgrid, w, Blist, beta, 
   return(wp)
 }
 
+#w = v0; j=1; maxiter = 3; tol = 1e-30
+yveclist = lapply(ygrid, function(y) rlnorm(1000, meanlog = y, sd = sigma*y))
+Blist = lapply(yveclist, function(yvec) -lambda*mean(yvec))
+cminlist = lapply(yveclist, function(yvec) cbar*mean(yvec))
+xgridlist <- lapply(yveclist, function(yvec) c(seq(-lambda*mean(yvec), cbar*mean(yvec)-1, length = 10), exp(seq(log(cbar*mean(yvec)), log(10*max(yvec)), length = 45))))
 
-VFI <- function(ygrid, hgrid, vinit, tol = 1e-30, maxiter = 50, beta, R, gamma, alpha, sigma){
-  yveclist = lapply(ygrid, function(y) rlnorm(1000, meanlog = y, sd = sigma*y))
-  Blist = lapply(yveclist, function(yvec) -lambda*mean(yvec))
-  cminlist = lapply(yveclist, function(yvec) cbar*mean(yvec))
-  xgridlist <- lapply(yveclist, function(yvec) seq(-lambda*mean(yvec), 10*max(yvec), len = 300))
+VFI <- function(vinit, tol = 1e-30, maxiter = 50){
   w = vector(mode = "list", length = maxiter-1)
   w[[1]] = vinit
   d = 1; i = 2
   while (d > tol & i < maxiter){
-    w[[i]] = bellman_operator(xgridlist, yveclist, ygrid, hgrid, w[[i-1]], Blist, cminlist, beta, R, gamma, alpha, sigma)
+    vlhs = bellman_operator(xgridlist, yveclist, ygrid, hgrid, w[[i-1]], Blist, beta, R, gamma, alpha, cminlist, sigma)
+    ## McQueen-Porteus Bounds
+    blower = beta/(1-beta)*min(vlhs- w[[i-1]])
+    bupper = beta/(1-beta)*max(vlhs- w[[i-1]])
+    w[[i]] = vlhs + (blower + bupper)/2
+    ## check tol
     d = sqrt(sum((w[[i]] - w[[i-1]])^2))
     i = i+1
   }
   return(pylr::compact(w))
 }
-
-VFI(ygrid, hgrid, v0, tol = 1e-30, maxiter = 3, beta, gamma, R, alpha, sigma)
 
 policyfunc <- function(x, Vfx, B, beta, R, y, gamma, cmin){
   if (x - B <= cmin) {return(cmin)} else{
@@ -164,17 +168,6 @@ bufferstock <- function(hhid, Vlist){
 }
 
 ### start with good initial guess
-
-y0 = rlnorm(1000, meanlog = 10.5, sd = sigma0*10.5)
-B0 = -lambda0*mean(y0)
-cmin0 = cbar0*mean(y0)
-xgrid0 <- seq(B0, 10*max(y0), len = 2000)
-v0 <- rep(0, length(xgrid0))
-V0 = VFI(grid = xgrid0, vinit = v0, B = B0, beta = beta0, R = R0, y = y0, 
-        gamma = gamma0, cmin = cmin0)
-Vfx0 = approxfun(xgrid0, V0[,dim(V0)[2]], rule = 2)
-
-rm(y0, B0, cmin0, xgrid0, v0, V0)
 
 ### MSM
 
@@ -238,11 +231,15 @@ objective <- function(theta) {
   return(sse)
 }
 
-nlprob <- OP(F_objective(objective, 6),
-             bounds = V_bound(li = c(1,2,3,4,5,6), lb = c(1,.5,1,0,0,0),
-                              ui = c(2,3,4), ub = c(1,2,1)))
-sol <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = theta0)
-sol
-thetafin <- solution(sol)
-saveRDS(thetafin, "theta.rds")
+#nlprob <- OP(F_objective(objective, 6),
+#             bounds = V_bound(li = c(1,2,3,4,5,6), lb = c(1,.5,1,0,0,0),
+#                              ui = c(2,3,4), ub = c(1,2,1)))
+#sol <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = theta0)
+#sol
+#thetafin <- solution(sol)
+#saveRDS(thetafin, "theta.rds")
 
+
+V <- VFI(ygrid, hgrid, v0, tol = 1e-30, beta, gamma, R, alpha, sigma)
+
+saveRDS(V, "V.rds")
