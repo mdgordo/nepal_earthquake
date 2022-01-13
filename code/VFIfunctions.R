@@ -1,3 +1,14 @@
+create.statespace = function(i){
+  B = Blist[[i]]
+  cmin = cminlist[[i]]
+  xgrid = xgridlist[[i]]
+  xhcross = crossing(x = xgrid, h = hgrid)
+  xhcross$y = ygrid[i]
+  xhcross$B = B
+  xhcross$cmin = cmin
+  return(xhcross)
+}
+
 approxfun2 = function(xgrid, hgrid, w) {
   xdense = approx(xgrid, n = 5*length(xgrid))$y
   hdense = approx(hgrid, n = 5*length(hgrid))$y

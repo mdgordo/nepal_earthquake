@@ -3,6 +3,7 @@ library(parallel)
 library(akima)
 library(abind)
 library(nloptr)
+library(flatlandr)
 options('nloptr.show.inequality.warning'=FALSE)
 
 df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
@@ -52,18 +53,32 @@ mkt_clear <- 0
 moments <- c(pdfmoments_t, mkt_clear)
 
 ### Optimization setup
-beta = beta0; R = R0; gamma=gamma0; alpha=alpha0; sigma = sigma0; lambda = lambda0; cbar = cbar0
 #ygrid = sort(unique(df$mu))
 #hgrid = sort(unique(df$home_value)) + 1
 xn = 55; yn = 20; hn = 50
 hgrid = exp(seq(0, log(max(df$home_value)), length = hn))
 ygrid = seq(8, max(df$mu), length = yn)
-v0 = array(0, dim = c(xn, hn, yn))
+v0 = data.frame("Tw" = rep(0, xn*hn*yn),
+                "cfx" = rep(0, xn*hn*yn),
+                "ifx" = rep(0, xn*hn*yn))
 
-bellman_operator <- function(xgridlist, yveclist, ygrid, hgrid, w, Blist, beta, R, gamma, alpha, cminlist, sigma){
-  optimizer <- function(x, h, yvec, Valfunc, B, cmin){
+theta = theta0
+cbar = theta[4]; lambda = theta[5]; sigma = theta[6]
+set.seed(37); yveclist = lapply(ygrid, function(y) rlnorm(1000, meanlog = y, sd = sigma*y))
+Blist = lapply(yveclist, function(yvec) -lambda*mean(yvec))
+cminlist = lapply(yveclist, function(yvec) cbar*mean(yvec))
+xgridlist <- lapply(yveclist, function(yvec) c(seq(-lambda*mean(yvec), cbar*mean(yvec)-1, length = 10), exp(seq(log(cbar*mean(yvec)), log(10*max(yvec)), length = 45))))
+
+statespace = lapply(c(1:length(ygrid)), create.statespace)
+statespace = do.call(rbind, statespace)
+
+bellman_operator <- function(w, statespace, theta){
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; sigma = theta[6]; alpha = theta[7]
+  optimizer <- function(x, h, y, Valfunc, B, cmin){
+    set.seed(37); yvec = rlnorm(1000, meanlog = y, sd = sigma*y)
     if (x-B <= cmin) {
-      return(u(cmin, h, gamma, alpha) + beta*Valfunc(B, h))
+      vfx = u(cmin, h, gamma, alpha) + beta*Valfunc(B, h)
+      return(c(cmin, 0, vfx))
     } else {
       hhprob = function(ci) {
         c = ci[1]
@@ -80,66 +95,85 @@ bellman_operator <- function(xgridlist, yveclist, ygrid, hgrid, w, Blist, beta, 
         return(x - c - i - B)
       }
       sol = cobyla(x0 = c(mean(c(cmin, x-B)),0), fn = hhprob, lower = c(cmin,0), upper = c(x-B, x-B), hin = constraint, 
-                   #localsolver = c("LBFGS"), localtol = 1e-2)
                    control = list(xtol_rel = 1e-2))
-      return(-sol$value)
+      return(c(sol$par, -sol$value))
     }
   }
   
-  wp = vector(mode = "list", length = length(ygrid))
+  Valfunc = approxfun2(xgrid, hgrid, w[[1]][,,j]) ### need to fix
   
-  for (j in c(1:length(ygrid))) {
-    yvec = yveclist[[j]]
-    B = Blist[[j]]
-    cmin = cminlist[[j]]
-    xgrid = xgridlist[[j]]
-    Valfunc = approxfun2(xgrid, hgrid, w[,,j])
-    xhcross = crossing(x = xgrid, h = hgrid)
-    xhcross$Tw = mcmapply(optimizer, x = xhcross$x, h = xhcross$h, yvec = list(yvec), 
-                  Valfunc = list(Valfunc), B = list(B), cmin = list(cmin), mc.cores = detectCores()-2, mc.preschedule = FALSE)
-    wp[[j]] = as.matrix(pivot_wider(xhcross, id_cols = x, names_from = h, values_from = Tw) %>% 
-            column_to_rownames(var="x"))
-    
-  }
-  wp = abind(wp, along = 3)
-  return(wp)
+  Tw = mcmapply(optimizer, x = statespace$x, h = statespace$h, y = statespace$y, 
+                Valfunc = list(Valfunc), B = statespace$B, cmin = statespace$cmin, mc.cores = detectCores()-2, mc.preschedule = FALSE)
+  
+  wnext = data.frame("Tw" = unlist(Tw)[seq(3,length(Tw),3)],
+                 "cfx" = unlist(Tw)[seq(1,length(Tw),3)],
+                 "ifx" = unlist(Tw)[seq(2,length(Tw),3)])
+  return(wnext)
 }
 
-#w = v0; j=1; maxiter = 3; tol = 1e-30
-yveclist = lapply(ygrid, function(y) rlnorm(1000, meanlog = y, sd = sigma*y))
-Blist = lapply(yveclist, function(yvec) -lambda*mean(yvec))
-cminlist = lapply(yveclist, function(yvec) cbar*mean(yvec))
-xgridlist <- lapply(yveclist, function(yvec) c(seq(-lambda*mean(yvec), cbar*mean(yvec)-1, length = 10), exp(seq(log(cbar*mean(yvec)), log(10*max(yvec)), length = 45))))
-
-VFI <- function(vinit, tol = 1e-30, maxiter = 50){
+VFI <- function(vinit, tol = .05, maxiter = 100, k = 10){
   w = vector(mode = "list", length = maxiter-1)
   w[[1]] = vinit
   d = 1; i = 2
   while (d > tol & i < maxiter){
     vlhs = bellman_operator(xgridlist, yveclist, ygrid, hgrid, w[[i-1]], Blist, beta, R, gamma, alpha, cminlist, sigma)
     ## McQueen-Porteus Bounds
-    blower = beta/(1-beta)*min(vlhs- w[[i-1]])
-    bupper = beta/(1-beta)*max(vlhs- w[[i-1]])
-    w[[i]] = vlhs + (blower + bupper)/2
+    blower = beta/(1-beta)*min(vlhs$Tw - w[[i-1]]$Tw)
+    bupper = beta/(1-beta)*max(vlhs$Tw - w[[i-1]]$Tw)
+    wpp = vlhs$Tw + (blower + bupper)/2
+    ## Howard acceleration
+    vk = vector(mode = "list", length = k)
+    vk[[1]] = lapply(c(1:dim(wpp)[3]), function(x) approxfun2(xgridlist[[x]], hgrid, wpp[,,x]))
+    for (i in c(1:k-1)) {
+      howard = function(c, h, gamma, alpha, vk){
+        hop = u(c,h,gamma,alpha) + beta*vk() ### need to make this of xtplus1
+      }
+      vk[[i+1]] = mcmapply(howard, , , gamma, alpha, vk) ### apply to all of the policys
+    }
+    w[[i]] = ### bellman_operator(vk[[k]])?
     ## check tol
-    d = sqrt(sum((w[[i]] - w[[i-1]])^2))
+    d = mean(((w[[i]]$cfx - w[[i-1]]$cfx)/w[[i]]$cfx)^2)
     i = i+1
   }
   return(pylr::compact(w))
 }
 
-policyfunc <- function(x, Vfx, B, beta, R, y, gamma, cmin){
-  if (x - B <= cmin) {return(cmin)} else{
-    objective <- function(c) {
-      xtplus1 = R*(x - c) + y
-      xtplus1 = if_else(xtplus1<B, B, xtplus1)
-      r = u(c, gamma) + beta*mean(Vfx(xtplus1))
-      return(r)
-    }
-    l <- optimize(objective, interval = c(cmin, x - B), maximum = TRUE)
-    return(l$maximum)
-  }
-}
+### chebyshev, cmax > ymax
+
+## plot iterations for given y and h
+hidx = 1; yidx = 10
+xs = lapply(w, function(x) x[,hidx,yidx])
+xdat <- data.frame(do.call(cbind, xs)) %>%
+  rownames_to_column("Xgrid") %>%
+  pivot_longer(-Xgrid, names_to = "iteration", values_to = "fx") %>%
+  mutate(iteration = as.integer(substr(iteration, 2, length(iteration))))
+
+ggplot(xdat) +
+  geom_line(aes(x = as.numeric(Xgrid), y = fx, color = iteration, group = iteration)) + 
+  scale_color_viridis_c()
+
+## heatmap for given iteration, y
+hmap <- data.frame(w[[19]][,,1]) %>%
+  rownames_to_column("Xgrid")%>%
+  pivot_longer(-Xgrid, names_to = "hgrid", values_to = "vfx") %>%
+  mutate(h = dense_rank(as.numeric(substr(hgrid, 2, length(hgrid)))),
+         x = dense_rank(as.numeric(Xgrid)))
+
+ggplot(hmap) +
+  geom_tile(aes(x = x, y = h, fill = log(-vfx))) +
+  scale_fill_viridis_c()
+
+### Policy Function
+pfx = bellman_operator(xgridlist, yveclist, ygrid, hgrid, w[[19]], Blist, beta, R, gamma, alpha, cminlist, sigma, policy = TRUE)
+
+### Policy heatmaps
+ggplot(pfx[[1]] %>% mutate(xrank = dense_rank(x), hrank = dense_rank(h))) +
+  geom_tile(aes(x = xrank, y = hrank, fill = log(cfx))) +
+  scale_fill_viridis_c()
+
+ggplot(pfx[[1]] %>% mutate(xrank = dense_rank(x), hrank = dense_rank(h))) +
+  geom_tile(aes(x = xrank, y = hrank, fill = ifx)) +
+  scale_fill_viridis_c()
 
 bufferstock <- function(hhid, Vlist){
   ### pull right parameters
