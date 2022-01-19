@@ -404,19 +404,24 @@ for (i in c(1:3)) {
                                                         "Funeral and death related expenses", "Income taxes, land taxes, housing and property taxes", 
                                                         "Postal expenses, telegrams, fax, telephone", "Legal expenses and insurance (life, car, etc", 
                                                         "Excursion, holiday, (including travel and lodging)"), 0, s06q02),
+                     home_investment = ifelse(nonfoodid %in% c("Repair and maintenance of the house", "	Repair and servicing of household effects",
+                                                               "Home improvements and additions"), s06q02, 0), 
                      other_expenses = ifelse(nonfoodid %in% c("Postal expenses, telegrams, fax, telephone", "Legal expenses and insurance (life, car, etc", 
                                                              "Excursion, holiday, (including travel and lodging)"), s06q02, 0)) %>%
               group_by(hhid) %>%
               summarize(durables_consumption = sum(durables, na.rm = TRUE),
+                        home_investment = sum(home_investment, na.rm = TRUE),
                         ceremonial_expenses = sum(ceremonies, na.rm = TRUE),
                         taxes = sum(taxes, na.rm = TRUE),
                         other_expenses = sum(other_expenses, na.rm = TRUE))
       df.hh <- merge(df.hh, df.nonfood2, by = "hhid", all = TRUE)
       df.hh <- mutate(df.hh, durables_consumption = if_else(is.na(durables_consumption),0,durables_consumption),
+                      home_investment = if_else(is.na(home_investment),0,home_investment),
                       ceremonial_expenses = if_else(is.na(ceremonial_expenses),0,ceremonial_expenses),
                       taxes = if_else(is.na(taxes),0,taxes),
                       other_expenses = if_else(is.na(other_expenses),0,other_expenses))
       df.hh$durables_consumption[df.hh$hhid %in% finddks(df.hrvs_6b, c("s06q02"))] <- NA
+      df.hh$home_investment[df.hh$hhid %in% finddks(df.hrvs_6b, c("s06q02"))] <- NA
       df.hh$ceremonial_expenses[df.hh$hhid %in% finddks(df.hrvs_6b, c("s06q02"))] <- NA
       df.hh$taxes[df.hh$hhid %in% finddks(df.hrvs_6b, c("s06q02"))] <- NA
       df.hh$other_expenses[df.hh$hhid %in% finddks(df.hrvs_6b, c("s06q02"))] <- NA

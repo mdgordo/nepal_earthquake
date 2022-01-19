@@ -1,27 +1,27 @@
 create.statespace = function(i){
   B = Blist[[i]]
   cmin = cminlist[[i]]
-  xgrid = xgridlist[[i]]
-  xhcross = crossing(x = xgrid, h = hgrid)
-  xhcross$y = ygrid[i]
-  xhcross$B = B
-  xhcross$cmin = cmin
-  return(xhcross)
+  css = chebstatespace(m = xn, lb = c(B, 1), ub = c(10*max(yveclist[[i]]), max(df$home_value)))
+  colnames(css) <- c("x", "h")
+  css$y = ygrid[i]
+  css$B = B
+  css$cmin = cmin
+  return(css)
 }
 
-approxfun2 = function(xgrid, hgrid, w) {
-  xdense = approx(xgrid, n = 5*length(xgrid))$y
-  hdense = approx(hgrid, n = 5*length(hgrid))$y
-  xhdcross = crossing(x = xdense, h = hdense)
-  xhdcross$w = akima::bilinear(x = xgrid, y = hgrid, z = w, x0 = xhdcross$x, y0 = xhdcross$h)$z
-  zmat = as.matrix(pivot_wider(xhdcross, id_cols = x, names_from = h, values_from = w) %>% 
-              column_to_rownames(var="x"))
-  r = function(xp, hp) {
-    xi = findInterval(xp, xdense, all.inside = TRUE)
-    hi = findInterval(hp, hdense, all.inside = TRUE)
-    return(zmat[xi, hi])
+interpolater.creater = function(yi, statespace, Tw){
+  statespace$Tw = Tw
+  s <- filter(statespace, y == yi)
+  Twm = matrix(s$Tw, ncol = xn)
+  cmat = chebcoefs(Twm, degree = xn - 1)
+  i = which(ygrid==yi)
+  xmin = Blist[[i]]
+  xmax = 10*max(yveclist[[i]])
+  i = function(x,h){
+    r = chebpred(x, h, coefmat = cmat, lb = c(xmin,1), ub = c(xmax, max(df$home_value)))
+    return(r)
   }
-  return(r)
+  return(i)
 }
 
 ### Value function iteration - Deaton 
