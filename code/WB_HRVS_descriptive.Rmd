@@ -269,7 +269,6 @@ Remittances, loans, migration are counter cyclical
 Productive assets are procyclical
 Within village aid is positively correlated with income/consumption - could be reverse causal
 Within village loans uncorrelated w income but strong correlation w consumption, remittances negative w income, positive w consumption
-From eq survey, damages correlated w measures of poverty, somewhat contradictory from this survey?
 Damage is most robust predictor of receiving aid
 
 Argument: 

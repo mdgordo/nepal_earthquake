@@ -1,6 +1,6 @@
 ### RD functions
 
-plotvar <- function(v, b, df, h=20, ihs=FALSE, span = 1, k = "epanechnikov", weights = TRUE, donut = 0, dist.exclude=NULL) {
+plotvar <- function(v, b, df, h=20, ihs=FALSE, span = 1, k = "triangular", weights = TRUE, donut = 0, dist.exclude=NULL) {
   if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
   df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "shake_pga", "wave")]
   df <- filter(df, abs(get(b))<h & complete.cases(df) & abs(get(b))>donut)

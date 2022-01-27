@@ -1020,7 +1020,7 @@ df.hh <- merge(df.hh, df.aid, by = "hhid") %>%
   mutate(received_aid = if_else(aid_total>0, 1, 0),
          gorkha_hh = if_else(gorkha_loss_ever>0, 1, 0),
          caste_yr = paste(ethnicity, wave, sep = "_"),
-         vdc_yr = paste(vdc, wave, sep = "_"),
+         vdc_yr = paste(district, vdc, wave, sep = "_"),
          cons_shock = consumption - avg_cons) %>%
   arrange(wave) %>% group_by(hhid) %>%
   mutate(aid_cumulative = cumsum(quake_aid),

@@ -1,11 +1,19 @@
-create.statespace = function(i){
+create.statespace = function(i, ubm = c(15, 30), cheb = "TRUE"){
   B = Blist[[i]]
   cmin = cminlist[[i]]
-  css = chebstatespace(m = xn, lb = c(B, 1), ub = c(10*max(yveclist[[i]]), max(df$home_value)))
+  hmin = hminlist[[i]]
+  if (cheb) {
+    css = chebstatespace(m = xn, lb = c(B, 0), ub = c(ubm[1]*exp(ygrid[i]), ubm[2]*exp(ygrid[i])))
+  } else {
+    x = seq(B, ubm[1]*exp(ygrid[i]), length.out = xn)
+    y = seq(0, ubm[2]*exp(ygrid[i]), length.out = yn)
+    css = crossing(x, y)
+  }
   colnames(css) <- c("x", "h")
   css$y = ygrid[i]
   css$B = B
   css$cmin = cmin
+  css$hmin = hmin
   return(css)
 }
 
@@ -16,97 +24,15 @@ interpolater.creater = function(yi, statespace, Tw){
   cmat = chebcoefs(Twm, degree = xn - 1)
   i = which(ygrid==yi)
   xmin = Blist[[i]]
-  xmax = 10*max(yveclist[[i]])
+  xmax = 15*exp(ygrid[i])
+  hmax = 30*exp(ygrid[i])
   i = function(x,h){
-    r = chebpred(x, h, coefmat = cmat, lb = c(xmin,1), ub = c(xmax, max(df$home_value)))
+    r = chebpred(x, h, coefmat = cmat, lb = c(xmin,0), ub = c(xmax, hmax))
     return(r)
   }
   return(i)
 }
 
-### Value function iteration - Deaton 
-bellman_operator <- function(grid, w){
-  Valfunc = approxfun(grid, w, rule = 2)
-  optimizer <- function(x){
-    if (x-B <= cmin) {
-      return(u(cmin) + beta*Valfunc(B))
-      } else {
-      objective <- function(c) {
-        xtplus1 = R*(x - c) + y
-        xtplus1 = if_else(xtplus1<B, B, xtplus1)
-        r = u(c) + beta*mean(Valfunc(xtplus1))
-        return(r)
-      }
-      l <- optimize(objective, interval = c(cmin, x - B), maximum = TRUE)
-      return(l$objective)
-    }
-  }
-  Tw = rep(NA, length(grid))
-  Tw = mclapply(grid, optimizer, mc.cores = detectCores()-2)
-  return(unlist(Tw))
-}
-
-### Policy function Deaton
-policyfunc <- function(x, Vfx){
-  if (x-B <= cmin) {return(cmin)} else{
-    objective <- function(c) {
-      xtplus1 = R*(x - c) + y
-      xtplus1 = if_else(xtplus1<B, B, xtplus1)
-      r = u(c) + beta*mean(Vfx(xtplus1))
-      return(r)
-    }
-    l <- optimize(objective, interval = c(cmin, x - B), maximum = TRUE)
-    return(l$maximum)
-  }
-}
-
-### Optimization setup - Banerjee Duflo
-ROI_setup <- function(Vfx, x){
-  objective <- function(ck) {
-    c <- ck[1]
-    k <- ck[2]
-    xtplus1 = R*(x - c - k) + f(k)
-    r = u(c) + beta*mean(Vfx(xtplus1))
-    return(r)
-  }
-  ### has to hold with certainty, so min of production
-  constraint <- function(ck){
-    c <- ck[1]
-    k <- ck[2]
-    return(B - R*(x - c - k) - min(f(k)))
-  }
-  nlprob <- OP(F_objective(objective, 2),
-               F_constraint(constraint, dir = "<=", rhs = 0),
-               maximum = TRUE,
-               bounds = V_bound(li = c(1,2), lb = c(1,1)))
-  r <- ROI_solve(nlprob, solver = "nloptr.cobyla", start = c(1.1, 1.1))
-  return(objective(solution(r)))
-}
-
-### Value function iteration
-bellman_operator_BD <- function(grid, w){
-  Vfx = approxfun(grid, w, rule = 2)
-  Tw = rep(NA, length(grid))
-  Tw = mclapply(xgrid, ROI_setup, Vfx = Vfx, mc.cores = 6, mc.preschedule = FALSE)
-  return(unlist(Tw))
-}
-
-####
-
-VFI <- function(grid, vinit, tol = 1e-30, maxiter = 50, bd = FALSE){
-  w = matrix(0, length(grid), 1)
-  w[,1] = vinit
-  d = 1
-  i = 2
-  while (d > tol & i < maxiter){
-    w = cbind(w, rep(0, length(grid)))
-    if (bd=="bd") {w[,i] = bellman_operator_BD(grid, w[,i-1])} else {
-      w[,i] = bellman_operator(grid, w[,i-1])}
-    d = sqrt(sum((w[,i] - w[,i-1])^2))
-    i = i+1
-  }
-  return(w)
-}
 
 dfplot <- function(V){
   V <- as.data.frame(V)
@@ -167,9 +93,5 @@ wtpcurve <- function(x, mu, amt){
   return((mu0 - muprime)/(1 - beta))
 }
 
-u <- function(x){
-  u <- x^(1-gamma)/(1-gamma)
-  return(u)
-}
 
 

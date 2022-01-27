@@ -40,7 +40,7 @@ placebos <- c("elevation", "shake_pga", "gorkha_hh", "gorkha_loss_ever", "high_c
 infravars <- c("time_to_market", "time_to_bank", "time_to_school", "time_to_health")
 aidvars <- c("aid_cumulative_bin", "aid_cumulative")
 numvars <- c("currentlyliving", "under5", "under18", "over65", "femalehh", "extended_members", "children_attending")
-consumptionvars <- c("food_consumption", "durables_consumption", "transportation", "energy_utilities", "ceremonial_expenses", "other_consumption")
+consumptionvars <- c("food_consumption", "durables_consumption", "home_investment", "transportation", "energy_utilities", "ceremonial_expenses", "other_consumption")
 incomevars <- c("remittance_income", "annual_wages", "ag_livestock_income", "business_income", "inf_transfers", "pub_transfers", "inputs")
 percapitavars <- c("income_pc", "consumption_pc", "food_consumption_pc")
 pricevars <- c("chicken_price", "rice_price", "lentil_price", "sugar_price", "mutton_price", "potato_price")
@@ -243,6 +243,18 @@ qplot("productive_assets", filter(df.hh, designation!="none")) +
 ggsave(paste(rootdir, "/presentation_materials/qplot_assets.png", sep = ""), width = 10, height = 7)
 ```
 
+```{r}
+qplot("durables_consumption", filter(df.hh, designation!="none")) + 
+  theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/qplot_assets.png", sep = ""), width = 10, height = 7)
+```
+
+```{r}
+qplot("home_investment", filter(df.hh, designation!="none")) +
+  theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/qplot_assets.png", sep = ""), width = 10, height = 7)
+```
+
 ### regressions
 
 First stage
@@ -316,12 +328,45 @@ rdgazer(rdshock, dvlabs = str_replace_all(copingvars, "_", " "),
 ### Main Outcomes
 
 ```{r}
-mainvars <- c("consumption", "food_consumption", "income_gross", "productive_assets", "net_loans", "remittance_income", "n_migrants")
+mainvars <- c("consumption", "food_consumption", "home_investment", "income_gross", "productive_assets", "loan_payments", "remittance_income", "n_migrants")
 
 rdmain <- lapply(mainvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE, 
                  k = "triangular", vce = "hc1", dist.exclude = "none")
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
         xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+```
+
+Effect on consumption smoothing
+
+```{r}
+df.hh$vdc_dist <- paste(df.hh$vdc, df.hh$district, sep = "_")
+vdclist <- data.frame("vdc" = unique(df.hh$vdc_dist))
+
+townsenderator <- function(i){
+  df <- filter(df.hh, vdc_dist==i, food_consumption > 0, income_gross > 0)
+  mod <- felm(log(food_consumption) ~ log(income_gross) | as.factor(hhid),
+              data = df, weights = df$wt_hh, na.action = na.omit)
+  return(mod$coefficients[1,1])
+}
+
+vdclist$betaT = unlist(lapply(vdclist$vdc, townsenderator))
+
+df <- merge(df.hh, vdclist, by.x = "vdc_dist", by.y = "vdc") %>%
+  filter(designation != "none", wave==1)
+
+covs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + df$shake_pga)
+covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_seg13"))]
+resreg <- lm(df$betaT ~ covs)
+df$resreg <- resreg$residuals
+
+out <- rdrobust(y = df$betaT, x = df$dist_2_seg13, c = 0, fuzzy = df$received_aid, 
+                weights = df$wt_hh, cluster = df$strata, kernel = "triangular", vce = "hc1", covs = covs)
+summary(out)
+
+df <- filter(df, abs(dist_2_seg13)<b0)
+r <- rdplot(y = df$resreg, x = df$dist_2_seg13, c = 0, weights = df$wt_hh, binselect = "qsmv", kernel = "triangular", 
+              poly = FALSE, title = NULL, y.label = "Coefficient of Consumption Smoothing", x.label = "Distance to Border", hide = TRUE, span = 1)
+r$rdplot
 ```
 
 ### Quantile RD
@@ -398,7 +443,7 @@ rdgazer(rdcc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""),
 
 
 ```{r, warning = FALSE}
-cvarscutpts <- seq(50000, 500000, 50000)
+cvarscutpts <- c(0, 50000, 100000, 500000, 1e6, 3e6 )
 ctlist <- lapply(cvarscutpts, cutvars, var = "productive_assets", filter(df.hh, designation!="none"))
 df <- cbind(filter(df.hh, designation!="none"), do.call(cbind, ctlist))
 
@@ -417,4 +462,72 @@ rdgazer(rdcu, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""),
 rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
 rdgazer(rdcc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+```
+
+```{r, warning = FALSE}
+cvarscutpts <- c(0, 5000, 10000, 100000, 300000)
+ctlist <- lapply(cvarscutpts, cutvars, var = "home_investment", filter(df.hh, designation!="none"))
+df <- cbind(filter(df.hh, designation!="none"), do.call(cbind, ctlist))
+
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdgazer(rdc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv")
+rdgazer(rdcu, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdgazer(rdcc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+```
+
+
+```{r, warning = FALSE}
+cvarscutpts <- c(0, 10000, 50000, 100000, 300000)
+ctlist <- lapply(cvarscutpts, cutvars, var = "remittance_income", filter(df.hh, designation!="none"))
+df <- cbind(filter(df.hh, designation!="none"), do.call(cbind, ctlist))
+
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdgazer(rdc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv")
+rdgazer(rdcu, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdgazer(rdcc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+```
+
+```{r, warning = FALSE}
+cvarscutpts <- c(0, 10000, 50000, 100000, 200000)
+ctlist <- lapply(cvarscutpts, cutvars, var = "loan_payments", filter(df.hh, designation!="none"))
+df <- cbind(filter(df.hh, designation!="none"), do.call(cbind, ctlist))
+
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdgazer(rdc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv")
+rdgazer(rdcu, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdgazer(rdcc, dvlabs = paste("<", cvarscutpts/1000, "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
 ```

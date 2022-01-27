@@ -1,7 +1,5 @@
 library(tidyverse)
 library(parallel)
-library(akima)
-library(abind)
 library(nloptr)
 library(flatlandr)
 options('nloptr.show.inequality.warning'=FALSE)
@@ -22,11 +20,13 @@ gamma0 <- 2.988
 beta0 <- .9
 R0 <- 1.012
 cbar0 <- .733
+hbar0 <- .5
 lambda0 <- 1.55
-sigma0 <- .032
+sigma0 <- .2
 alpha0 <- .9
+delta0 <- .95
 
-theta0 <- c(gamma0, beta0, R0, cbar0, lambda0, sigma0, alpha0)
+theta0 <- c(gamma0, beta0, R0, cbar0, hbar0, lambda0, sigma0, alpha0, delta0)
 
 aid_amt = 100000
 
@@ -54,44 +54,43 @@ mkt_clear <- 0
 moments <- c(pdfmoments_t, mkt_clear)
 
 ### Optimization setup
-xn = 20; yn = 20; hn = 20
+xn = hn = 30; yn = 20
+
+theta = theta0
+gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]; lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+
+ygrid = chebnodes(m = yn, lb = 8, ub = max(df$mu))
+gqpts = c(-2.651961, -1.673552, -.8162879, 0, .8162879, 1.673552, 2.651961)
+gqwts = c(.0009717812, .0545155828, .4256072526, .8102646176, .4256072526, .0545155828, .0009717812)
+Blist = lapply(ygrid, function(y) -lambda*exp(y))
+cminlist = lapply(ygrid, function(y) cbar*exp(y))
+hminlist = lapply(ygrid, function(y) hbar*exp(y))
+
+statespace = lapply(c(1:length(ygrid)), create.statespace)
+statespace = do.call(rbind, statespace)
 v0 = data.frame("Tw" = unlist(mapply(u, statespace$cmin, statespace$h, gamma, alpha)),
                 "cfx" = statespace$cmin,
                 "ifx" = rep(0, xn*hn*yn))
 
-theta = theta0
-gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; lambda = theta[5]; sigma = theta[6]; alpha = theta[7]
-
-ygrid = chebnodes(m = yn, lb = 8, ub = max(df$mu))
-set.seed(37); yveclist = lapply(ygrid, function(y) rlnorm(1000, meanlog = y, sd = sigma*y))
-Blist = lapply(yveclist, function(yvec) -lambda*mean(yvec))
-cminlist = lapply(yveclist, function(yvec) cbar*mean(yvec))
-
-statespace = lapply(c(1:length(ygrid)), create.statespace)
-statespace = do.call(rbind, statespace)
-
-great.expectations = function(xend, hend, y, B, cmin, flist){
-  set.seed(37); yvec = rlnorm(1000, meanlog = y, sd = sigma*y)
-  Valfunc = flist[[which(ygrid==y)]]
-  xtplus1 = xend + yvec
-  xtplus1[xtplus1<B] = B
-  return(mean(unlist(sapply(xtplus1, Valfunc, hend))))
-}
-
 bellman_operator <- function(wlast, statespace){
-  optimizer <- function(x, h, y, EVlist, B, cmin){
-    set.seed(37); yvec = rlnorm(100, meanlog = y, sd = sigma*y)
-    EValfunc = EVlist[[which(ygrid==y)]]
+  optimizer <- function(x, h, y, flist, B, cmin, hmin){
+    yvec = sqrt(2)*sigma*exp(y)*gqpts + exp(y)
+    Valfunc = flist[[which(ygrid==y)]]
     if (x-B <= cmin) {
-      vfx = u(cmin, h, gamma, alpha) + beta*EValfunc(B, h)
-      return(c(cmin, 0, vfx))
+      vfx = u(cmin, max(h,hmin), gamma, alpha) + beta*Valfunc(B, delta*max(h,hmin))
+      return(c(cmin, max(0, hmin-h), vfx))
+    } else if (x - B - cmin < hmin - h) {
+      vfx = u(cmin, hmin, gamma, alpha) + beta*Valfunc(B, delta*hmin)
+      return(c(cmin, hmin-h, vfx))
     } else {
       hhprob = function(ci) {
         c = ci[1]
         i = ci[2]
-        xend = R*(x - c - i)
-        hp = h + i
-        r = u(c, hp, gamma, alpha) + beta*EValfunc(xend, hp)
+        xtplus1 = R*(x - c - i) + yvec
+        hp = delta*(h + i)
+        great.expectations = unlist(mapply(Valfunc, x = xtplus1, h = hp))*gqwts
+        great.expectations[xtplus1<B] = Valfunc(B, delta*h)*gqwts[xtplus1<B]
+        r = u(c, hp, gamma, alpha) + beta*sum(great.expectations)*pi^(-1/2)
         return(-r)
       }
       constraint = function(ci){
@@ -106,16 +105,12 @@ bellman_operator <- function(wlast, statespace){
     }
   }
   
-  ### interpolation functions - 1 for every y
+  ### interpolation functions
   flist = lapply(ygrid, interpolater.creater, statespace = statespace, Tw = wlast)
   
-  ### pre compute expectations for every point in statespace
-  EV = mcmapply(great.expectations, statespace$x, statespace$h, statespace$y, statespace$B, statespace$cmin, 
-                flist = list(flist), mc.cores = detectCores()-2)
-  EVlist = lapply(ygrid, interpolater.creater, statespace = statespace, Tw = EV)
-  
   Tw = mcmapply(optimizer, x = statespace$x, h = statespace$h, y = statespace$y, 
-                EVlist = list(EVlist), B = statespace$B, cmin = statespace$cmin, mc.cores = detectCores()-2, mc.preschedule = FALSE)
+                flist = list(flist), B = statespace$B, cmin = statespace$cmin, hmin = statespace$hmin, 
+                mc.cores = detectCores()-2, mc.preschedule = FALSE)
   
   wnext = data.frame("Tw" = as.vector(Tw[3,]),
                  "cfx" = as.vector(Tw[1,]),
@@ -145,36 +140,38 @@ VFI <- function(vinit, tol = 1e-4, maxiter = 100, k = 10){
   while (d > tol & i < maxiter){
     vlhs = bellman_operator(wlast = w[[i-1]]$Tw, statespace)
     ## Howard acceleration
-    twk = vector(mode = "list", length = k)
-    twk[[1]] = vlhs$Tw
-    vk = vector(mode = "list", length = k)
-    vk[[1]] = lapply(ygrid, interpolater.creater, statespace = statespace, Tw = twk[[1]])
-    for (j in c(1:(k-1))) {
-      twkp = unlist(mcmapply(howard, vlhs$cfx, vlhs$ifx, statespace$x, statespace$h, statespace$y, statespace$B, statespace$cmin, vk = list(vk[[j]]),
-                      mc.cores = detectCores()-2))
+    #twk = vector(mode = "list", length = k)
+    #twk[[1]] = vlhs$Tw
+    #vk = vector(mode = "list", length = k)
+    #vk[[1]] = lapply(ygrid, interpolater.creater, statespace = statespace, Tw = twk[[1]])
+    #for (j in c(1:(k-1))) {
+    #  twkp = unlist(mcmapply(howard, vlhs$cfx, vlhs$ifx, statespace$x, statespace$h, statespace$y, statespace$B, statespace$cmin, vk = list(vk[[j]]),
+    #                  mc.cores = detectCores()-2))
       ## McQueen-Porteus Bounds
-      blower = beta/(1-beta)*min(twkp - twk[[j]])
-      bupper = beta/(1-beta)*max(twkp - twk[[j]])
-      twk[[j+1]] = twkp + (blower + bupper)/2
-      vk[[j+1]] = lapply(ygrid, interpolater.creater, statespace = statespace, Tw = twk[[j+1]])
-    }
-    vlhs$Tw = twk[[k]]
+      blower = beta/(1-beta)*min(vlhs$Tw - w[[i-1]]$Tw)
+      bupper = beta/(1-beta)*max(vlhs$Tw - w[[i-1]]$Tw)
+      if (blower <0 & bupper <0) {vlhs$Tw = vlhs$Tw + (blower + bupper)/2}
+    #  vk[[j+1]] = lapply(ygrid, interpolater.creater, statespace = statespace, Tw = twk[[j+1]])
+    #}
+    #vlhs$Tw = twk[[k]]
     w[[i]] = vlhs
     ## check tol
-    d = mean(((w[[i]]$Tw - w[[i-1]]$Tw)/w[[i]]$Tw)^2)
+    d = mean(((w[[i]]$cfx - w[[i-1]]$cfx)/w[[i]]$cfx)^2)
     i = i+1
+    print(i)
+    saveRDS(w, "/users/mdgordo/Desktop/w.rds")
   }
   return(plyr::compact(w))
 }
 
-w = readRDS("/users/mdgordo/Desktop/w.rds")  ## auglag
-w2 = readRDS("/users/mdgordo/Desktop/w2.rds") ## cobyla 1e-8
-w3 = readRDS("/users/mdgordo/Desktop/w3.rds") ## cobyla 1e-3
+w = VFI(v0)
+
+w = compact(readRDS("/users/mdgordo/Desktop/w.rds"))
 
 ### diff bt each iterations
-for (i in c(2:length(w3))) {
-  d = mean(((w3[[i]]$Tw - w3[[i-1]]$Tw)/w3[[i]]$Tw)^2)
-  cd = mean(((w3[[i]]$cfx - w3[[i-1]]$cfx)/w3[[i]]$cfx)^2)
+for (i in c(2:length(w))) {
+  d = mean(((w[[i]]$Tw - w[[i-1]]$Tw)/w[[i]]$Tw)^2)
+  cd = mean(((w[[i]]$cfx - w[[i-1]]$cfx)/w[[i]]$cfx)^2)
   print(paste("vtol:", d, "ctol:", cd, sep = " "))
 }
 
@@ -182,34 +179,55 @@ for (i in c(2:length(w3))) {
 hidx = statespace$h[10]; yidx = ygrid[1]
 xs = lapply(w, function(x) filter(cbind(x, statespace), y==yidx, h==hidx))
 xs <- data.frame(do.call(rbind, xs)) 
-xs$iteration <- rep(c(1:length(w)), each = 20)
+xs$iteration <- rep(c(1:length(w)), each = xn)
 
-ggplot(xs) +
+ggplot(filter(xs, iteration < 60)) +
   geom_line(aes(x = x, y = Tw, color = iteration, group = iteration)) + 
   scale_color_viridis_c()
 
+## plot iterations for given y and x
+xidx = statespace$x[200]; yidx = ygrid[1]
+xs = lapply(w, function(x) filter(cbind(x, statespace), y==yidx, x==xidx))
+xs <- data.frame(do.call(rbind, xs)) 
+xs$iteration <- rep(c(1:length(w)), each = hn)
+
+ggplot(filter(xs, iteration<50)) +
+  geom_line(aes(x = h, y = Tw, color = iteration, group = iteration)) + 
+  scale_color_viridis_c()
+
 ## heatmap for given iteration, y
-ggplot(filter(cbind(w[[17]], statespace), y==yidx)) +
+ggplot(filter(cbind(w[[length(w)]], statespace), y==yidx)) +
   geom_tile(aes(x = x, y = h, fill = log(-Tw))) +
   scale_fill_viridis_c()
 
 ### Policy heatmaps
-ggplot(filter(cbind(w[[17]], statespace), y==yidx)) +
+ggplot(filter(cbind(w[[length(w)]], statespace), y==yidx)) +
   geom_tile(aes(x = x, y = h, fill = log(cfx))) +
   scale_fill_viridis_c()
 
-ggplot(filter(cbind(w3[[17]], statespace), y==yidx)) +
+ggplot(filter(cbind(w[[length(w)]], statespace), y==yidx)) +
   geom_tile(aes(x = x, y = h, fill = ifx)) +
   scale_fill_viridis_c()
 
 ### constraint satisfied?
-df.cstrt <- cbind(w[[3]], statespace) %>%
-  mutate(spend = cfx + ifx) %>%
+df.cstrt <- cbind(w[[length(w)]], statespace) %>%
   group_by(y) %>%
-  summarize(maxcfx = max(spend),
-            x = max(x))
-df.cstrt$ymax <- unlist(lapply(yveclist, max))
-df.cstrt <- mutate(df.cstrt, xt1 = R*(x - maxcfx) + ymax)
+  summarize(x = max(x),
+            h = max(h), 
+            spend = NA,
+            maxifx = NA)
+
+for (i in c(1:nrow(df.cstrt))) {
+  a <- filter(cbind(w[[length(w)]], statespace), y==df.cstrt$y[i] & x==df.cstrt$x[i]) %>%
+    mutate(spend = cfx + ifx)
+  df.cstrt$spend[i] = min(a$spend)
+  a <- filter(cbind(w[[length(w)]], statespace), y==df.cstrt$y[i] & h==df.cstrt$h[i])
+  df.cstrt$maxifx[i] = max(a$ifx)
+}
+
+df.cstrt$ymax <- sqrt(2)*sigma*exp(ygrid)*gqpts[7] + exp(ygrid)
+df.cstrt <- mutate(df.cstrt, xt1 = R*(x - spend) + ymax, 
+                   ht1 = delta*(h + maxifx))
 
 
 bufferstock <- function(hhid, Vlist){
