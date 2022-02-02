@@ -1,79 +1,126 @@
+### packages and data
 library(tidyverse)
 library(parallel)
 library(nloptr)
 library(flatlandr)
+library(rdrobust)
+library(gmm)
 options('nloptr.show.inequality.warning'=FALSE)
 source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
+source(paste(getwd(), "/code/rdhelpers.r", sep = ""))
 
-### parameters
-gamma <- 2.988
-beta <- .9
-R <- 1.012
-cbar <- .733
-hbar <- .5
-lambda <- 1.55
-sigma <- .2
-alpha <- .9
-delta <- .95
+df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500) 
+#df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
 
-### utility function
-u <- function(c, h, i) {
-  cd = c^alpha * (h + i)^(1-alpha)
-  crra = cd^(1-gamma)/(1-gamma)
-  return(crra)
-}
+b <- optbw("consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none")[1,3]
 
-### statespace
-xn = hn = yn = 40
-ygrid = seq(8,13, length.out = yn)
-ygrid = chebnodes(m = yn, lb = 8, ub = 13)
-Blist = lapply(ygrid, function(y) -lambda*exp(y))
-cminlist = lapply(ygrid, function(y) cbar*exp(y))
-hminlist = lapply(ygrid, function(y) hbar*exp(y))
-
-statespace = lapply(c(1:length(ygrid)), create.statespace, cheb = FALSE)
-statespace = do.call(rbind, statespace)
+df.hh <- df.hh %>%
+  filter(abs(dist_2_seg13) < b & designation !="none") %>%
+  select(hhid, wave, wt_hh, food_consumption, total_income, var_inc, avg_inc, home_value, home_investment, imputed_bufferstock, quake_aid)  %>%
+  group_by(hhid) %>%
+  mutate(lag_h = lag(home_value, order_by = wave)) 
 
 ### Shocks - Gaussian Quadrature points
 gqpts = c(-2.651961, -1.673552, -.8162879, 0, .8162879, 1.673552, 2.651961)
 gqwts = c(.0009717812, .0545155828, .4256072526, .8102646176, .4256072526, .0545155828, .0009717812)/sqrt(pi)
 
-### Policy Function initial guess 
-ifx0 <- mapply(function(x, h, B, cmin, hmin) if_else(x-B-cmin<0 | x-B-cmin<hmin-h, max(0,hmin-h),
-                                                     if_else(.1*(x-B)<hmin-h, hmin-h,
-                                                            if_else(x-B-cmin>h/.9, .1*(x-B), 0))), 
-                        x = statespace$x, h = statespace$h, B = statespace$B, cmin = statespace$cmin, hmin = statespace$hmin)
-cfx0 <- mapply(function(x, B, cmin, i) if_else(x-B-i<cmin, cmin, x-B-i), 
-               x = statespace$x, B = statespace$B, cmin = statespace$cmin, i = ifx0)
-t0 = ceiling(pmax(mapply(function(h, hmin) (log(hmin) - log(h))/log(delta), statespace$h, statespace$hmin), 0))
-vfx0 = mapply(function(cmin, hmin, h, ifx, cfx, t) if_else(t<=1, u(cfx, h, ifx) + beta/(1-beta)*u(cmin, hmin, 0),
-                                                       u(cfx, h, ifx) + beta^(t-1)*u(cmin, h*delta^t, 0) + beta^(t)/(1-beta)*u(cmin, hmin, 0)),
-              cmin = statespace$cmin, hmin = statespace$hmin, h = statespace$h, i = ifx0, c = cfx0, t = t0)
-#v0 = cbind(statespace, data.frame("ifx" = ifx0, "cfx" = cfx0, "vfx" = vfx0))
+### Grid size
+xn = hn = 30; yn = 15
+ygrid = seq(8, 13, length.out = yn)
 
-### Chebyshev Approximation
-Vfxlist = lapply(ygrid, interpolater.creater, statespace, vfx0)
-df.test = crossing(x = seq(-4500,44983,200), h = seq(140,90000,200))
-df.test$proj = mapply(function(x,h) Vfxlist[[1]](x,h), x = df.test$x, h = df.test$h)
-ggplot(df.test) + geom_tile(aes(x = x, y = h, fill = log(-proj))) + scale_fill_viridis_c()
+### Final Value Function
+g = readRDS("g.rds")
+theta = theta0
+gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
 
+### statespace
+Blist = lapply(ygrid, function(y) -lambda*exp(y))
+cminlist = lapply(ygrid, function(y) cbar*exp(y))
+hminlist = lapply(ygrid, function(y) hbar*exp(y))
+statespace = lapply(c(1:length(ygrid)), create.statespace, Blist = Blist, cminlist = cminlist, 
+                    hminlist = hminlist)
+statespace = do.call(rbind, statespace)
 
-### Neural net
-library(neuralnet)
-nn=neuralnet(vfx~x+h, data=v0[v0$y==ygrid[1],], hidden=c(20,30,20), act.fct = "logistic",
-             linear.output = TRUE)
-df.test = crossing(x = seq(-4500,44983,200), h = seq(140,90000,200))
-df.test$proj = compute(nn, df.test)$net.result
-ggplot(df.test) + geom_tile(aes(x = x, y = h, fill = log(-proj))) + scale_fill_viridis_c()
+### Initial guess 
+v0 = guesser(statespace, theta)
+V = VFI(v0, statespace, theta = theta)
+V = compact(readRDS("/users/mdgordo/Desktop/w.rds"))
 
+## Checks and plots
+tolchecker(V)
+do.call(rbind, lapply(ygrid, satisficer, w = V, sigma = theta[7]))
 
-hhprob <- function(ci){
-  c = ci[1]
-  i = ci[2]
-  xtplus1 = R*(x - c - i) + yvec
-  great.expectations = unlist(mapply(Valfunc, x = xtplus1, h = hp))*gqwts
-  great.expectations[xtplus1<B] = Valfunc(B, delta*h)*gqwts[xtplus1<B]
-  r = u(c, i, h) + beta*
-    return(-r)
+iterplotter(V, hidx = statespace$h[1], yidx = statespace$y[1])
+iterplotter(V, hidx = statespace$h[10], yidx = statespace$y[10])
+iterplotter(V, xidx = statespace$x[1], yidx = statespace$y[1])
+iterplotter(V, xidx = statespace$x[31], yidx = statespace$y[31])
+
+library(rayshader)
+threedplotter(V, 1, "Tw", d3 = FALSE)
+threedplotter(V, 1, "cfx", d3 = FALSE)
+threedplotter(V, 1, "ifx", d3 = FALSE)
+
+### Policy Induced Surface
+aidamt = 250000
+
+threedplotter(V, 1, "aidcfx", d3=FALSE, aidamt = aidamt)
+threedplotter(V, 1, "aidifx", d3=FALSE, aidamt = aidamt)
+
+### Quantile Reg moments
+Vfx = V[[length(V)]]
+
+df.hh <- mutate(df.hh, x_noaid = imputed_bufferstock - quake_aid,
+                x_aid = x_noaid + aidamt,
+                lag_h = if_else(is.na(lag_h), home_value/delta - home_investment, lag_h)) %>%
+  drop_na(x_noaid, x_aid, avg_inc, lag_h) %>%
+  mutate(lag_h = if_else(lag_h<0, 0, lag_h))
+
+cfacts <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = Vfx, statespace = statespace, df.hh = df.hh, 
+                   mc.cores = detectCores())
+cfacts <- do.call(rbind, cfacts)
+colnames(cfacts) <- c("Consumption_noAid", "Consumption_Aid", "Investment_noAid", "Investment_Aid",
+                      "Borrowing_noAid", "Borrowing_Aid")
+
+pdfmaker <- function(var, ctpts){
+  xvar = as.vector(cfacts[,var])
+  pvec = sapply(ctpts, function(x) weighted.mean(xvar<x, df.hh$wt_hh, na.rm = TRUE))
+  return(pvec)
 }
+
+ctpts = seq(0, 200000, 20000)
+ggplot() +
+  geom_line(aes(x = ctpts, y = pdfmaker("Consumption_noAid", ctpts)), color = "red") +
+  geom_line(aes(x = ctpts, y = pdfmaker("Consumption_Aid", ctpts)), color = "blue") + 
+  theme_bw() + labs(x = "food consumption", y = "P(X<x)")
+
+ggplot() +
+  geom_line(aes(x = ctpts, y = pdfmaker("Investment_noAid", ctpts)), color = "red") +
+  geom_line(aes(x = ctpts, y = pdfmaker("Investment_Aid", ctpts)), color = "blue") + 
+  theme_bw() + labs(x = "home investment", y = "P(X<x)")
+
+ctpts = seq(-200000, 200000, 20000)
+ggplot() +
+  geom_line(aes(x = ctpts, y = pdfmaker("Borrowing_noAid", ctpts)), color = "red") +
+  geom_line(aes(x = ctpts, y = pdfmaker("Borrowing_Aid", ctpts)), color = "blue") + 
+  theme_bw() + labs(x = "borrowing", y = "P(X<x)")
+
+### WTP for aid
+df.hh$wtp <- mapply(wtpeliciter, x = df.hh$x_noaid, y = log(df.hh$avg_inc), h = df.hh$lag_h, 
+                    aidamt = aidamt, vfx = list(Vfx), statespace = list(statespace))
+
+ggplot() +
+  geom_histogram(aes(x = df.hh$wtp))
+
+### Plot WTP surface
+yspace = filter(statespace, y==ygrid[10])
+yspace$wtp = mclapply(wtpeliciter, x = yspace$x, y = yspace$y, h = yspace$h, 
+                        aidamt = aidamt, vfx = list(Vfx), statespace = list(statespace),
+                      mc.cores = detectCores())
+
+wtpfunk = interpolater.creater(ygrid[10], yspace, yspace$wtp)
+df.test = crossing(x = seq(Blist[[10]], 20*exp(ygrid[10]), length.out = 200), h = seq(0, 20*exp(ygrid[10]), length.out = 200))
+df.test$projwtp = mclapply(wtpfunk, x = df.test$x, h = df.test$h, mc.cores = detectCores())
+p = ggplot(df.test) + geom_tile(aes(x = x, y = h, fill = projwtp)) + scale_fill_viridis_c()
+plot_gg(p, multicore=TRUE)
 

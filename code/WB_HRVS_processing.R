@@ -950,8 +950,13 @@ for (i in c(1:3)) {
                       prev_loans = prev_loans_taken - prev_loans_made,
                       pub_transfers = pension + non_quake_aid + public_asst_inkind + work_aid_wages,
                       inf_transfers = gifts_received_cash + gifts_received_inkind,
+                      inf_transfers_made = gifts_given_cash + gifts_given_inkind,
                       NGO_transfers = NGO_cash + NGO_inkind,
-                      total_income = income_gross + pub_transfers + inf_transfers + NGO_transfers + remittance_income + quake_aid,
+                      total_income = income_gross + pub_transfers,
+                      total_outlays_net = loans_made_past_year + loan_payments + financial_assets + inf_transfers_made + 
+                        ceremonial_expenses + migration_costs - loans_taken_past_year - loan_payments_received - inf_transfers - 
+                        remittance_income - food_inkind*52,
+                      imputed_bufferstock = total_outlays_net + food_consumption + home_investment,
                       total_income_pc = total_income/currentlyliving,
                       market_shocks = riot_losses + price_shock_losses,
                       natural_shocks = livestock_farm_losses + other_nat_disaster_losses,
@@ -994,17 +999,15 @@ df.hh <- df.hh %>% mutate(quake_aid_bin = if_else(quake_aid > 0, 1, 0),
   group_by(hhid) %>%
   mutate(quake_aid_lag = if_else(is.na(lag(quake_aid_bin, order_by = wave)), 0, lag(quake_aid_bin, order_by = wave)),
          lag_remitt = lag(remittance_income, order_by = wave),
-         lag_loan = lag(loans_taken_past_year, order_by = wave),
-         lag_income_gross = lag(income_gross, order_by = wave),
-         lag_income = lag(income, order_by = wave))
+         lag_loan = lag(loans_taken_past_year, order_by = wave))
 
 df.aid <- df.hh %>% arrange(wave) %>%
   group_by(hhid) %>% 
   summarize(aid_total = sum(quake_aid),
-          var_cons = var(log(consumption)),
-          avg_cons = mean(log(consumption)),
-          var_cons_pc = var(log(consumption_pc)),
-          avg_cons_pc = mean(log(consumption_pc)),
+          var_cons = var(consumption),
+          avg_cons = mean(consumption),
+          var_inc = var(total_income),
+          avg_inc = mean(total_income),
           gorkha_loss_ever = sum(gorkha_loss_amt),
           total_remit = sum(remittance_income), 
           total_loans_taken = sum(loans_taken_past_year),

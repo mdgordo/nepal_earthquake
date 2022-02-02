@@ -501,6 +501,58 @@ df.hh %>% mutate(food_share = (food_market + food_home_production)/consumption) 
   geom_point(aes(x = log(consumption), y = food_share))
 ```
 
+### Savings and Transfers
+
+```{r}
+df.transfers <- df.hh %>% 
+  summarize(net_loans = weighted.mean(net_loans, w = wt_hh, na.rm = TRUE),
+            net_loan_payments = weighted.mean(net_loan_payments, w = wt_hh, na.rm = TRUE),
+            food_inkind = weighted.mean(food_inkind, w = wt_hh, na.rm = TRUE),
+            financial_assets = weighted.mean(financial_assets, w = wt_hh, na.rm = TRUE),
+            informal_transfers = weighted.mean(inf_transfers, w = wt_hh, na.rm = TRUE) - 
+              weighted.mean(inf_transfers_made, w = wt_hh, na.rm = TRUE),
+            ceremonial_expenses = weighted.mean(ceremonial_expenses, w = wt_hh, na.rm = TRUE),
+            migration_costs = weighted.mean(migration_costs, w = wt_hh, na.rm = TRUE),
+            remittance_income = weighted.mean(remittance_income, w = wt_hh, na.rm = TRUE)) %>%
+  pivot_longer(cols = colnames(.), names_to = "forms_of_saving", values_to = "amount")
+
+df.transfers$forms_of_saving <- factor(df.transfers$forms_of_saving, levels = c("net_loans", "net_loan_payments", "informal_transfers", "food_inkind",
+                                                                                "ceremonial_expenses", "migration_costs", "remittance_income",
+                                                                                "financial_assets"))
+
+ggplot(df.transfers) + geom_bar(aes(x = forms_of_saving, weight = amount, fill = forms_of_saving)) +
+      theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
+      labs(y = "", x = "")
+ggsave(paste(rootdir, "/presentation_materials/savingtransfers.png", sep = ""), width = 10, height = 7)
+
+df.transfers <- df.hh %>% 
+  summarize(loans_taken = weighted.mean(net_loans>0, w = wt_hh, na.rm = TRUE),
+            loans_made = weighted.mean(net_loans<0, w = wt_hh, na.rm = TRUE),
+            net_repayer = weighted.mean(net_loan_payments>0, w = wt_hh, na.rm = TRUE),
+            net_collector = weighted.mean(net_loan_payments<0, w = wt_hh, na.rm = TRUE),
+            food_inkind = weighted.mean(food_inkind>0, w = wt_hh, na.rm = TRUE),
+            financial_assets = weighted.mean(financial_assets>0, w = wt_hh, na.rm = TRUE),
+            informal_transfer_received = weighted.mean(inf_transfers - inf_transfers_made>0, w = wt_hh, na.rm = TRUE),
+            informal_transfer_made = weighted.mean(inf_transfers - inf_transfers_made<0, w = wt_hh, na.rm = TRUE),
+            ceremonial_expenses = weighted.mean(ceremonial_expenses>0, w = wt_hh, na.rm = TRUE),
+            migration_costs = weighted.mean(migration_costs>0, w = wt_hh, na.rm = TRUE),
+            remittance_income = weighted.mean(remittance_income>0, w = wt_hh, na.rm = TRUE)) %>%
+  pivot_longer(cols = colnames(.), names_to = "forms_of_saving", values_to = "fraction_of_hhs")
+
+df.transfers$forms_of_saving <- factor(df.transfers$forms_of_saving, levels = c("loans_taken", "loans_made", "net_repayer", "net_collector",
+                                                                                "informal_transfer_received", "informal_transfer_made", "food_inkind",
+                                                                                "ceremonial_expenses", "migration_costs", "remittance_income",
+                                                                                "financial_assets"))
+
+ggplot(df.transfers) + geom_bar(aes(x = forms_of_saving, weight = fraction_of_hhs, fill = forms_of_saving)) +
+      theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
+      labs(y = "", x = "")
+ggsave(paste(rootdir, "/presentation_materials/savingtransfersfrac.png", sep = ""), width = 10, height = 7)
+
+ggplot(df.hh) +
+  geom_histogram(aes(x = imputed_bufferstock)) + theme_bw() + xlim(-1.5e6, 1.5e6)
+```
+
 ### experienced shocks
 
 ```{r}
