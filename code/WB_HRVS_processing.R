@@ -954,7 +954,7 @@ for (i in c(1:3)) {
                       NGO_transfers = NGO_cash + NGO_inkind,
                       total_income = income_gross + pub_transfers,
                       total_outlays_net = loans_made_past_year + loan_payments + financial_assets + inf_transfers_made + 
-                        ceremonial_expenses + migration_costs - loans_taken_past_year - loan_payments_received - inf_transfers - 
+                        migration_costs - loans_taken_past_year - loan_payments_received - inf_transfers - 
                         remittance_income - food_inkind*52,
                       imputed_bufferstock = total_outlays_net + food_consumption + home_investment,
                       total_income_pc = total_income/currentlyliving,
@@ -1006,8 +1006,8 @@ df.aid <- df.hh %>% arrange(wave) %>%
   summarize(aid_total = sum(quake_aid),
           var_cons = var(consumption),
           avg_cons = mean(consumption),
-          var_inc = var(total_income),
-          avg_inc = mean(total_income),
+          var_inc = var(log(total_income)),
+          avg_inc = mean(log(total_income)),
           gorkha_loss_ever = sum(gorkha_loss_amt),
           total_remit = sum(remittance_income), 
           total_loans_taken = sum(loans_taken_past_year),

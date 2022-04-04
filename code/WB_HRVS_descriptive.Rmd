@@ -26,6 +26,8 @@ library(sandwich)
 library(readstata13)
 #devtools::install_github("mdgordo/dumbells",ref="master")
 library(dumbells)
+library(rdrobust)
+source(paste(rootdir, "/code/rdhelpers.r", sep = ""))
 
 df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
 df <- filter(df.hh, !is.na(income_gross) & income_gross>0 & food_consumption>0)
@@ -35,11 +37,13 @@ df <- filter(df.hh, !is.na(income_gross) & income_gross>0 & food_consumption>0)
 
 ```{r}
 dfsum <- df[,c("consumption", "food_consumption", "income_gross", "productive_assets",
+              "home_value", "home_investment", "financial_assets",
               "loans_taken_past_year", "loans_made_past_year", "remittance_income",
               "currentlyliving", "n_migrants", "skipped_meal", "aid_cumulative", "received_aid", 
               "NGO_transfers", "pub_transfers", "inf_transfers", "gorkha_hh")]
 
-xtabwts <- sumstats.wtd(dfsum, df$wt_hh, d = 2, labs = c("Consumption", "Food Consumption", "Income", "Productive Assets", "Loans Taken Past Year",
+xtabwts <- sumstats.wtd(dfsum, df$wt_hh, d = 2, labs = c("Consumption", "Food Consumption", "Income", "Productive Assets", 
+                              "Home Value", "Home Investment", "Financial Assets", "Loans Taken Past Year",
                               "Loans Made Past Year", "Remittance Income", "Household Members", "Connected Migrants", "Skipped Meal(%)",
                               "Earthquake Aid", "Earthquake Aid(%)", "NGO Aid", 
                               "Public Transfers", "Informal Transfers", "Affected by Earthquake"))
@@ -48,6 +52,9 @@ print(xtabwts, include.rownames = FALSE)
 weighted.mean(df$n_migrants > 0, df$wt_hh)
 weighted.mean(df$migrants_overseas, df$wt_hh)/weighted.mean(df$n_migrants, df$wt_hh)
 weighted.mean(df$migrants_past_year, df$wt_hh)/weighted.mean(df$n_migrants, df$wt_hh)
+weighted.mean(df$skipped_meal[df$wave==1], df$wt_hh[df$wave==1])
+weighted.mean(df$skipped_meal[df$wave==2], df$wt_hh[df$wave==2])
+weighted.mean(df$skipped_meal[df$wave==3], df$wt_hh[df$wave==3])
 ```
 
 ```{r}
@@ -91,11 +98,18 @@ risksharing_r1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gr
 
 mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_r1)
 
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include household and village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
 
 weighted.mean(df.hh$remittance_income[df.hh$femalehh==1]>0, df.hh$wt_hh[df.hh$femalehh==1], na.rm = TRUE)
 weighted.mean(df.hh$remittance_income[df.hh$femalehh==0]>0, df.hh$wt_hh[df.hh$femalehh==0], na.rm = TRUE)
+
+
+risksharing_q1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):gorkha_hh
+                       | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+summary(risksharing_q1)
 ```
 
 ### Cyclicality - ways of smoothing- HH FE
@@ -126,9 +140,9 @@ loanreg2 <- felm(log(loans_taken_past_year + 1) ~ log(income_gross) + log(lag_lo
 livereg2 <- felm(log(productive_assets+1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-mods <- list(aidreg, pubtransreg, inftransreg, ngoreg, remreg2, migreg, loanreg2, livereg2)
+mods <- list(aidreg, pubtransreg, ngoreg, remreg2, migreg, loanreg2)
 
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Household", 8)),
                            c("Cluster", rep("Ward", 8))))
 ```
@@ -157,7 +171,7 @@ remregvdc <- felm(log(remittance_income + 1) ~ log(income_gross) | as.factor(vdc
 loanregvdc <- felm(log(loans_taken_past_year+1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-mods <- list(aidregvdc, pubtransregvdc, inftransregvdc, ngoregvdc, remregvdc, migregvdc, loanregvdc)
+mods <- list(aidregvdc, pubtransregvdc, ngoregvdc, remregvdc, migregvdc, loanregvdc)
 
 stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
@@ -168,30 +182,30 @@ stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq
 Obviously could be reverse causal, but within a village year - high consumption/income correlated with aid received
 
 ```{r}
-cpubtransregvdc <- felm(log(pub_transfers + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+cpubtransregvdc <- felm(log(pub_transfers + 1) ~ log(avg_cons) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-cinftransregvdc <- felm(log(inf_transfers + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+cinftransregvdc <- felm(log(inf_transfers + 1) ~ log(avg_cons) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-caidregvdc <- felm(log(quake_aid + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+caidregvdc <- felm(log(quake_aid + 1) ~ log(avg_cons) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-cngoregvdc <- felm(log(NGO_transfers + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+cngoregvdc <- felm(log(NGO_transfers + 1) ~ log(avg_cons) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-cmigregvdc <- felm(log(migrants_past_year+1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+cmigregvdc <- felm(log(migrants_past_year+1) ~ log(avg_cons) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-cremregvdc <- felm(log(remittance_income + 1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+cremregvdc <- felm(log(remittance_income + 1) ~ log(avg_cons) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-cloanregvdc <- felm(log(loans_taken_past_year+1) ~ log(consumption) | as.factor(vdc_yr) | 0 | strata,
+cloanregvdc <- felm(log(loans_taken_past_year+1) ~ log(avg_cons) | as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-mods <- list(caidregvdc, cpubtransregvdc, cinftransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
+mods <- list(caidregvdc, cpubtransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
 
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
                            c("Cluster", rep("Ward", 8))))
 ```
@@ -511,7 +525,6 @@ df.transfers <- df.hh %>%
             financial_assets = weighted.mean(financial_assets, w = wt_hh, na.rm = TRUE),
             informal_transfers = weighted.mean(inf_transfers, w = wt_hh, na.rm = TRUE) - 
               weighted.mean(inf_transfers_made, w = wt_hh, na.rm = TRUE),
-            ceremonial_expenses = weighted.mean(ceremonial_expenses, w = wt_hh, na.rm = TRUE),
             migration_costs = weighted.mean(migration_costs, w = wt_hh, na.rm = TRUE),
             remittance_income = weighted.mean(remittance_income, w = wt_hh, na.rm = TRUE)) %>%
   pivot_longer(cols = colnames(.), names_to = "forms_of_saving", values_to = "amount")
@@ -520,10 +533,10 @@ df.transfers$forms_of_saving <- factor(df.transfers$forms_of_saving, levels = c(
                                                                                 "ceremonial_expenses", "migration_costs", "remittance_income",
                                                                                 "financial_assets"))
 
-ggplot(df.transfers) + geom_bar(aes(x = forms_of_saving, weight = amount, fill = forms_of_saving)) +
+g1 <- ggplot(df.transfers) + geom_bar(aes(x = forms_of_saving, weight = amount, fill = forms_of_saving)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "", x = "")
-ggsave(paste(rootdir, "/presentation_materials/savingtransfers.png", sep = ""), width = 10, height = 7)
+      labs(y = "Average Amount", x = "")
+g1
 
 df.transfers <- df.hh %>% 
   summarize(loans_taken = weighted.mean(net_loans>0, w = wt_hh, na.rm = TRUE),
@@ -532,22 +545,23 @@ df.transfers <- df.hh %>%
             net_collector = weighted.mean(net_loan_payments<0, w = wt_hh, na.rm = TRUE),
             food_inkind = weighted.mean(food_inkind>0, w = wt_hh, na.rm = TRUE),
             financial_assets = weighted.mean(financial_assets>0, w = wt_hh, na.rm = TRUE),
-            informal_transfer_received = weighted.mean(inf_transfers - inf_transfers_made>0, w = wt_hh, na.rm = TRUE),
-            informal_transfer_made = weighted.mean(inf_transfers - inf_transfers_made<0, w = wt_hh, na.rm = TRUE),
-            ceremonial_expenses = weighted.mean(ceremonial_expenses>0, w = wt_hh, na.rm = TRUE),
+            inf_transfer_rec = weighted.mean(inf_transfers - inf_transfers_made>0, w = wt_hh, na.rm = TRUE),
+            inf_transfer_made = weighted.mean(inf_transfers - inf_transfers_made<0, w = wt_hh, na.rm = TRUE),
             migration_costs = weighted.mean(migration_costs>0, w = wt_hh, na.rm = TRUE),
             remittance_income = weighted.mean(remittance_income>0, w = wt_hh, na.rm = TRUE)) %>%
   pivot_longer(cols = colnames(.), names_to = "forms_of_saving", values_to = "fraction_of_hhs")
 
 df.transfers$forms_of_saving <- factor(df.transfers$forms_of_saving, levels = c("loans_taken", "loans_made", "net_repayer", "net_collector",
-                                                                                "informal_transfer_received", "informal_transfer_made", "food_inkind",
-                                                                                "ceremonial_expenses", "migration_costs", "remittance_income",
+                                                                                "inf_transfer_rec", "inf_transfer_made", "food_inkind",
+                                                                                "migration_costs", "remittance_income",
                                                                                 "financial_assets"))
 
-ggplot(df.transfers) + geom_bar(aes(x = forms_of_saving, weight = fraction_of_hhs, fill = forms_of_saving)) +
+g2 <- ggplot(df.transfers) + geom_bar(aes(x = forms_of_saving, weight = fraction_of_hhs, fill = forms_of_saving)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "", x = "")
-ggsave(paste(rootdir, "/presentation_materials/savingtransfersfrac.png", sep = ""), width = 10, height = 7)
+      labs(y = "Fraction of HHs", x = "")
+g2
+cowplot::plot_grid(g2, g1)
+ggsave(paste(rootdir, "/presentation_materials/savingtransfers.png", sep = ""), width = 10, height = 7)
 
 ggplot(df.hh) +
   geom_histogram(aes(x = imputed_bufferstock)) + theme_bw() + xlim(-1.5e6, 1.5e6)
@@ -676,7 +690,7 @@ ggsave(paste(rootdir, "/presentation_materials/coping.png", sep = ""), width = 1
 https://www.preventionweb.net/files/63268_18moderatelyaffecteddistrictsovervi.pdf 
 #### green dots are border districts (<50 km)
 
-```{r, message=FALSE}
+```{r, message=FALSE, warning=FALSE}
 df.districts <- data.frame("district_name" = c("Gorkha", "Dhading", "Rasuwa", "Nuwakot", "Sindhupalchok", "Dolakha", "Ramechhap",
                                                "Kathmandu", "Bhaktapur", "Lalitpur", "Kabhrepalanchok", "Okhaldhunga", "Sindhuli", "Makwanpur",
                                                "Lamjung", "Tanahun", "Chitwan", "Solukhumbu", "Khotang", 
@@ -714,7 +728,9 @@ epicenter <- st_sfc(st_point(x = c(84.731, 28.23)), crs = 4326)
 epicenter <- st_sf(district = c(36), distname = c("Gorkha"), vdc = c("na"), ward = c("na"), geometry = c(epicenter), location = c("epicenter"))
 df.wards <- rbind(df.wards, epicenter)
 
-df.sample <- filter(df.hh, abs(dist_2_seg13) <= 38.6)
+h0 <- optbw("consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none")[1,1]
+
+df.sample <- filter(df.hh, abs(dist_2_seg13) <= h0 & designation!="none")
 samplewards <- unique(df.sample[,c("district", "vdc", "ward")])
 samplewards <- paste(samplewards$district, samplewards$vdc, samplewards$ward)
 df.wards <- mutate(df.wards, borderward14 = if_else(paste(district, vdc, ward) %in% samplewards, "border vdc", 

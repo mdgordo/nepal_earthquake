@@ -2,12 +2,14 @@
 library(tidyverse)
 library(parallel)
 library(nloptr)
+library(fastGHQuad)
 library(flatlandr)
-library(rdrobust)
 library(gmm)
+library(Rearrangement)
+library(rdrobust)
 options('nloptr.show.inequality.warning'=FALSE)
 source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
-source(paste(getwd(), "/code/rdhelpers.r", sep = ""))
+source(paste(getwd(), "/code/rdhelpers.R", sep = ""))
 
 df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500) 
 #df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
@@ -16,70 +18,64 @@ b <- optbw("consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exc
 
 df.hh <- df.hh %>%
   filter(abs(dist_2_seg13) < b & designation !="none") %>%
-  select(hhid, wave, wt_hh, food_consumption, total_income, var_inc, avg_inc, home_value, home_investment, imputed_bufferstock, quake_aid) %>%
+  select(hhid, wave, wt_hh, food_consumption, total_income, var_inc, avg_inc, 
+         home_value, home_investment, imputed_bufferstock, quake_aid) %>% ## add damages?
   group_by(hhid) %>%
   mutate(lag_h = lag(home_value, order_by = wave),
          lag_x = lag(imputed_bufferstock, order_by = wave),
          lag_y = lag(total_income, order_by = wave),
          lag_c = lag(food_consumption, order_by = wave),
-         lag_i = lag(home_investment, order_by = wave)) 
+         lag_i = lag(home_investment, order_by = wave)) %>%
+  filter(avg_inc>0 & food_consumption>0 & lag_h + home_investment>0)
 df.hh <- df.hh[complete.cases(df.hh),]
 
 ### parameters
-gamma0 <- 2.988
-beta0 <- .9
-R0 <- 1.012
-cbar0 <- .733
-hbar0 <- .6
-lambda0 <- 1.2
-sigma0 <- .2
-alpha0 <- .9
-delta0 <- .95
+gamma0 <- 4.77; beta0 <- .9; R0 <- 1.01; cbar0 <- .1; hbar0 <- .1
+lambda0 <- 1.5; sigma0 <- .06; alpha0 <- .8; delta0 <- .9
 
 theta0 <- c(gamma0, beta0, R0, cbar0, hbar0, lambda0, sigma0, alpha0, delta0)
 
-### Shocks - Gaussian Quadrature points
-gqpts = c(-2.651961, -1.673552, -.8162879, 0, .8162879, 1.673552, 2.651961)
-gqwts = c(.0009717812, .0545155828, .4256072526, .8102646176, .4256072526, .0545155828, .0009717812)/sqrt(pi)
-
 ### Grid size
-xn = hn = 30; yn = 15
-ygrid = seq(8, 13, length.out = yn)
-
+xn = 40; hn = 40; yn = 10
+ygrid = as.vector(quantile(df.hh$avg_inc, seq(0,1,length.out = yn), na.rm = TRUE))
 
 ### Define GMM function
 
-gmmmomentmatcher <- function(theta, data) {
+gmmmomentmatcher <- function(theta, df) {
   print(theta)
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
-  
-  ### statespace
-  Blist = lapply(ygrid, function(y) -lambda*exp(y))
-  cminlist = lapply(ygrid, function(y) cbar*exp(y))
-  hminlist = lapply(ygrid, function(y) hbar*exp(y))
-  
-  statespace = lapply(c(1:length(ygrid)), create.statespace, Blist = Blist, cminlist = cminlist, 
-                      hminlist = hminlist)
-  statespace = do.call(rbind, statespace)
-  
-  ### Initial guess 
-  v0 = guesser(statespace, theta)
+  saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
   
   ### VFI
-  V = VFI(v0, statespace, theta = theta)
-  V = compact(V)
-  
-  finalV <- cbind(statespace, V[[length(V)]])
+  V = VFI(theta)
+  saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
+  finalV <- V[[length(V)]]
   
   ### data
-  momentmat <- mclapply(c(1:nrow(data)), momentmatcher, vfx = finalV, theta = theta, data = data, mc.cores = detectCores())
+  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = finalV, t0 = theta, 
+                        data = df[,-c(1:2)], mc.cores = detectCores())
   momentmat <- do.call(rbind, momentmat)
+  print(sum(colMeans(momentmat)^2))
   return(momentmat)
 }
 
-g <- gmm(gmmmomentmatcher, x = df.hh[,-c(1:2)], t0 = theta0, optfct = "nlminb", 
-         upper = c(Inf, 1, Inf, 1, 1, Inf, Inf, 1, 1), lower = c(1, 0, 0, 0, 0, 0, 0, 0, 0),
-         onlyCoefficients = TRUE)
+g <- gmm(g = gmmmomentmatcher, x = df.hh, t0 = theta0,
+         gradv = momentgradient, type = "twoStep", onlyCoefficients=TRUE, optfct = "nlminb", 
+         lower = c(1.01, .6, .9, .01, .01, 0, 0, .1, .5),
+         upper = c(10, .99, 1.65, 1, 1, 10, 1, .99, 1))
 
-saveRDS(g, "g.rds")
+summarize(g)
+
+theta <- g$coefficients
+gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
+
+### statespace
+xn = 40; hn = 40; yn = 10
+ygrid = as.vector(quantile(df.hh$avg_inc, seq(0,1,length.out = yn), na.rm = TRUE))
+
+### Final Value function
+V = VFI(theta)
+saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
+
+

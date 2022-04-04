@@ -83,7 +83,7 @@ pdam4 <- felm(aid_eligible ~ death_injury | as.factor(vdcmun_id),
 
 mods <- list(pdam1, pdam2, pdam3, pdam4)
 
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include vdc fixed effects"), notes.align = "l")
 ```
 
@@ -107,7 +107,7 @@ pdam4 <- felm(aid_eligible ~ as.factor(is_bank_account_present_in_household) | a
 
 mods <- list(pdam1, pdam5, pdam2, pdam3, pdam4)
 
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include vdc fixed effects"), notes.align = "l")
 ```
 
@@ -131,6 +131,6 @@ pdam5 <- felm(aid_eligible ~ as.factor(caste_recode) | as.factor(vdcmun_id),
 
 mods <- list(pdam1, pdam2, pdam3, pdam4, pdam5)
 
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include vdc fixed effects"), notes.align = "l")
 ```

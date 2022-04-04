@@ -1,0 +1,54 @@
+---
+title: "WB HRVS estimation - DID"
+author: "Matthew Gordon"
+date: "7/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+rootdir <- dirname(getwd())
+```
+
+### Load packages and data
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+library(tidyverse)
+library(did)
+library(lfe)
+library(AER)
+library(stargazer)
+library(sandwich)
+
+df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
+
+df.hh <- mutate(df.hh, treat.group = if_else(reconstruction_aid_bin==1,wave-1,4)) %>%
+  group_by(hhid) %>%
+  mutate(treat.group = min(treat.group)) %>%
+  mutate(treat.group = if_else(treat.group==4,0,treat.group))
+
+df.hh %>% 
+  filter(wave==1) %>% group_by(treat.group, gorkha_hh) %>%
+  summarize(n = n())
+
+df.rawmeans <- df.hh %>% 
+  group_by(treat.group, wave) %>%
+  summarize(fc = mean(food_consumption, na.rm = TRUE))
+
+ggplot(df.rawmeans) + 
+  geom_line(aes(x = wave, y = fc, color = as.factor(treat.group)))
+```
+```{r}
+didmod <- att_gt(yname = "food_consumption",
+                 gname = "treat.group",
+                 idname = "hhid",
+                 tname = "wave",
+                 xformla = ~gorkha_loss_ever,
+                 data = df.hh,
+                 weightsname = "wt_hh",
+                 clustervars = c("hhid", "strata"))
+summary(didmod)
+
+summary(aggte(didmod, type = "dynamic"))
+```
+
