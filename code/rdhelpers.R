@@ -1,28 +1,45 @@
 ### RD functions
 
-plotvar <- function(v, b, df, h=20, ihs=FALSE, span = 1, k = "triangular", weights = TRUE, donut = 0, dist.exclude=NULL) {
+covmatmaker <- function(b, df, wide = FALSE){
+  if (wide) {
+    if (b=="dist_2_14") {
+      covs <- model.matrix(~as.factor(df$border14_segment)+as.factor(df$border14_segment)*df$dist_2_14 + df$shake_pga + as.factor(df$wave) + 
+                           df$high_caste + df$class5 + df$age_hh + df$age_hh^2 + df$slope + df$elevation + df$gorkha_hh)
+      covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_14"))]
+    } else if (b=="dist_2_seg13"){
+      covs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + df$shake_pga + as.factor(df$wave) + 
+                           df$high_caste + df$class5 + df$age_hh + df$age_hh^2 + df$slope + df$elevation + df$gorkha_hh)
+      covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_seg13"))]
+    } else {
+      covs <- model.matrix(~df$shake_pga + as.factor(df$wave) + 
+                             df$high_caste + df$class5 + df$age_hh + df$age_hh^2 + df$slope + df$elevation + df$gorkha_hh)
+      covs <- covs[, !(colnames(covs) %in% c("(Intercept)"))]} 
+  } else {
+    if (b=="dist_2_14") {
+      covs <- model.matrix(~as.factor(df$border14_segment)+as.factor(df$border14_segment)*df$dist_2_14 + df$shake_pga + as.factor(df$wave))
+      covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_14"))]
+    } else if (b=="dist_2_seg13"){
+      covs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + df$shake_pga + as.factor(df$wave))
+      covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_seg13"))]
+    } else {
+      covs <- model.matrix(~df$shake_pga + as.factor(df$wave))
+      covs <- covs[, !(colnames(covs) %in% c("(Intercept)"))]} 
+  }
+  return(covs)
+}
+
+plotvar <- function(v, b, df, h=20, ihs=FALSE, span = 1, k = "triangular", weights = TRUE, donut = 0, dist.exclude=NULL, wide =  FALSE) {
   if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
-  df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "shake_pga", "wave", "quake_losses")]
+  if (wide) {df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "shake_pga", "wave", 
+                         "quake_losses", "high_caste", "class5", "age_hh", "gorkha_hh", "slope")]} 
+  else {df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "shake_pga", "wave", "quake_losses")]}
   df <- filter(df, abs(get(b))<h & complete.cases(df) & abs(get(b))>donut)
   Y <- unlist(df[, v])
   X <- unlist(df[, b])
   if (ihs==TRUE) Y <- ihs(Y)
-  if (b=="dist_2_14") {
-    segcovs <- model.matrix(~as.factor(df$border14_segment)+as.factor(df$border14_segment)*df$dist_2_14 + as.factor(df$wave))
-    segcovs <- segcovs[, !(colnames(segcovs) %in% c("(Intercept)", "df$dist_2_14"))]
-    resreg <- lm(Y ~ segcovs)
-    resregres <- resreg$residuals
-  } else if (b=="dist_2_seg13"){
-    segcovs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + as.factor(df$wave))
-    segcovs <- segcovs[, !(colnames(segcovs) %in% c("(Intercept)", "df$dist_2_seg13"))]
-    resreg <- lm(Y ~ segcovs)
-    resregres <- resreg$residuals
-  } else {
-    segcovs <- model.matrix(df$shake_pga + df$quake_losses + as.factor(df$wave))
-    segcovs <- segcovs[, !(colnames(segcovs) %in% c("(Intercept)"))]
-    resreg <- lm(Y ~ segcovs)
-    resregres <- resreg$residuals
-  }
+  segcovs <- covmatmaker(b, df, wide)
+  resreg <- lm(Y ~ segcovs)
+  resregres <- resreg$residuals
   if (weights==TRUE) w <- df$wt_hh else w <- NULL
   r <- rdplot(y = resregres, x = X, c = 0, weights = w, binselect = "esmv", kernel = k, 
               poly = TRUE, p = 1, title = NULL, x.label = b, y.label = v, hide = TRUE, span = span, method = "lm", h = h)
@@ -42,22 +59,16 @@ histfunc <- function(b, df, h=40, dist.exclude=NULL){
     theme_light() + labs(y = "weighted count", x = paste("distance to ", b))
 }
 
-regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL){
+regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, 
+                   k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL, wide = FALSE){
   if (donut!=0) df <- filter(df, abs(get(b))>donut)
   if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
+  if (wide) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
   if (vce=="nn") c <- NULL else c <- df$strata
   if (fuzzy==TRUE) {f <- df$aid_cumulative_bin} else if (fuzzy==FALSE) {f <- NULL} else 
     if (fuzzy=="inv") {f <- 1-df$aid_cumulative_bin} else if (fuzz=="random") f <- rbinom(nrow(df), 1, mean(df$aid_cumulative_bin)) else {f <- unlist(df[, fuzzy])}
   if (!is.null(h) & is.null(b0)) b0 <- 2*h
-  if (b=="dist_2_14") {
-    covs <- model.matrix(~as.factor(df$border14_segment)+as.factor(df$border14_segment)*df$dist_2_14 + df$shake_pga + as.factor(df$wave))
-    covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_14"))]
-  } else if (b=="dist_2_seg13"){
-    covs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + df$shake_pga + as.factor(df$wave))
-    covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_seg13"))]
-  } else {
-    covs <- model.matrix(~df$shake_pga + as.factor(df$wave))
-    covs <- covs[, !(colnames(covs) %in% c("(Intercept)"))]}
+  covs <- covmatmaker(b, df, wide)
   X <- unlist(df[, b])
   Y <- unlist(df[, v])
   if (ihs==TRUE) Y <- ihs(Y)
@@ -66,22 +77,15 @@ regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, k 
   return(out)
 }
 
-optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL){
+optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL, wide = FALSE){
   if (donut!=0) df <- filter(df, abs(get(b))>donut)
   if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
+  if (wide) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
   if (vce=="nn") c <- NULL else c <- df$strata
   Y <- unlist(df[, v])
   X <- unlist(df[, b])
   if (fuzzy==TRUE) f <- df$aid_cumulative_bin else if (fuzzy==FALSE) f <- NULL else if (fuzzy=="inv") f <- 1-df$aid_cumulative_bin else f <- unlist(df[, fuzzy])
-  if (b=="dist_2_14") {
-    covs <- model.matrix(~as.factor(df$border14_segment)+as.factor(df$border14_segment)*df$dist_2_14 + df$shake_pga + as.factor(df$wave))
-    covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_14"))]
-  } else if (b=="dist_2_seg13"){
-    covs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + df$shake_pga + as.factor(df$wave))
-    covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_seg13"))]
-  } else {
-    covs <- model.matrix(~df$shake_pga + as.factor(df$wave))
-    covs <- covs[, !(colnames(covs) %in% c("(Intercept)"))]}
+  covs <- covmatmaker(b, df, wide)
   if (weights==TRUE) w <- df$wt_hh else w <- NULL
   bwsct <- rdbwselect(y = Y, x = X, c = 0, weights = w, fuzzy = f, covs = covs,
                       cluster = c, kernel = k, vce = vce, silent = TRUE)

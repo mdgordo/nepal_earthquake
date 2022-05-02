@@ -67,7 +67,43 @@ ggplot(filter(aidtab, between(quake_aid, 1, 250000))) +
   theme_bw() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), text = element_text(size = 20)) + 
   labs(x = "Aid (000s NPR)", fill = "Wave")
 ggsave(paste(rootdir, "/presentation_materials/aid_hist.png", sep = ""), width = 10, height = 7)
+
+disttab <- df.hh %>%
+  group_by(designation) %>%
+  summarize(affected_hhs = mean(gorkha_hh, na.rm = TRUE)*10e4,
+            avg_losses = mean(quake_losses, na.rm = TRUE)) %>%
+  pivot_longer(-designation, names_to = "var", values_to = "val")
+disttab$designation <- factor(disttab$designation, levels = c("severe", "crisis", "heavy", "hit", "slight", "none"))
+disttab$var <- factor(disttab$var, levels = c("avg_losses", "affected_hhs"))
+
+ggplot(disttab) +
+  geom_col(aes(x = designation, y = val, fill = var, group = var), position = "dodge") +
+  theme_bw() + theme(text = element_text(size = 20)) + 
+  labs(x = "", fill = "") + scale_y_continuous("Quake Losses (NPR)", label = scales::comma, sec.axis = sec_axis(~ ./10e4, name = "Affected HHs")) +
+  scale_fill_discrete(labels = c("Average Loss", "Fraction Affected"))
+ggsave(paste(rootdir, "/presentation_materials/distdesignations.png", sep = ""), width = 12, height = 7)
+
+disttabfine <- df.hh %>%
+  group_by(district, designation) %>%
+  summarize(affected_hhs = mean(gorkha_hh, na.rm = TRUE),
+            avg_losses = mean(quake_losses, na.rm = TRUE))
+
+df.loss <- read.dta13(paste(rootdir, "/data/NPL_2016-2018_HRVS_v01_M_STATA12/Wave 1 - Household/Section_15a.dta", sep = "")) %>%
+  filter(shockid %in% c("Earthquake", "Landslide") & s15q02!=4) %>%
+  group_by(s15q02) %>%
+  summarize(loss_type = n()*200,
+            loss_amt = mean(s15q03, na.rm = TRUE)) %>%
+  pivot_longer(-s15q02, names_to = "var", values_to = "val")
+
+ggplot(df.loss) +
+  geom_col(aes(x = as.factor(s15q02), y = val, fill = var, group = var), position = "dodge") +
+  theme_bw() + theme(text = element_text(size = 20)) + 
+  labs(x = "", fill = "") + scale_y_continuous("Quake Losses (NPR)", label = scales::comma, sec.axis = sec_axis(~ ./200, name = "Number of HHs")) +
+  scale_fill_discrete(labels = c("Loss Amount", "Number of HHs")) + scale_x_discrete(labels = c("Income", "Assets", "Both"))
+ggsave(paste(rootdir, "/presentation_materials/typeofloss.png", sep = ""), width = 12, height = 7)
 ```
+
+Solukhumbhu had higher average losses than Makwanpur - otherwise all heaviest hit districts are in top two categories
 
 ### Risk sharing regressions
 Income doesnt include remittances/transfers/loans or inputs - zeros dropped
@@ -98,7 +134,7 @@ risksharing_r1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gr
 
 mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_r1)
 
-stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include household and village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
 
 weighted.mean(df.hh$remittance_income[df.hh$femalehh==1]>0, df.hh$wt_hh[df.hh$femalehh==1], na.rm = TRUE)
@@ -142,43 +178,11 @@ livereg2 <- felm(log(productive_assets+1) ~ log(income_gross) | as.factor(hhid) 
 
 mods <- list(aidreg, pubtransreg, ngoreg, remreg2, migreg, loanreg2)
 
-stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Household", 8)),
                            c("Cluster", rep("Ward", 8))))
 ```
-
-### Progressivity - Income - VDC-YR FE
-
-```{r}
-pubtransregvdc <- felm(log(pub_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-inftransregvdc <- felm(log(inf_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-aidregvdc <- felm(log(quake_aid + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-ngoregvdc <- felm(log(NGO_transfers + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-migregvdc <- felm(log(migrants_past_year+1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-remregvdc <- felm(log(remittance_income + 1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-loanregvdc <- felm(log(loans_taken_past_year+1) ~ log(income_gross) | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-mods <- list(aidregvdc, pubtransregvdc, ngoregvdc, remregvdc, migregvdc, loanregvdc)
-
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
-          add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
-                           c("Cluster", rep("Ward", 8))))
-```
-
-### Progressivity - Consumption - VDC-YR FE
+### Progressivity - Avg Consumption - VDC-YR FE
 Obviously could be reverse causal, but within a village year - high consumption/income correlated with aid received
 
 ```{r}
@@ -205,7 +209,100 @@ cloanregvdc <- felm(log(loans_taken_past_year+1) ~ log(avg_cons) | as.factor(vdc
 
 mods <- list(caidregvdc, cpubtransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
 
-stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
+                           c("Cluster", rep("Ward", 8))))
+```
+### By other hh characteristics
+Land
+
+```{r}
+cpubtransregvdc <- felm(log(pub_transfers + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cinftransregvdc <- felm(log(inf_transfers + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+caidregvdc <- felm(log(quake_aid + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cngoregvdc <- felm(log(NGO_transfers + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cmigregvdc <- felm(log(migrants_past_year+1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cremregvdc <- felm(log(remittance_income + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cloanregvdc <- felm(log(loans_taken_past_year+1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(caidregvdc, cpubtransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
+                           c("Cluster", rep("Ward", 8))))
+```
+
+Ed
+
+```{r}
+cpubtransregvdc <- felm(log(pub_transfers + 1) ~ class5 | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cinftransregvdc <- felm(log(inf_transfers + 1) ~ class5 | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+caidregvdc <- felm(log(quake_aid + 1) ~ class5 | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cngoregvdc <- felm(log(NGO_transfers + 1) ~ class5 | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cmigregvdc <- felm(log(migrants_past_year+1) ~ class5 | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cremregvdc <- felm(log(remittance_income + 1) ~ class5 | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cloanregvdc <- felm(log(loans_taken_past_year+1) ~ class5 | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(caidregvdc, cpubtransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
+                           c("Cluster", rep("Ward", 8))))
+```
+
+Caste
+
+```{r}
+cpubtransregvdc <- felm(log(pub_transfers + 1) ~ high_caste | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cinftransregvdc <- felm(log(inf_transfers + 1) ~ high_caste | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+caidregvdc <- felm(log(quake_aid + 1) ~ high_caste | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cngoregvdc <- felm(log(NGO_transfers + 1) ~ high_caste | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cmigregvdc <- felm(log(migrants_past_year+1) ~ high_caste | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cremregvdc <- felm(log(remittance_income + 1) ~ high_caste | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cloanregvdc <- felm(log(loans_taken_past_year+1) ~ high_caste | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(caidregvdc, cpubtransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
                            c("Cluster", rep("Ward", 8))))
 ```
@@ -728,7 +825,7 @@ epicenter <- st_sfc(st_point(x = c(84.731, 28.23)), crs = 4326)
 epicenter <- st_sf(district = c(36), distname = c("Gorkha"), vdc = c("na"), ward = c("na"), geometry = c(epicenter), location = c("epicenter"))
 df.wards <- rbind(df.wards, epicenter)
 
-h0 <- optbw("consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none")[1,1]
+h0 <- optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none")[1,3]
 
 df.sample <- filter(df.hh, abs(dist_2_seg13) <= h0 & designation!="none")
 samplewards <- unique(df.sample[,c("district", "vdc", "ward")])

@@ -6,20 +6,23 @@ library(fastGHQuad)
 library(flatlandr)
 library(gmm)
 library(Rearrangement)
-library(rdrobust)
+library(mgcv)
+library(neuralnet)
 options('nloptr.show.inequality.warning'=FALSE)
 source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
-source(paste(getwd(), "/code/rdhelpers.R", sep = ""))
 
 df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500) 
-#df.hh <- read_csv("/home/mdg59/project/WBHRVS/full_panel.csv", guess_max = 7500)
-
-b <- optbw("consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none")[1,3]
 
 df.hh <- df.hh %>%
-  filter(abs(dist_2_seg13) < b & designation !="none") %>%
+  filter(designation !="none") %>%
   select(hhid, wave, wt_hh, food_consumption, total_income, var_inc, avg_inc, 
-         home_value, home_investment, imputed_bufferstock, quake_aid) %>% ## add damages?
+         home_value, home_investment, imputed_bufferstock, quake_aid, M_avg) %>% 
+  mutate(home_value = home_value/M_avg,
+         imputed_bufferstock = imputed_bufferstock/M_avg,
+         food_consumption = food_consumption/M_avg,
+         home_investment = home_investment/M_avg,
+         quake_aid = quake_aid/M_avg,
+         total_income = total_income/M_avg) %>%
   group_by(hhid) %>%
   mutate(lag_h = lag(home_value, order_by = wave),
          lag_x = lag(imputed_bufferstock, order_by = wave),
@@ -30,52 +33,75 @@ df.hh <- df.hh %>%
 df.hh <- df.hh[complete.cases(df.hh),]
 
 ### parameters
-gamma0 <- 4.77; beta0 <- .9; R0 <- 1.01; cbar0 <- .1; hbar0 <- .1
-lambda0 <- 1.5; sigma0 <- .06; alpha0 <- .8; delta0 <- .9
+#gamma0 <- 8.75; beta0 <- .84; R0 <- 1.02; cbar0 <- .44; hbar0 <- .35
+#lambda0 <- 2.46; sigma0 <- .77; alpha0 <- .79; delta0 <- .95
+## 1.5e-6
+gamma0 <- 5.505; beta0 <- .795; R0 <- 1.1; cbar0 <- .455; hbar0 <- .455
+lambda0 <- 5.005; sigma0 <- .258; alpha0 <- .545; delta0 <- .75
 
 theta0 <- c(gamma0, beta0, R0, cbar0, hbar0, lambda0, sigma0, alpha0, delta0)
 
 ### Grid size
-xn = 40; hn = 40; yn = 10
-ygrid = as.vector(quantile(df.hh$avg_inc, seq(0,1,length.out = yn), na.rm = TRUE))
+xn = 40; hn = 40
 
 ### Define GMM function
 
 gmmmomentmatcher <- function(theta, df) {
-  print(theta)
-  saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
-  
-  ### VFI
-  V = VFI(theta)
-  saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
-  finalV <- V[[length(V)]]
-  
-  ### data
-  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = finalV, t0 = theta, 
-                        data = df[,-c(1:2)], mc.cores = detectCores())
-  momentmat <- do.call(rbind, momentmat)
-  print(sum(colMeans(momentmat)^2))
-  return(momentmat)
+  print(theta) ### get rid of df arg for global
+  #if (theta[2]*theta[3]>1) return(1*theta[2]*theta[3]) else {  ### use for global
+  if (theta[2]*theta[3]>1) return(matrix(1*theta[2]*theta[3], nrow = nrow(df), ncol = 11)) else {  ### use for GMM
+    saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
+    
+    ### initial guess
+    statespace = create.statespace(ubm = c(20,20), theta, method = "equal")
+    v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
+                                      "cfx" = rep(0, nrow(statespace)),
+                                      "ifx" = rep(0, nrow(statespace))))
+    
+    ### VFI
+    V = VFI(v0, theta)
+    saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
+    finalV <- V[[length(V)]]
+    policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "neuralnet")
+    policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "neuralnet")
+    
+    ### data - change to df.hh for global
+    momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx), t0 = theta, 
+                          data = df[,-c(1:2)], mc.cores = detectCores())
+    momentmat <- do.call(rbind, momentmat)
+    print(sum(colMeans(momentmat)^2))
+    #return(sum(colMeans(momentmat)^2)) ## Use for global
+    return(momentmat) ## Use for GMM
+  }
 }
 
-g <- gmm(g = gmmmomentmatcher, x = df.hh, t0 = theta0,
-         gradv = momentgradient, type = "twoStep", onlyCoefficients=TRUE, optfct = "nlminb", 
-         lower = c(1.01, .6, .9, .01, .01, 0, 0, .1, .5),
-         upper = c(10, .99, 1.65, 1, 1, 10, 1, .99, 1))
+## Global optimizer
+#g <- direct(fn = gmmmomentmatcher,
+#            lower = c(1.01, .6, 1, .01, .01, .01, .01, .1, .5),
+#            upper = c(10, .99, 1.2, .9, .9, 10, 1.5, .99, 1),
+#            control = list(ftol_rel = 1e-4, xtol_rel = 1e-4))
 
+g <- gmm(g = gmmmomentmatcher, x = df.hh, t0 = theta0,         
+         gradv = momentgradient, type = "twoStep", optfct = "nlminb", 
+         lower = c(1.01, .6, 1, .01, .01, .01, .01, .1, .5),
+         upper = c(10, .99, 1.2, .9, .9, 10, 1.5, .99, 1),
+         control = list(x.tol = 1e-4, rel.tol = 1e-4, abs.tol = 1e-10))
 summarize(g)
 
-theta <- g$coefficients
+theta <- g$par
 gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
 lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
 saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
 
 ### statespace
-xn = 40; hn = 40; yn = 10
-ygrid = as.vector(quantile(df.hh$avg_inc, seq(0,1,length.out = yn), na.rm = TRUE))
+xn = 40; hn = 40
 
 ### Final Value function
-V = VFI(theta)
+statespace = create.statespace(ubm = c(20,20), theta, method = "equal")
+v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
+                                  "cfx" = rep(0, nrow(statespace)),
+                                  "ifx" = rep(0, nrow(statespace))))
+V = VFI(v0, theta)
 saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
 
 

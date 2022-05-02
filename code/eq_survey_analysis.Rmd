@@ -26,6 +26,7 @@ df.hh3 <- read_csv(paste(rootdir, "/data/earthquake_survey/csv_household_resourc
 df.indiv1 <- read_csv(paste(rootdir, "/data/earthquake_survey/csv_individual_demographics.csv", sep = ""), guess_max = 7500)
 df.indiv2 <- read_csv(paste(rootdir, "/data/earthquake_survey/csv_individual_social_security.csv", sep = ""), guess_max = 7500)
 df.map <- read_csv(paste(rootdir, "/data/earthquake_survey/mapping.csv", sep = ""), guess_max = 7500)
+df.places <- read_csv(paste(rootdir, "/data/earthquake_survey/ward_vdcmun_district_name_mapping.csv", sep = ""), guess_max = 7500)
 ```
 
 ### Preprocessing
@@ -63,7 +64,9 @@ df.eqsvy <- df.eqsvy %>%
                                             "Elementary or Less", "Some Middle/High")),
          death_injury = if_else(has_death_occurred_last_12_months + has_injury_loss_occurred_last_12_months>0,1,0))
 
-rm(df.hh1, df.hh2, df.hh3, df.indiv2, df.indiv1, df.bldg, df.map)
+df.eqsvy <- merge(df.eqsvy, df.places, by = c("ward_id", "district_id", "vdcmun_id"))
+
+rm(df.hh1, df.hh2, df.hh3, df.indiv2, df.indiv1, df.bldg, df.map, df.places)
 ```
 
 ### Predictors of Damage - Bamboo/Timber is excluded category

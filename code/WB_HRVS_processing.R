@@ -1,7 +1,7 @@
 ### data and documentation: https://microdata.worldbank.org/index.php/catalog/3705/data-dictionary
 ### report: https://elibrary.worldbank.org/doi/pdf/10.1596/33365 
 
-library(raster)
+library(raster, exclude = "select")
 library(sf)
 library(tidyverse)
 library(readstata13)
@@ -1001,6 +1001,12 @@ df.hh <- df.hh %>% mutate(quake_aid_bin = if_else(quake_aid > 0, 1, 0),
          lag_remitt = lag(remittance_income, order_by = wave),
          lag_loan = lag(loans_taken_past_year, order_by = wave))
 
+l1 <- median(df.hh$landvalue[df.hh$wave==1], na.rm = TRUE)
+## 1 percent of hhs report buying land in first wave
+df.land <- filter(df.hh, wave==1) %>%
+  mutate(land_qtle = if_else(landvalue<l1, 1, 2)) %>%
+  select(hhid, land_qtle)
+
 df.aid <- df.hh %>% arrange(wave) %>%
   group_by(hhid) %>% 
   summarize(aid_total = sum(quake_aid),
@@ -1008,10 +1014,10 @@ df.aid <- df.hh %>% arrange(wave) %>%
           avg_cons = mean(consumption),
           var_inc = var(log(total_income)),
           avg_inc = mean(log(total_income)),
+          M_avg = mean(total_income),
           gorkha_loss_ever = sum(gorkha_loss_amt),
           total_remit = sum(remittance_income), 
-          total_loans_taken = sum(loans_taken_past_year),
-          avg_land = mean(landvalue))
+          total_loans_taken = sum(loans_taken_past_year))
 
 df.ward_losses <- df.hh %>% 
   group_by(district, vdc, ward) %>%
@@ -1019,6 +1025,7 @@ df.ward_losses <- df.hh %>%
             ward_frac_losses = mean(gorkha_loss, na.rm = TRUE))
 
 df.hh <- merge(df.hh, df.ward_losses, by = c("district", "vdc", "ward"))
+df.hh <- merge(df.hh, df.land, by = c("hhid"), all.x = TRUE)
 df.hh <- merge(df.hh, df.aid, by = "hhid") %>%
   mutate(received_aid = if_else(aid_total>0, 1, 0),
          gorkha_hh = if_else(gorkha_loss_ever>0, 1, 0),
@@ -1033,7 +1040,6 @@ df.hh <- merge(df.hh, df.aid, by = "hhid") %>%
          aid_cumulative0000s = aid_cumulative/10000) %>% ungroup()
 
 df.hh$consumption_qtle <- cut(df.hh$avg_cons, quantile(df.hh$avg_cons, seq(0, 1, by = .2), na.rm = TRUE), labels = FALSE, include.lowest = TRUE)
-df.hh$land_qtle <- cut(df.hh$avg_land, quantile(df.hh$avg_land, c(0,.5,1), na.rm = TRUE), labels = FALSE, include.lowest = TRUE)
 
 df.hh$caste_recode <- factor(df.hh$caste_recode, levels = c("Other", "Brahman/Chhetri", "Dalit", "Newar", NA))
 

@@ -1,5 +1,5 @@
-incenter <- function(cmin, lbi, x, B) {
-  return(c((cmin*2 + x-B-lbi)/3, (lbi*2 + x-B-cmin)/3))
+incenter <- function(cbar, lbi, x, lambda) {
+  return(c((cbar*2 + x+lambda-lbi)/3, (lbi*2 + x+lambda-cbar)/3))
 }
 
 ### utility function
@@ -63,74 +63,99 @@ simplrdifferentiator <- function(x0, y0, statespace, deriv){
 }
 
 ### Creates points for gaussian quadrature
-great.expectations <- function(y, sigma, gqpts){
-  mu = sqrt(2)*sigma*y*gqpts$x + y
+great.expectations <- function(sigma, gqpts){
+  mu = sqrt(2)*sigma*gqpts$x - sigma^2/2
   return(mu)
 }
 
-create.statespace = function(ubm = 1.4, theta, method = "uneven"){
+create.statespace = function(ubm = c(17,12), theta, method = "equal"){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
-  defaultpts = (cbar-lambda)*exp(ygrid+sigma^2/2)
+  defaultpt = (cbar-lambda)
   
   if (method=="chebyshev") {
-    dlist = list()
-    for (i in c(1:length(defaultpts))) {
-      cnodesx = chebnodes(xn, lb = defaultpts[i], ub = exp(ubm*ygrid[i]))
-      x = c(-lambda*exp(ygrid[i]+sigma^2/2), cnodesx)
-      h = chebnodes(hn, lb = 0, ub = exp(ubm*ygrid[i]))
-      dlist[[i]] = crossing(x, h)
-      dlist[[i]]$y = ygrid[i]
-    }
-    css = do.call(rbind, dlist)
+    cnodesx = chebnodes(xn, lb = defaultpt, ub = ubm[1])
+    x = c(-lambda, cnodesx)
+    h = chebnodes(hn, lb = 0, ub = ubm[2])
   } else if (method=="log") {
-    dlist = list()
-    for (i in c(1:length(defaultpts))) {
-      h = exp(seq(0, log(exp(ubm*ygrid[i])), length.out = hn))
-      x = h + defaultpts[i]
-      dlist[[i]] = crossing(x, h)
-      dlist[[i]]$y = ygrid[i]
-    }
-    css = do.call(rbind, dlist)
+    h = c(0, exp(seq(log(cbar), log(ubm[2]), length.out = hn)))
+    x = c(-lambda, exp(seq(0, log(ubm[1] - defaultpt), length.out = hn)) + defaultpt)
+  } else if (method=="uneven") {
+    x = c(-lambda, seq(defaultpt, ubm[1], length.out = xn))
+    h = unique(c(seq(0, ubm[2]/2, length.out = round(2*hn/3,0)), seq(ubm[2]/2, ubm[2], length.out = round(1*hn/3,0)+1)))
   } else {
-    debtpts = seq(max(defaultpts), exp(median(ygrid)+sigma^2/2), length.out = 30)
-    pospts = exp(seq(median(ygrid+sigma^2/2), ubm*max(ygrid + sigma^2/2), length.out = xn-yn-30))
-    x = sort(c(defaultpts, debtpts, pospts))
-    h = c(0, exp(seq(log(hbar*exp(ygrid[1]+sigma^2/2)), log(max(x)), length.out = hn-1)))
-    css = crossing(y = ygrid, h, x) 
+    x = c(-lambda, seq(defaultpt, ubm[1], length.out = xn))
+    h = seq(0, ubm[2], length.out = hn)
   }
-  css = css %>%
-    mutate(B = -lambda*exp(y+sigma^2/2),
-           cmin = cbar*exp(y+sigma^2/2),
-           hmin = hbar*exp(y+sigma^2/2))
+  css = crossing(x,h)
   return(css)
 }
 
 ### 2D interpolate
-interpolater.creater = function(yi, statespace, Tw){
-  statespace$Tw = Tw
-  s <- filter(statespace, y == yi)
-  fi = function(x,h){
-    r = simplr(x0 = x, y0 = h, x = s$x, y = s$h, vfx = s$Tw, method = "simplical", extrapolation.warning = FALSE)
-    return(r)
+interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
+  cbar = theta[4]; lambda = theta[6]
+  if(var=="Tw") Tw = w$Tw else if (var %in% c("cfx", "aidcfx")) Tw = w$cfx else if (var %in% c("ifx", "aidifx")) Tw = w$ifx
+  if (method=="simplical") {
+    fi = function(x,h){
+      r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
+      return(r)
+    }
+  } else {
+    cs = filter(w, x>cbar-lambda)
+    if(var=="Tw") TwC = cs$Tw else if (var %in% c("cfx", "aidcfx")) TwC = cs$cfx else if (var %in% c("ifx", "aidifx")) TwC = cs$ifx
+    if (method=="chebyshev") {
+      tmat = matrix(TwC, ncol = xn)
+      cmat = chebcoefs(tmat, degree = hn-1)
+      fi = function(x, h){
+        if(x<=cbar-lambda){
+          r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
+        } else {
+          if (x>max(w$x)) x = max(w$x); if (h>max(w$h)) h = max(w$h)
+          r = chebpred(x,h, cmat, lb = c(cbar-lambda, 0), ub = c(max(w$x), max(w$h)))
+          return(r)
+        }
+      } 
+  } else if (method=="spline"){
+      obj = (TwC - min(TwC))/(max(TwC) - min(TwC))
+      xnorm = (cs$x - min(cs$x))/(max(cs$x) - min(cs$x))
+      hnorm = (cs$h - min(cs$h))/(max(cs$h) - min(cs$h))
+      mod = gam(obj ~ te(xnorm, hnorm))
+      fi = function(x, h){
+        xn = (x - min(cs$x))/(max(cs$x) - min(cs$x))
+        hn = (h - min(cs$h))/(max(cs$h) - min(cs$h))
+        if(x<=cbar-lambda){
+          r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
+        } else {
+          if (x>max(w$x)) xn = 1; if (h>max(w$h)) hn = 1
+          r = predict(mod, newdata = data.frame("x" = xn, "h" = hn))
+          return(r*(max(TwC) - min(TwC)) + min(TwC))
+        }
+      } 
+    } else if (method == "neuralnet") {
+        obj = (TwC - min(TwC))/(max(TwC) - min(TwC))
+        xnorm = (cs$x - min(cs$x))/(max(cs$x) - min(cs$x))
+        hnorm = (cs$h - min(cs$h))/(max(cs$h) - min(cs$h))
+        mod = neuralnet(obj ~ xnorm + hnorm, data = data.frame(obj = obj, xnorm = xnorm, hnorm = hnorm), 
+                        hidden=11, act.fct = "logistic", linear.output = FALSE)
+        fi = function(x, h){
+          xn = (x - min(cs$x))/(max(cs$x) - min(cs$x))
+          hn = (h - min(cs$h))/(max(cs$h) - min(cs$h))
+          if(x<=cbar-lambda){
+            r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
+          } else {
+            if (x>max(w$x)) xn = 1; if (h>max(w$h)) hn = 1
+            r = predict(mod, newdata = data.frame("x" = xn, "h" = hn))
+            return(r*(max(TwC) - min(TwC)) + min(TwC))
+          }
+      } 
+    }
   }
-  #maxdefpt = max(statespace$B + statespace$cmin)
-  #cs = filter(s, x>maxdefpt)
-  #tmat = matrix(cs$Tw, ncol = xn)
-  #cmat = chebcoefs(tmat, degree = xn-1)
-  #fi = function(x, h){
-  #  if(x<=maxdefpt){
-  #    r = simplr(x0 = x, y0 = h, x = s$x, y = s$h, vfx = s$Tw, method = "simplical", extrapolation.warning = FALSE)
-  #  } else {
-  #    r = chebpred(x,h, cmat, lb = c(maxdefpt, 0), ub = c(ubm*max(ygrid),max(df.hh$home_value, na.rm = TRUE)))
-  #  }
-  #}
   return(fi)
 }
 
 ### 3D interpolate 
-complexr <- function(x0, statespace, vfx){
+complexr <- function(x0, statespace, vfx, theta){
   ## find closest points in y and interpolate
   yvals = sort(unique(statespace$y))
   yi = findInterval(x0[2], yvals, all.inside = TRUE)
@@ -139,8 +164,8 @@ complexr <- function(x0, statespace, vfx){
   yp = c(yvals[yi], yvals[yi+1])
   xyhfilt = filter(statespace, y==yp[1])
   
-  vy1 = interpolater.creater(yp[1], statespace, Tw = vfx)
-  vy2 = interpolater.creater(yp[2], statespace, Tw = vfx)
+  vy1 = interpolater.creater(yp[1], theta, statespace, Tw = vfx)
+  vy2 = interpolater.creater(yp[2], theta, statespace, Tw = vfx)
   
   ## closest in x and h for y1
   xvals1 = sort(unique(xyhfilt$x))
@@ -186,25 +211,8 @@ complexr <- function(x0, statespace, vfx){
   return(fs[[4]])
 }
 
-monotonizer <- function(w, yi){
-  w = filter(w, y==yi)
+monotonizer <- function(w, policy = TRUE){
   xvals = sort(unique(w$x))
-  vrC = w %>%
-    pivot_wider(id_cols = x, names_from = h, values_from = cfx) %>%
-    select(!x) %>% as.matrix()
-  finalVrC = rearrangement(x = list(sort(unique(w$x)), sort(unique(w$h))), 
-                           y = vrC, avg = TRUE) %>% as_tibble()
-  finalVrC$x = xvals
-  finalVrC <- pivot_longer(finalVrC, !x, names_to = "h", values_to = "cfx")
-  finalVrC$h = as.double(finalVrC$h)
-  vrI = w %>%
-    pivot_wider(id_cols = x, names_from = h, values_from = ifx) %>%
-    select(!x) %>% as.matrix()
-  finalVrI = rearrangement(x = list(sort(unique(w$x)), -1*sort(unique(w$h))), 
-                           y = vrI[,rev(c(1:ncol(vrI)))], avg = TRUE) %>% as_tibble()
-  finalVrI$x = xvals
-  finalVrI <- pivot_longer(finalVrI, !x, names_to = "h", values_to = "ifx")
-  finalVrI$h = as.double(finalVrI$h)
   vrT = w %>%
     pivot_wider(id_cols = x, names_from = h, values_from = Tw) %>%
     select(!x) %>% as.matrix()
@@ -213,38 +221,39 @@ monotonizer <- function(w, yi){
   finalVrT$x = xvals
   finalVrT <- pivot_longer(finalVrT, !x, names_to = "h", values_to = "Tw")
   finalVrT$h = as.double(finalVrT$h)
-  finalVr = merge(finalVrT, finalVrC, by = c("x", "h"))
-  finalVr = merge(finalVr, finalVrI, by = c("x", "h"))
-  finalVr$y = w$y; finalVr$B = w$B; finalVr$cmin = w$cmin; finalVr$hmin = w$hmin
-  finalVr = finalVr[order(finalVr$y,finalVr$x,finalVr$h),]
-  finalVr = finalVr[,c("x", "h", "y", "B", "cmin", "hmin", "Tw", "cfx", "ifx")]
+  if (policy){
+    vrC = w %>%
+      pivot_wider(id_cols = x, names_from = h, values_from = cfx) %>%
+      select(!x) %>% as.matrix()
+    finalVrC = rearrangement(x = list(sort(unique(w$x)), sort(unique(w$h))), 
+                             y = vrC, avg = TRUE) %>% as_tibble()
+    finalVrC$x = xvals
+    finalVrC <- pivot_longer(finalVrC, !x, names_to = "h", values_to = "cfx")
+    finalVrC$h = as.double(finalVrC$h)
+    vrI = w %>%
+      pivot_wider(id_cols = x, names_from = h, values_from = ifx) %>%
+      select(!x) %>% as.matrix()
+    finalVrI = rearrangement(x = list(sort(unique(w$x)), sort(-1*unique(w$h))), 
+                             y = vrI[,rev(c(1:ncol(vrI)))], avg = TRUE) %>% as_tibble()
+    finalVrI$x = xvals
+    finalVrI <- pivot_longer(finalVrI, !x, names_to = "h", values_to = "ifx")
+    finalVrI$h = as.double(finalVrI$h)
+    finalVrP = merge(finalVrC, finalVrI, by = c("x", "h"))
+  } else {
+    finalVrP = w[,c("x", "h", "cfx", "ifx")]
+  }
+  finalVr = merge(finalVrT, finalVrP, by = c("x", "h"))
+  finalVr = finalVr[order(finalVr$x,finalVr$h),]
+  finalVr = finalVr[,c("x", "h", "Tw", "cfx", "ifx")]
+  rownames(finalVr) = NULL
   return(finalVr)
-}
-
-### generate initial guess for VFI
-guesser <- function(statespace, theta){
-  beta = theta[2]; alpha = theta[8]; delta = theta[9]
-  ifx0 <- mapply(function(x, h, B, cmin, hmin) if_else(x-B<cmin | x-B-cmin<hmin-h, max(0,hmin-h),
-                                                       (1-alpha)*(x-B-cmin-max(0,hmin-h))), 
-                 x = statespace$x, h = statespace$h, B = statespace$B, cmin = statespace$cmin, hmin = statespace$hmin)
-  cfx0 <- mapply(function(x, B, cmin, i) if_else(x-B-i<cmin, cmin, x-B-i), 
-                 x = statespace$x, B = statespace$B, cmin = statespace$cmin, i = ifx0)
-  ## periods w 0 investment until h hits hmin
-  t0 = mapply(function(h, hmin) if_else(round(hmin-h)>=0, 0, ceiling((log(hmin) - log(h))/log(delta))), statespace$h, statespace$hmin)
-  vfx0 = mapply(function(cmin, hmin, h, ifx, cfx, t) if_else(is.infinite(t), u(cfx, h, ifx, theta) + beta/(1-beta)*u(cmin, h, 0, theta),
-                                                             if_else(t<=1, u(cfx, h, ifx, theta) + beta/(1-beta)*u(cmin, hmin, 0, theta),
-                                                                     u(cfx, h, ifx, theta) + beta^(round(t/2,0))*u(cmin, mean(c(h,hmin)), 0, theta) + beta^(t)/(1-beta)*u(cmin, hmin, 0, theta))),
-                cmin = statespace$cmin, hmin = statespace$hmin, h = statespace$h, i = ifx0, c = cfx0, t = t0)
-  return(data.frame("Tw" = vfx0,
-                    "cfx" = cfx0,
-                    "ifx" = ifx0))
 }
 
 ### Function factory for generation household maximization problem
 
-hhprob_funkfact <- function(x, h, y, B, hmin, Valfunc, theta, gqpts){
+hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]; B = -1*lambda
   
   hhprob = function(ci){
     c = ci[1]; i = ci[2]
@@ -253,16 +262,16 @@ hhprob_funkfact <- function(x, h, y, B, hmin, Valfunc, theta, gqpts){
       htplus1 = delta*(h+i)
       xtplus1 = R*(x - c - i) 
       mindraw = B - xtplus1
-      pdef = plnorm(mindraw, meanlog = y, sdlog = sigma*y)
-      draws = exp(great.expectations(y, sigma, gqpts))
+      pdef = plnorm(mindraw, meanlog = 1, sdlog = sigma)
+      draws = exp(great.expectations(sigma, gqpts))
       if (any(draws>mindraw)){
         wts = gqpts$w[draws>mindraw]/sqrt(pi)
-        wts[1] = 1 - pdef - sum(wts[2:length(wts)])
+        if (length(wts)>1) wts[1] = 1 - pdef - sum(wts[2:length(wts)]) else wts[1] = 1 - pdef
         draws = draws[draws>mindraw]
         EVp = sum(mapply(Valfunc, x = xtplus1 + draws, h = htplus1)*wts)
-        EV = pdef*Valfunc(B, max(htplus1, hmin)) + EVp
+        EV = pdef*Valfunc(B, max(htplus1, hbar)) + EVp
       } else {
-        EV = pdef*Valfunc(B, max(htplus1, hmin)) + (1-pdef)*Valfunc(xtplus1+mindraw+1, htplus1)
+        EV = pdef*Valfunc(B, max(htplus1, hbar)) + (1-pdef)*Valfunc(xtplus1+mindraw+1, htplus1)
       }
       r = payoff + beta*EV
       return(-r)}
@@ -276,20 +285,18 @@ hhprob_funkfact <- function(x, h, y, B, hmin, Valfunc, theta, gqpts){
   return(list(hhprob, constraint))
 }
 
-hhgradfact <- function(x, h, yi, B, hmin, theta, s, Tw, gqpts){
+hhgradfact <- function(x, h, theta, w, gqpts){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
-  s$Tw = Tw
-  s = filter(s, y==yi)
+  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]; B = -1*lambda
   hhgrad <- function(ci){
     c = ci[1]; i = ci[2]
-    xtplus1 = R*(x - c - i) + exp(great.expectations(yi, sigma, gqpts))
+    xtplus1 = R*(x - c - i) + exp(great.expectations(sigma, gqpts))
     defaults = which(xtplus1<B)
     xtplus1[defaults] = B
     htplus1 = rep(delta*(h+i), length(xtplus1))
-    htplus1[defaults] = max(htplus1, hmin)
-    Edvdc = sum(mapply(simplrdifferentiator, x0 = xtplus1, y0 = htplus1, statespace = list(s), deriv = list("dx"))*gqpts$w)/sqrt(pi)
-    Edvdi = sum(mapply(simplrdifferentiator, x0 = xtplus1, y0 = htplus1, statespace = list(s), deriv = list("dy"))*gqpts$w)/sqrt(pi)
+    htplus1[defaults] = max(htplus1, hbar)
+    Edvdc = sum(mapply(simplrdifferentiator, x0 = xtplus1, y0 = htplus1, statespace = list(w), deriv = list("dx"))*gqpts$w)/sqrt(pi)
+    Edvdi = sum(mapply(simplrdifferentiator, x0 = xtplus1, y0 = htplus1, statespace = list(w), deriv = list("dy"))*gqpts$w)/sqrt(pi)
     dhdc = dudc(c, h, i, theta) - beta*R*Edvdc
     dhdi = dudi(c, h, i, theta) + beta*delta*Edvdi - beta*R*Edvdc
     return(c(dhdc, dhdi))
@@ -303,116 +310,96 @@ constraintgrad <- function(ci){
 
 ### Bellman Operator
 
-bellman <- function(w, theta, shockpts = 13, m = 10000){
+bellman <- function(w, theta, shockpts = 13, m = 2000){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
-  Tw0 = w$Tw
-  statespace = w[,c("x", "h", "y", "B", "cmin", "hmin")]
   gqpts = gaussHermiteData(shockpts)
-  Vfxlist = lapply(ygrid, interpolater.creater, statespace, Tw0)
+  Valfunc = interpolater.creater(w, theta, method = "simplical")
   optwrap = function(rowidx){
-    x = statespace$x[rowidx]; h = statespace$h[rowidx]; y = statespace$y[rowidx]
-    B = statespace$B[rowidx]; cmin = statespace$cmin[rowidx]; hmin = statespace$hmin[rowidx]
-    Valfunc = Vfxlist[[which(ygrid==y)]]
-    if (round(x - B,10) <= round(cmin,10) | round(x - B - cmin,10) <= round(hmin - h,10)) {
-      vfx = u(cmin, h = max(h, hmin), i = 0, theta) + beta*Valfunc(x = B, h = max(delta*h, hmin))
-      return(c(cmin, 0, vfx))
+    x = w$x[rowidx]; h = w$h[rowidx]
+    if (round(x + lambda,10) <= round(cbar,10) | round(x + lambda - cbar,10) <= round(hbar - h,10)) {
+      vfx = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = max(delta*h, hbar))
+      return(c(cbar, 0, vfx))
     } else {
-      hhprob = hhprob_funkfact(x, h, y, B, hmin, Valfunc, theta, gqpts)
-      #hhgrad = hhgradfact(x, h, yi = y, B, hmin, theta, s = statespace, Tw = Tw0, gqpts)
-      lbi = max(round(hmin - h,10), 0.0)
-      #optgrid = crossing(c = seq(cmin, x-B, length.out = optgridpts), i = seq(lbi, x-B, length.out = optgridpts))
-      #optgrid = rbind(optgrid, unique(data.frame("c" = seq(cmin, x-B-lbi, length.out = optgridpts), "i" = x-B - seq(cmin, x-B-lbi, length.out = optgridpts)))) %>%
-      #  filter(round(x - c - i - B, 10) >= 0 & i > lbi)
-      #optgrid$tw = unlist(lapply(c(1:nrow(optgrid)), function(j) hhprob[[1]](c(optgrid$c[j], optgrid$i[j]))))
-      #sps = c(optgrid$c[which.min(optgrid$tw)], optgrid$i[which.min(optgrid$tw)])
-      sps = incenter(cmin, lbi, x, B)
+      hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
+      #hhgrad = hhgradfact(x, h, theta, w, gqpts)
+      lbi = max(round(hbar - h,10), 0.0)
+      sps = incenter(cbar, lbi, x, lambda)
       sol = cobyla(x0 = sps, fn = hhprob[[1]], hin = hhprob[[2]],
-                   lower = c(cmin,lbi), upper = c(x-B, x-B), 
-                   control = list(ftol_rel = 1e-8, ftol_abs = 0, xtol_rel = 0, maxeval = m))
-      sol2 = cobyla(x0 = cmin, fn = function(c){hhprob[[1]](c(c, x-B-c))}, 
-                    lower = cmin, upper = x-B, 
+                     lower = c(cbar,lbi), upper = c(x+lambda-lbi, x+lambda-cbar), 
+                     control = list(ftol_rel = 1e-8, ftol_abs = 0, xtol_rel = 0, maxeval = m))
+      sol2 = cobyla(x0 = cbar, fn = function(c){hhprob[[1]](c(c, x+lambda-c))}, 
+                    lower = cbar, upper = x+lambda-lbi, 
                     control = list(ftol_rel = 1e-8, ftol_abs = 0, xtol_rel = 0, maxeval = m))
       if (sol$value > sol2$value) {
-        par = c(sol2$par, x-B-sol2$par)
+        par = c(sol2$par, x+lambda-sol2$par)
         sol = sol2
       } else {par = sol$par}
-      vfxdefault = u(cmin, h = max(h, hmin), i = 0, theta) + beta*Valfunc(x = B, h = max(delta*h, hmin))
+      vfxdefault = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = max(delta*h, hbar))
       if (vfxdefault < -sol$value) {
         return(c(par, -sol$value))
       } else {return(c(cmin, 0, vfxdefault))}
     }
   }
-  Tw = mclapply(c(1:nrow(statespace)), optwrap, mc.cores = detectCores())
-  wnext = cbind(statespace, data.frame("Tw" = unlist(lapply(Tw, function(x) x[3])),
+  Tw = mclapply(c(1:nrow(w)), optwrap, mc.cores = detectCores())
+  wnext = cbind(w[,c("x", "h")], data.frame("Tw" = unlist(lapply(Tw, function(x) x[3])),
                                        "cfx" = unlist(lapply(Tw, function(x) x[1])),
                                        "ifx" = unlist(lapply(Tw, function(x) x[2]))))
-  #rlist = lapply(ygrid, monotonizer, w = wnext)
-  #wnext = do.call(rbind, rlist)
   return(wnext)
 }
 
 ### Howard Policy Iteration
-howard <- function(wlast, statespace, theta){
+howard <- function(w, theta, shockpts = 13){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
-  
-  Vfxlist = lapply(ygrid, interpolater.creater, statespace, wlast$Tw)
+  gqpts = gaussHermiteData(shockpts)
+  Valfunc = interpolater.creater(w, theta, method = "simplical")
   
   accelerator = function(rowidx){
-    x = statespace$x[rowidx]; h = statespace$h[rowidx]; y = statespace$y[rowidx]
-    B = statespace$B[rowidx]; cmin = statespace$cmin[rowidx]; hmin = statespace$hmin[rowidx];
-    cfx = wlast$cfx[rowidx]; ifx = wlast$ifx[rowidx]
-    Valfunc = Vfxlist[[which(ygrid==y)]]
-    if (x - B <= cmin | x - B - cmin <= hmin - h) {
-      v = u(cmin, hmin, 0, theta) + beta*Valfunc(B, max(delta*h, hmin))
+    x = w$x[rowidx]; h = w$h[rowidx]
+    cfx = w$cfx[rowidx]; ifx = w$ifx[rowidx]
+    if (round(x + lambda,10) <= round(cbar,10) | round(x + lambda - cbar,10) <= round(hbar - h,10)) {
+      v = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = max(delta*h, hbar))
+      return(v)
     } else {
-      hhprob = hhprob_funkfact(x, h, y, B, hmin, Valfunc, theta)
+      hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
       v1 = -1*hhprob[[1]](c(cfx, ifx))
-      v2 = u(cmin, hmin, 0, theta) + beta*Valfunc(B, max(delta*h, hmin))
+      v2 = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = max(delta*h, hbar))
       return(max(v1, v2))
     }
   }
-  Twh = mclapply(1:nrow(statespace), accelerator, mc.cores = detectCores())
+  Twh = mclapply(1:nrow(w), accelerator, mc.cores = detectCores())
   return(unlist(Twh))
 }
 
-
 ### VFI
-VFI <- function(theta, maxiter = 30, tol = 1e-8){
+VFI <- function(v0, theta, maxiter = 30, tol = 1e-6, howardk = 10){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
-  
-  ### statespace
-  statespace = create.statespace(ubm = 3, theta, method = "log")
-  ### Initial guess 
-  v0 = guesser(statespace, theta)
-  
   w = vector(mode = "list", length = maxiter)
-  w[[1]] = cbind(statespace, v0)
-  d = 1; i = 2
-  while (i<maxiter & d>tol) {
+  w[[1]] = v0
+  tolmet = FALSE; i = 2; d = 1
+  while (i<=maxiter & !tolmet) {
+    if (d<tol | i==maxiter) tolmet = TRUE
     wnext = bellman(w = w[[i-1]], theta)
-    #w[[i]] = wnext
+    if (!tolmet) wnext = monotonizer(wnext)
     ## howard
-    #k = vector(mode = "list", length = howardk+1)
-    #k[[1]] = wnext
-    #for (j in c(1:howardk)) {
-    #  wnext$Tw = howard(wnext, statespace, theta)
-    #  k[[j+1]] = wnext
-    #}
+    k = vector(mode = "list", length = howardk+1)
+    k[[1]] = wnext
+    for (j in c(1:howardk)) {
+      wnext$Tw = howard(wnext, theta)
+      k[[j+1]] = wnext
+    }
     ### MQP error bounds
-    #b = beta/(1-beta)*mean(k[[howardk+1]]$Tw - k[[howardk]]$Tw)
-    #wnext$Tw = wnext$Tw + b
+    b = beta/(1-beta)*mean(k[[howardk+1]]$Tw - k[[howardk]]$Tw)
+    wnext$Tw = wnext$Tw + b
     ## check tol
     w[[i]] = wnext
-    #saveRDS(w, "/users/mdgordo/Desktop/w.rds")
-    d = mean((w[[i]]$Tw - w[[i-1]]$Tw)^2)/mean((w[[1]]$Tw)^2)
+    d = mean((w[[i]]$Tw - w[[i-1]]$Tw)^2)/mean((w[[i-1]]$Tw)^2)
     print(d)
     i = i+1
     print(i)
   }
-  w[[i]] = bellman(w = w[[i-1]], statespace, theta, shockpts = 31, m = 10000)
   return(compact(w))
 }
 
@@ -421,17 +408,16 @@ momentmatcher <- function(i, vfx, t0, data){
   lambda = t0[6]; sigma = t0[7]; alpha = t0[8]; delta = t0[9]
   df = data[i,]
   wt = df$wt_hh/sum(data$wt_hh)
-  xyh = c(df$imputed_bufferstock, df$avg_inc, df$lag_h)
-  e1  = log(complexr(x0 = xyh, statespace = vfx[,c(1:6)], vfx = vfx$cfx)) - log(df$food_consumption)
-  e2  = log(complexr(x0 = xyh, statespace = vfx[,c(1:6)], vfx = vfx$ifx)+1) - log(df$home_investment+1)
+  e1  = log(vfx[[1]](df$imputed_bufferstock, df$lag_h)) - log(df$food_consumption)
+  e2  = log(vfx[[2]](df$imputed_bufferstock, df$lag_h)+1) - log(df$home_investment+1)
   e3 = log(df$home_value+1) - log(delta*(df$lag_h + df$home_investment)+1)
   e4 = df$imputed_bufferstock - df$quake_aid - df$lag_y - R*(df$lag_x - df$lag_c - df$lag_i)
-  e5 = sqrt(df$var_inc) - sigma*df$avg_inc
+  e5 = sqrt(df$var_inc) - sigma
   e6 = e1*df$imputed_bufferstock
-  e7 = e1*df$avg_inc
+  e7 = e1*log(df$avg_inc)
   e8 = e1*log(df$lag_h+1)
   e9 = e2*df$imputed_bufferstock
-  e10 = e2*df$avg_inc
+  e10 = e2*log(df$avg_inc)
   e11 = e2*log(df$lag_h+1)
   return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)*wt)
 }
@@ -439,40 +425,39 @@ momentmatcher <- function(i, vfx, t0, data){
 hhgradient <- function(i, df, vfx, dvlist){
   hh = df[i,]
   wt = hh$wt_hh/sum(df$wt_hh)
-  xyh = c(hh$imputed_bufferstock, hh$avg_inc, hh$lag_h)
   
-  cfx0 = complexr(x0 = xyh, statespace = vfx[,c(1:6)], vfx = vfx$cfx)
-  ifx0 = complexr(x0 = xyh, statespace = vfx[,c(1:6)], vfx = vfx$ifx)
+  cfx0 = vfx[[2]](hh$imputed_bufferstock, hh$lag_h)
+  ifx0 = vfx[[3]](hh$imputed_bufferstock, hh$lag_h)
   
-  dcdg = (complexr(x0 = xyh, statespace = dvlist[[1]][,c(1:6)], vfx = dvlist[[1]]$cfx) - cfx0)/.01
-  didg = (complexr(x0 = xyh, statespace = dvlist[[1]][,c(1:6)], vfx = dvlist[[1]]$ifx) - ifx0)/.01
-  dcdB = (complexr(x0 = xyh, statespace = dvlist[[2]][,c(1:6)], vfx = dvlist[[2]]$cfx) - cfx0)/.01
-  didB = (complexr(x0 = xyh, statespace = dvlist[[2]][,c(1:6)], vfx = dvlist[[2]]$ifx) - ifx0)/.01
-  dcdR = (complexr(x0 = xyh, statespace = dvlist[[3]][,c(1:6)], vfx = dvlist[[3]]$cfx) - cfx0)/.01
-  didR = (complexr(x0 = xyh, statespace = dvlist[[3]][,c(1:6)], vfx = dvlist[[3]]$ifx) - ifx0)/.01
-  dcdc = (complexr(x0 = xyh, statespace = dvlist[[4]][,c(1:6)], vfx = dvlist[[4]]$cfx) - cfx0)/.01
-  didc = (complexr(x0 = xyh, statespace = dvlist[[4]][,c(1:6)], vfx = dvlist[[4]]$ifx) - ifx0)/.01
-  dcdh = (complexr(x0 = xyh, statespace = dvlist[[5]][,c(1:6)], vfx = dvlist[[5]]$cfx) - cfx0)/.01
-  didh = (complexr(x0 = xyh, statespace = dvlist[[5]][,c(1:6)], vfx = dvlist[[5]]$ifx) - ifx0)/.01
-  dcdl = (complexr(x0 = xyh, statespace = dvlist[[6]][,c(1:6)], vfx = dvlist[[6]]$cfx) - cfx0)/.01
-  didl = (complexr(x0 = xyh, statespace = dvlist[[6]][,c(1:6)], vfx = dvlist[[6]]$ifx) - ifx0)/.01
-  dcds = (complexr(x0 = xyh, statespace = dvlist[[7]][,c(1:6)], vfx = dvlist[[7]]$cfx) - cfx0)/.001
-  dids = (complexr(x0 = xyh, statespace = dvlist[[7]][,c(1:6)], vfx = dvlist[[7]]$ifx) - ifx0)/.001
-  dcda = (complexr(x0 = xyh, statespace = dvlist[[8]][,c(1:6)], vfx = dvlist[[8]]$cfx) - cfx0)/.01
-  dida = (complexr(x0 = xyh, statespace = dvlist[[8]][,c(1:6)], vfx = dvlist[[8]]$ifx) - ifx0)/.01
-  dcdd = (complexr(x0 = xyh, statespace = dvlist[[9]][,c(1:6)], vfx = dvlist[[9]]$cfx) - cfx0)/.01
-  didd = (complexr(x0 = xyh, statespace = dvlist[[9]][,c(1:6)], vfx = dvlist[[9]]$ifx) - ifx0)/.01
+  dcdg = (dvlist[[1]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/.01
+  didg = (dvlist[[1]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/.01
+  dcdB = (dvlist[[2]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/.01
+  didB = (dvlist[[2]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/.01
+  dcdR = (dvlist[[3]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/.01
+  didR = (dvlist[[3]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/.01
+  dcdc = (dvlist[[4]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/.01
+  didc = (dvlist[[4]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/.01
+  dcdh = (dvlist[[5]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/.01
+  didh = (dvlist[[5]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/.01
+  dcdl = (dvlist[[6]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/.01
+  didl = (dvlist[[6]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/.01
+  dcds = (dvlist[[7]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/.001
+  dids = (dvlist[[7]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/.001
+  dcda = (dvlist[[8]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/.01
+  dida = (dvlist[[8]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/.01
+  dcdd = (dvlist[[9]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/.01
+  didd = (dvlist[[9]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/.01
   
   r1 = wt*c(dcdg, dcdB, dcdR, dcdc, dcdh, dcdl, dcds, dcda, dcdd)/cfx0
   r2 = wt*c(didg, didB, didR, didc, didh, didl, dids, dida, didd)/(ifx0+1)
-  r3 = wt*c(rep(0,8), -(hh$lag_h + hh$home_investment)/(delta*(hh$lag_h + hh$home_investment)))
+  r3 = wt*c(rep(0,8), -(hh$lag_h + hh$home_investment)/(delta*(hh$lag_h + hh$home_investment)+1))
   r4 = wt*c(0,0, -(hh$lag_x - hh$lag_c - hh$lag_i), rep(0,6))
-  r5 = wt*c(rep(0,6), hh$avg_inc, 0, 0)
+  r5 = wt*c(rep(0,6), -1, 0, 0)
   r6 = wt*hh$imputed_bufferstock*r1
-  r7 = wt*hh$avg_inc*r1
+  r7 = wt*log(hh$avg_inc)*r1
   r8 = wt*log(hh$lag_h+1)*r1
   r9 = wt*hh$imputed_bufferstock*r2
-  r10 = wt*hh$avg_inc*r2
+  r10 = wt*log(hh$avg_inc)*r2
   r11 = wt*log(hh$lag_h+1)*r2
   return(rbind(r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11))
 }
@@ -481,36 +466,51 @@ momentgradient <- function(theta, df){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
-  V = VFI(theta)
-  vfx = V[[length(V)]]
+  statespace = create.statespace(ubm = c(20,20), theta, method = "equal")
+  v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
+                                    "cfx" = rep(0, nrow(statespace)),
+                                    "ifx" = rep(0, nrow(statespace))))
+  
+  V = VFI(v0, theta)
+  V = V[[length(V)]]
+  vfx = list(V, interpolater.creater(V, theta, var = "cfx", method = "neuralnet"), interpolater.creater(V, theta, var = "ifx", method = "neuralnet"))
   ## numerical for policy functions
   tp = c(theta[1] + .01, theta[c(2:9)])
-  dVdg = VFI(tp); print("D1 done")
+  dVdg = VFI(V, tp); print("D1 done")
   dVdg = dVdg[[length(dVdg)]]
+  dVdg = list(dVdg, interpolater.creater(dVdg, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVdg, theta, var = "ifx", method = "neuralnet"))
   tp = c(theta[1], theta[2] + .01, theta[c(3:9)])
-  dVdB = VFI(tp); print("D2 done")
+  dVdB = VFI(V, tp); print("D2 done")
   dVdB = dVdB[[length(dVdB)]]
+  dVdB = list(dVdB, interpolater.creater(dVdB, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVdB, theta, var = "ifx", method = "neuralnet"))
   tp = c(theta[c(1:2)], theta[3] + .01, theta[c(4:9)])
-  dVdR = VFI(tp); print("D3 done")
+  dVdR = VFI(V, tp); print("D3 done")
   dVdR = dVdR[[length(dVdR)]]
+  dVdR = list(dVdR, interpolater.creater(dVdR, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVdR, theta, var = "ifx", method = "neuralnet"))
   tp = c(theta[c(1:3)], theta[4] + .01, theta[c(5:9)])
-  dVdc = VFI(tp); print("D4 done")
+  dVdc = VFI(V, tp); print("D4 done")
   dVdc = dVdc[[length(dVdc)]]
+  dVdc = list(dVdc, interpolater.creater(dVdc, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVdc, theta, var = "ifx", method = "neuralnet"))
   tp = c(theta[c(1:4)], theta[5] + .01, theta[c(6:9)])
-  dVdh = VFI(tp); print("D5 done")
+  dVdh = VFI(V, tp); print("D5 done")
   dVdh = dVdh[[length(dVdh)]]
+  dVdh = list(dVdh, interpolater.creater(dVdh, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVdh, theta, var = "ifx", method = "neuralnet"))
   tp = c(theta[c(1:5)], theta[6] + .01, theta[c(7:9)])
-  dVdl = VFI(tp); print("D6 done")
+  dVdl = VFI(V, tp); print("D6 done")
   dVdl = dVdl[[length(dVdl)]]
+  dVdl = list(dVdl, interpolater.creater(dVdl, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVdl, theta, var = "ifx", method = "neuralnet"))
   tp = c(theta[c(1:6)], theta[7] + .001, theta[c(8:9)])
-  dVds = VFI(tp); print("D7 done")
+  dVds = VFI(V, tp); print("D7 done")
   dVds = dVds[[length(dVds)]]
+  dVds = list(dVds, interpolater.creater(dVds, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVds, theta, var = "ifx"))
   tp = c(theta[c(1:7)], theta[8] + .01, theta[c(9)])
-  dVda = VFI(tp); print("D8 done")
+  dVda = VFI(V, tp); print("D8 done")
   dVda = dVda[[length(dVda)]]
+  dVda = list(dVda, interpolater.creater(dVda, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVda, theta, var = "ifx", method = "neuralnet"))
   tp = c(theta[c(1:8)], theta[9] + .01)
-  dVdd = VFI(tp); print("D9 done")
+  dVdd = VFI(V, tp); print("D9 done")
   dVdd = dVdd[[length(dVdd)]]
+  dVdd = list(dVdd, interpolater.creater(dVdd, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVdd, theta, var = "ifx", method = "neuralnet"))
   
   dvlist = list(dVdg, dVdB, dVdR, dVdc, dVdh, dVdl, dVds, dVda, dVdd)
   gradlist = mclapply(c(1:nrow(df)), hhgradient, df, vfx, dvlist, mc.cores = detectCores())
@@ -531,86 +531,84 @@ tolchecker = function(w){
 
 ### check to make sure grid is not binding
 
-satisficer = function(w, yidx, sigma){
+satisficer = function(w, sigma){
   Vfin = w[[length(w)]]
-  xmax = max(Vfin$x[Vfin$y==yidx])
-  hmax = max(Vfin$h[Vfin$y==yidx])
-  ymax = max(great.expectations(yidx, sigma, gqpts))
-  xnext = xmax - (xmax-exp(ymax))/R
+  xmax = max(Vfin$x)
+  hmax = max(Vfin$h)
+  ymax = max(exp(great.expectations(sigma, gqpts)))
+  xnext = xmax - (xmax-ymax)/R
   hnext = hmax*(1/delta - 1)
   df.cstrt = Vfin %>%
-    filter(y==yidx & x==xmax) %>%
+    filter(x==xmax) %>%
     mutate(spend = cfx + ifx,
-           constrainedx = spend<xnext)
+           constrainedx = spend<xnext,
+           xnext = xnext)
   df.cstrt2 = Vfin %>%
-    filter(y==yidx & h==hmax) %>%
-    mutate(constrainedh = ifx>hnext)
-  return(c(sum(df.cstrt$constrainedx), sum(df.cstrt2$constrainedh)))
+    filter(h==hmax) %>%
+    mutate(constrainedh = ifx>hnext,
+           hnext = hnext)
+  return(list(df.cstrt, df.cstrt2))
 }
 
 ### Counterfactuals
 
 counterfactualizer = function(i, vfx, df.hh){
   x1 = as.double(df.hh[i,"x_noaid"]); x2 = as.double(df.hh[i,"x_aid"])
-  y = as.double(df.hh[i,"avg_inc"]); h = as.double(df.hh[i,"lag_h"])
-  c1 = complexr(x0 = c(x1, y, h), vfx, vfx = vfx$cfx)
-  c2 = complexr(x0 = c(x2, y, h), vfx, vfx = vfx$cfx)
-  i1 = complexr(x0 = c(x1, y, h), vfx, vfx = vfx$ifx)
-  i2 = complexr(x0 = c(x2, y, h), vfx, vfx = vfx$ifx)
+  h = as.double(df.hh[i,"lag_h"])
+  c1 = vfx[[1]](x1, h)
+  c2 = vfx[[1]](x2, h)
+  i1 = vfx[[2]](x1, h)
+  i2 = vfx[[2]](x2, h)
   b1 = as.double(df.hh[i,"x_noaid"]) - c1 - i1
   b2 = as.double(df.hh[i,"x_aid"]) - c2 - i2
   return(c(c1, c2, i1, i2, b1, b2))
 }
 
-wtpeliciter = function(x, y, h, aidamt, vfx, statespace){
-  c1 = complexr(x0 = c(x, y, h), statespace, vfx = vfx$Tw)
-  x2 = x + aidamt
-  groot = function(yp) {
-    r = c1 - complexr(x0 = c(x2, yp, h), statespace, vfx = vfx$Tw)
-    return(r)
-  }
-  if (groot(min(ygrid))<0) {yp = min(ygrid)} else {
-    r = uniroot(groot, interval = c(min(ygrid), y))
-    yp = r$root
-  }
-  wtp = (exp(y + (sigma*y)^2/2) - exp(yp + (sigma*yp)^2/2))/(1-beta)
-  return(wtp)
+wtpeliciter = function(x, h, y, aidamt, vfx, theta){
+  vfx = interpolater.creater(vfx, theta)
+  aidfrac = aidamt/y
+  tau = 1 - (vfx(x, h)/vfx(x+aidfrac,h))^(1/(1-theta[1]))
+  return(tau)
+}
+
+utilbooster = function(x, h, y, aidamt, vfx, theta){
+  vfx = interpolater.creater(vfx, theta)
+  aidfrac = aidamt/y
+  baselineutils = vfx(x, h)*y^(1-theta[1])
+  boost  = vfx(x+aidfrac, h)*y^(1-theta[1])
+  return(boost - baselineutils)
 }
 
 
 ### Functions for plotting
 
-iterplotter = function(w, hidx=NULL, xidx=NULL, yidx, ifilt = c(1:99), xfilt = NULL, var = "Tw"){
+iterplotter = function(w, hidx=NULL, xidx=NULL, ifilt = c(1:99), xfilt = NULL, var = "Tw"){
   statespace = w[[length(w)]]
   ## plot iterations for given y and h
   if (is.null(xidx)) {
-    xs = lapply(w, function(x) filter(x, y==yidx, h==hidx))
+    xs = lapply(w, function(x) filter(x, round(h,10)==round(hidx,10)))
     xs <- data.frame(do.call(rbind, xs)) 
-    xs$iteration <- rep(c(1:length(w)), each = length(unique(xs$x)))
-    if (!is.null(xfilt)) xs = filter(xs, x!=xfilt)
+    xs$iteration <- rep(c(1:length(w)), each = length(unique(round(xs$x,10))))
+    if (!is.null(xfilt)) xs = filter(xs, !(x%in%xfilt))
     ggplot(filter(xs, iteration %in% ifilt)) +
       geom_line(aes(x = x, y = get(var), color = iteration, group = iteration)) + 
       scale_color_viridis_c()
   } else {
-    xs = lapply(w, function(x) filter(x, y==yidx, x==xidx))
+    xs = lapply(w, function(x) filter(x, round(x,10)==round(xidx,10)))
     xs <- data.frame(do.call(rbind, xs)) 
-    xs$iteration <- rep(c(1:length(w)), each = length(unique(xs$h)))
+    xs$iteration <- rep(c(1:length(w)), each = length(unique(round(xs$h,10))))
     ggplot(filter(xs, iteration %in% ifilt)) +
       geom_line(aes(x = h, y = get(var), color = iteration, group = iteration)) + 
       scale_color_viridis_c()
   }
 }
 
-threedplotter = function(w, yidx, fillvar, iter = length(w), d3 = TRUE, aidamt = NULL, ubm = 1.1, lbm = NULL, lbh = NULL){
-  statespace = w[[iter]][,c(1:6)]
-  if (fillvar=="Tw") {
-    Vfx = interpolater.creater(ygrid[yidx], statespace, w[[iter]]$Tw)
-  } else if (fillvar %in% c("cfx", "aidcfx")) {
-    Vfx = interpolater.creater(ygrid[yidx], statespace, w[[iter]]$cfx)
-  } else {Vfx = interpolater.creater(ygrid[yidx], statespace, w[[iter]]$ifx)}
-  if(is.null(lbm)) lbm = cbar*exp(ygrid[yidx])
-  if(is.null(lbh)) lbh = hbar*exp(ygrid[yidx])
-  df.test = crossing(x = seq(lbm, exp(ubm*ygrid[yidx]), length.out = 200), h = seq(lbh, exp(ubm*ygrid[yidx]), length.out = 200))
+threedplotter = function(w, theta, fillvar, iter = length(w), method = "simplical",
+                         d3 = TRUE, aidamt = NULL, ubm = 9, lbm = NULL, lbh = NULL){
+  Vfx = interpolater.creater(w[[iter]], theta, var = fillvar, method = method)
+  if(is.null(lbm)) lbm = -lambda
+  if(is.null(lbh)) lbh = 0
+  df.test = crossing(x = seq(lbm, ubm, length.out = 200), h = seq(lbh, ubm, length.out = 200))
   df.test$proj = mapply(Vfx, x = df.test$x, h = df.test$h)
   
   if (fillvar %in% c("aidcfx", "aidifx")) {
@@ -626,23 +624,6 @@ threedplotter = function(w, yidx, fillvar, iter = length(w), d3 = TRUE, aidamt =
     threed = ggplot(df.test) + geom_tile(aes(x = x, y = h, fill = proj)) + scale_fill_viridis_c()
   } else {threed = ggplot(df.test) + geom_tile(aes(x = x, y = h, fill = efx)) + scale_fill_viridis_c()}
   
-  if (d3) p = plot_gg(threed, multicore=TRUE) else p = threed
-  p
-}
-
-yplotter = function(w, hidx, iter = length(w), d3 = TRUE, xvals, yvals){
-  statespace = w[[iter]][,c(1:6)]
-  xp = seq(xvals[1], xvals[2], length.out = 200)
-  yp = seq(yvals[1], yvals[2], length.out = 200)
-  df.test = crossing(x = xp, y = yp)
-  statespace$Tw = w[[iter]]$Tw
-  s <- filter(statespace, h == hidx)
-  fi = function(xp,yp){
-    r = simplr(x0 = xp, y0 = yp, x = s$x, y = s$y, vfx = s$Tw, method = "simplical", extrapolation.warning = FALSE)
-    return(r)
-  }
-  df.test$proj = mapply(fi, x = df.test$x, y = df.test$y)
-  threed = ggplot(df.test) + geom_tile(aes(x = x, y = y, fill = -1*log(-proj))) + scale_fill_viridis_c()
   if (d3) p = plot_gg(threed, multicore=TRUE) else p = threed
   p
 }
