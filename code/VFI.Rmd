@@ -28,8 +28,8 @@ source(paste(rootdir, "/code/VFIfunctions.R", sep = ""))
 source(paste(rootdir, "/code/rdhelpers.R", sep = ""))
 
 ### Read in final Value function
-theta = readRDS(paste(rootdir, "/data/model_output/theta1.rds", sep = ""))
-V = readRDS(paste(rootdir, "/data/model_output/V1.rds", sep = ""))
+theta = readRDS(paste(rootdir, "/data/model_output/theta.rds", sep = ""))
+V = readRDS(paste(rootdir, "/data/model_output/V.rds", sep = ""))
 finalV = V[[length(V)]]
 xn = length(unique(finalV$x)); hn = length(unique(finalV$h))
 
@@ -216,14 +216,18 @@ df.hh$tau <- mcmapply(wtpeliciter, x = df.hh$x_noaid, h = df.hh$lag_h,
                     mc.cores = detectCores()-2, mc.preschedule = FALSE)
 df.hh$wtp <- df.hh$tau * df.hh$M_avg/(1-beta)
 
-df.hh$utils <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
-                        y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta))
-
 df.hh$tauL <- mcmapply(wtpeliciter, x = df.hh$x_noaid, h = df.hh$lag_h, 
                       y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
                       mc.cores = detectCores()-2, mc.preschedule = FALSE)
 df.hh$wtpL <- df.hh$tauL * df.hh$M_avg/(1-beta)
 
+df.hh$tauC <- mcmapply(conditionalizer, x = df.hh$x_noaid, h = df.hh$lag_h, 
+                      y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                      mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$wtpC <- df.hh$tauC * df.hh$M_avg/(1-beta)
+
+df.hh$utils <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
+                        y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta))
 df.hh$utilL <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
                         y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta))
 ```
@@ -304,53 +308,53 @@ df.als <- data.frame("al" = factor(c("Actual", "Emergency", "NGO", "Damages",
 ### Actual
 b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$received_aid==1),
      weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.als$bens[df.als$al=="Actual"] = b$t0; df.als$cil[df.als$al=="Actual"] = b$percent[,4]; df.als$cih[df.als$al=="Actual"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.als$bens[df.als$al=="Actual"] = b$t0; df.als$cil[df.als$al=="Actual"] = b$normal[,2]; df.als$cih[df.als$al=="Actual"] = b$normal[,3]
 
 ### Emergency
 b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$emergency_aid==1),
      weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.als$bens[df.als$al=="Emergency"] = b$t0; df.als$cil[df.als$al=="Emergency"] = b$percent[,4]; df.als$cih[df.als$al=="Emergency"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.als$bens[df.als$al=="Emergency"] = b$t0; df.als$cil[df.als$al=="Emergency"] = b$normal[,2]; df.als$cih[df.als$al=="Emergency"] = b$normal[,3]
 
 ### NGOs
 b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$NGO_transfers>0),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.als$bens[df.als$al=="NGO"] = b$t0; df.als$cil[df.als$al=="NGO"] = b$percent[,4]; df.als$cih[df.als$al=="NGO"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.als$bens[df.als$al=="NGO"] = b$t0; df.als$cil[df.als$al=="NGO"] = b$normal[,2]; df.als$cih[df.als$al=="NGO"] = b$normal[,3]
 
 ### Quake losses (in the period they occurred)
 qd <- quantile(df.w1$quake_losses, 1-budgetconstraint) 
 b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$quake_losses>qd),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.als$bens[df.als$al=="Damages"] = b$t0; df.als$cil[df.als$al=="Damages"] = b$percent[,4]; df.als$cih[df.als$al=="Damages"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.als$bens[df.als$al=="Damages"] = b$t0; df.als$cil[df.als$al=="Damages"] = b$normal[,2]; df.als$cih[df.als$al=="Damages"] = b$normal[,3]
 
 ### Food Consumption
 qc <- quantile(df.w1$food_consumption*df.w1$M_avg, budgetconstraint) 
 b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$food_consumption*df.w1$M_avg<qc),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.als$bens[df.als$al=="Consumption"] = b$t0; df.als$cil[df.als$al=="Consumption"] = b$percent[,4]; df.als$cih[df.als$al=="Consumption"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.als$bens[df.als$al=="Consumption"] = b$t0; df.als$cil[df.als$al=="Consumption"] = b$normal[,2]; df.als$cih[df.als$al=="Consumption"] = b$normal[,3]
 
 qc <- quantile(df.w1$food_consumption, budgetconstraint) 
 b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$food_consumption<qc),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.als$bens[df.als$al=="Consumption rel."] = b$t0; df.als$cil[df.als$al=="Consumption rel."] = b$percent[,4]; df.als$cih[df.als$al=="Consumption rel."] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.als$bens[df.als$al=="Consumption rel."] = b$t0; df.als$cil[df.als$al=="Consumption rel."] = b$normal[,2]; df.als$cih[df.als$al=="Consumption rel."] = b$normal[,3]
 
 ### Wealth
 qb <- quantile(df.w1$imputed_bufferstock*df.w1$M_avg, budgetconstraint)
 b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock*df.w1$M_avg<qb),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.als$bens[df.als$al=="Wealth"] = b$t0; df.als$cil[df.als$al=="Wealth"] = b$percent[,4]; df.als$cih[df.als$al=="Wealth"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.als$bens[df.als$al=="Wealth"] = b$t0; df.als$cil[df.als$al=="Wealth"] = b$normal[,2]; df.als$cih[df.als$al=="Wealth"] = b$normal[,3]
 
 qb <- quantile(df.w1$imputed_bufferstock, budgetconstraint)
 b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock<qb),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.als$bens[df.als$al=="Wealth rel."] = b$t0; df.als$cil[df.als$al=="Wealth rel."] = b$percent[,4]; df.als$cih[df.als$al=="Wealth rel."] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.als$bens[df.als$al=="Wealth rel."] = b$t0; df.als$cil[df.als$al=="Wealth rel."] = b$normal[,2]; df.als$cih[df.als$al=="Wealth rel."] = b$normal[,3]
 
 ### Universal
 wtpLboot <- function(data, idx) {
@@ -360,8 +364,8 @@ wtpLboot <- function(data, idx) {
   return(ct/a)
 }
 b = boot(df.w1, statistic = wtpLboot, R = 1000, weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.als$bens[df.als$al=="Universal"] = b$t0; df.als$cil[df.als$al=="Universal"] = b$percent[,4]; df.als$cih[df.als$al=="Universal"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.als$bens[df.als$al=="Universal"] = b$t0; df.als$cil[df.als$al=="Universal"] = b$normal[,2]; df.als$cih[df.als$al=="Universal"] = b$normal[,3]
 
 ggplot(filter(df.als, al!="Emergency"), aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + 
@@ -392,53 +396,53 @@ df.alsU <- data.frame("al" = factor(c("Actual", "Emergency", "NGO", "Damages",
 ### Actual
 b = boot(df.w1, statistic = utilboot, R = 1000, condition = as.vector(df.w1$received_aid==1),
      weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.alsU$bens[df.alsU$al=="Actual"] = b$t0; df.alsU$cil[df.alsU$al=="Actual"] = b$percent[,4]; df.alsU$cih[df.alsU$al=="Actual"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsU$bens[df.alsU$al=="Actual"] = b$t0; df.alsU$cil[df.alsU$al=="Actual"] = b$normal[,2]; df.alsU$cih[df.alsU$al=="Actual"] = b$normal[,3]
 
 ### Emergency
 b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$emergency_aid==1),
      weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.alsU$bens[df.alsU$al=="Emergency"] = b$t0; df.alsU$cil[df.alsU$al=="Emergency"] = b$percent[,4]; df.alsU$cih[df.alsU$al=="Emergency"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsU$bens[df.alsU$al=="Emergency"] = b$t0; df.alsU$cil[df.alsU$al=="Emergency"] = b$normal[,2]; df.alsU$cih[df.alsU$al=="Emergency"] = b$normal[,3]
 
 ### NGOs
 b = boot(df.w1, statistic = utilboot, R = 1000, condition = as.vector(df.w1$NGO_transfers>0),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.alsU$bens[df.alsU$al=="NGO"] = b$t0; df.alsU$cil[df.alsU$al=="NGO"] = b$percent[,4]; df.alsU$cih[df.alsU$al=="NGO"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsU$bens[df.alsU$al=="NGO"] = b$t0; df.alsU$cil[df.alsU$al=="NGO"] = b$normal[,2]; df.alsU$cih[df.alsU$al=="NGO"] = b$normal[,3]
 
 ### Quake losses (in the period they occurred)
 qd <- quantile(df.w1$quake_losses, 1-budgetconstraint) 
 b = boot(df.w1, statistic = utilboot, R = 1000, condition = as.vector(df.w1$quake_losses>qd),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.alsU$bens[df.alsU$al=="Damages"] = b$t0; df.alsU$cil[df.alsU$al=="Damages"] = b$percent[,4]; df.alsU$cih[df.alsU$al=="Damages"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsU$bens[df.alsU$al=="Damages"] = b$t0; df.alsU$cil[df.alsU$al=="Damages"] = b$normal[,2]; df.alsU$cih[df.alsU$al=="Damages"] = b$normal[,3]
 
 ### Food Consumption
 qc <- quantile(df.w1$food_consumption*df.w1$M_avg, budgetconstraint) 
 b = boot(df.w1, statistic = utilboot, R = 1000, condition = as.vector(df.w1$food_consumption*df.w1$M_avg<qc),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.alsU$bens[df.alsU$al=="Consumption"] = b$t0; df.alsU$cil[df.alsU$al=="Consumption"] = b$percent[,4]; df.alsU$cih[df.alsU$al=="Consumption"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsU$bens[df.alsU$al=="Consumption"] = b$t0; df.alsU$cil[df.alsU$al=="Consumption"] = b$normal[,2]; df.alsU$cih[df.alsU$al=="Consumption"] = b$normal[,3]
 
 qc <- quantile(df.w1$food_consumption, budgetconstraint) 
 b = boot(df.w1, statistic = utilboot, R = 1000, condition = as.vector(df.w1$food_consumption<qc),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.alsU$bens[df.alsU$al=="Consumption rel."] = b$t0; df.alsU$cil[df.alsU$al=="Consumption rel."] = b$percent[,4]; df.alsU$cih[df.alsU$al=="Consumption rel."] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsU$bens[df.alsU$al=="Consumption rel."] = b$t0; df.alsU$cil[df.alsU$al=="Consumption rel."] = b$normal[,2]; df.alsU$cih[df.alsU$al=="Consumption rel."] = b$normal[,3]
 
 ### Wealth
 qb <- quantile(df.w1$imputed_bufferstock*df.w1$M_avg, budgetconstraint)
 b = boot(df.w1, statistic = utilboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock*df.w1$M_avg<qb),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.alsU$bens[df.alsU$al=="Wealth"] = b$t0; df.alsU$cil[df.alsU$al=="Wealth"] = b$percent[,4]; df.alsU$cih[df.alsU$al=="Wealth"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsU$bens[df.alsU$al=="Wealth"] = b$t0; df.alsU$cil[df.alsU$al=="Wealth"] = b$normal[,2]; df.alsU$cih[df.alsU$al=="Wealth"] = b$normal[,3]
 
 qb <- quantile(df.w1$imputed_bufferstock, budgetconstraint)
 b = boot(df.w1, statistic = utilboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock<qb),
          weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.alsU$bens[df.alsU$al=="Wealth rel."] = b$t0; df.alsU$cil[df.alsU$al=="Wealth rel."] = b$percent[,4]; df.alsU$cih[df.alsU$al=="Wealth rel."] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsU$bens[df.alsU$al=="Wealth rel."] = b$t0; df.alsU$cil[df.alsU$al=="Wealth rel."] = b$normal[,2]; df.alsU$cih[df.alsU$al=="Wealth rel."] = b$normal[,3]
 
 ### Universal
 wtpLboot <- function(data, idx) {
@@ -448,8 +452,8 @@ wtpLboot <- function(data, idx) {
   return(ct/a)
 }
 b = boot(df.w1, statistic = wtpLboot, R = 1000, weights = df.w1$wt_hh)
-b = boot.ci(b, type = "perc", conf = .95)
-df.alsU$bens[df.alsU$al=="Universal"] = b$t0; df.alsU$cil[df.alsU$al=="Universal"] = b$percent[,4]; df.alsU$cih[df.alsU$al=="Universal"] = b$percent[,5]
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsU$bens[df.alsU$al=="Universal"] = b$t0; df.alsU$cil[df.alsU$al=="Universal"] = b$normal[,2]; df.alsU$cih[df.alsU$al=="Universal"] = b$normal[,3]
 
 ggplot(filter(df.alsU, al!="Emergency"), aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 

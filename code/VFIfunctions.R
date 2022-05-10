@@ -137,7 +137,7 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
         xnorm = (cs$x - min(cs$x))/(max(cs$x) - min(cs$x))
         hnorm = (cs$h - min(cs$h))/(max(cs$h) - min(cs$h))
         mod = neuralnet(obj ~ xnorm + hnorm, data = data.frame(obj = obj, xnorm = xnorm, hnorm = hnorm), 
-                        hidden=11, act.fct = "logistic", linear.output = FALSE)
+                        hidden=11, act.fct = "logistic", linear.output = FALSE, stepmax = 3e5)
         fi = function(x, h){
           xn = (x - min(cs$x))/(max(cs$x) - min(cs$x))
           hn = (h - min(cs$h))/(max(cs$h) - min(cs$h))
@@ -290,15 +290,27 @@ hhgradfact <- function(x, h, theta, w, gqpts){
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]; B = -1*lambda
   hhgrad <- function(ci){
     c = ci[1]; i = ci[2]
-    xtplus1 = R*(x - c - i) + exp(great.expectations(sigma, gqpts))
-    defaults = which(xtplus1<B)
-    xtplus1[defaults] = B
-    htplus1 = rep(delta*(h+i), length(xtplus1))
-    htplus1[defaults] = max(htplus1, hbar)
-    Edvdc = sum(mapply(simplrdifferentiator, x0 = xtplus1, y0 = htplus1, statespace = list(w), deriv = list("dx"))*gqpts$w)/sqrt(pi)
-    Edvdi = sum(mapply(simplrdifferentiator, x0 = xtplus1, y0 = htplus1, statespace = list(w), deriv = list("dy"))*gqpts$w)/sqrt(pi)
-    dhdc = dudc(c, h, i, theta) - beta*R*Edvdc
-    dhdi = dudi(c, h, i, theta) + beta*delta*Edvdi - beta*R*Edvdc
+    htplus1 = delta*(h+i)
+    xtplus1 = R*(x - c - i) 
+    mindraw = B - xtplus1
+    pdef = plnorm(mindraw, meanlog = 1, sdlog = sigma)
+    draws = exp(great.expectations(sigma, gqpts))
+    if (any(draws>mindraw)){
+      wts = gqpts$w[draws>mindraw]/sqrt(pi)
+      if (length(wts)>1) wts[1] = 1 - pdef - sum(wts[2:length(wts)]) else wts[1] = 1 - pdef
+      draws = draws[draws>mindraw]
+      Edvdc = sum(mapply(simplrdifferentiator, x0 = xtplus1 + draws, y0 = htplus1, statespace = list(w), deriv = list("dx"))*wts)
+      Edvdi = sum(mapply(simplrdifferentiator, x0 = xtplus1 + draws, y0 = htplus1, statespace = list(w), deriv = list("dy"))*wts)
+      EVc = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, hbar), statespace = w, deriv = list("dx")) + Edvdc
+      EVi = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, hbar), statespace = w, deriv = list("dy")) + Edvdi
+    } else {
+      EVc = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, hbar), statespace = w, deriv = list("dx")) + 
+        (1-pdef)*simplrdifferentiator(x0 = xtplus1+mindraw+1, y0 = htplus1, statespace = w, deriv = list("dx"))
+      EVi = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, hbar), statespace = w, deriv = list("dy")) + 
+        (1-pdef)*simplrdifferentiator(x0 = xtplus1+mindraw+1, y0 = htplus1, statespace = w, deriv = list("dy"))
+    }
+    dhdc = beta*R*EVc - dudc(c, h, i, theta)
+    dhdi = beta*R*EVc - dudi(c, h, i, theta) - beta*delta*EVi
     return(c(dhdc, dhdi))
   }
   return(hhgrad)
@@ -422,7 +434,9 @@ momentmatcher <- function(i, vfx, t0, data){
   return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)*wt)
 }
 
-hhgradient <- function(i, df, vfx, dvlist){
+hhgradient <- function(i, df, vfx, dvlist, theta){
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   hh = df[i,]
   wt = hh$wt_hh/sum(df$wt_hh)
   
@@ -463,6 +477,8 @@ hhgradient <- function(i, df, vfx, dvlist){
 }
 
 momentgradient <- function(theta, df){
+  ### if using in mlsl for global optimizer get rid of df arg
+  ## df <- df.hh
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
@@ -513,8 +529,9 @@ momentgradient <- function(theta, df){
   dVdd = list(dVdd, interpolater.creater(dVdd, theta, var = "cfx", method = "neuralnet"), interpolater.creater(dVdd, theta, var = "ifx", method = "neuralnet"))
   
   dvlist = list(dVdg, dVdB, dVdR, dVdc, dVdh, dVdl, dVds, dVda, dVdd)
-  gradlist = mclapply(c(1:nrow(df)), hhgradient, df, vfx, dvlist, mc.cores = detectCores())
+  gradlist = mclapply(c(1:nrow(df)), hhgradient, df = df, vfx = vfx, dvlist = dvlist, theta = theta, mc.cores = detectCores())
   grad = apply(simplify2array(gradlist), c(1,2), mean)
+  ## grad = sum(colMeans(grad)^2) ### for global
   return(grad)
 }
 
@@ -579,6 +596,12 @@ utilbooster = function(x, h, y, aidamt, vfx, theta){
   return(boost - baselineutils)
 }
 
+conditionalizer = function(x, h, y, aidamt, vfx, theta){
+  vfx = interpolater.creater(vfx, theta)
+  aidfrac = aidamt/y
+  tau = 1 - (vfx(x, h)/vfx(x,h+aidfrac))^(1/(1-theta[1]))
+  return(tau)
+}
 
 ### Functions for plotting
 
