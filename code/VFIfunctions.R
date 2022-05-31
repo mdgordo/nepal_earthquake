@@ -79,8 +79,8 @@ create.statespace = function(ubm = c(17,12), theta, method = "equal"){
     x = c(-lambda, cnodesx)
     h = chebnodes(hn, lb = 0, ub = ubm[2])
   } else if (method=="log") {
-    h = c(0, exp(seq(log(cbar), log(ubm[2]), length.out = hn)))
-    x = c(-lambda, exp(seq(0, log(ubm[1] - defaultpt), length.out = hn)) + defaultpt)
+    h = c(0, hbar/2, exp(seq(log(hbar), log(ubm[2]), length.out = hn-1)))
+    x = c(-lambda, exp(seq(0, log(ubm[1] - defaultpt + 1), length.out = hn)) + defaultpt - 1)
   } else if (method=="uneven") {
     x = c(-lambda, seq(defaultpt, ubm[1], length.out = xn))
     h = unique(c(seq(0, ubm[2]/2, length.out = round(2*hn/3,0)), seq(ubm[2]/2, ubm[2], length.out = round(1*hn/3,0)+1)))
@@ -94,10 +94,11 @@ create.statespace = function(ubm = c(17,12), theta, method = "equal"){
 
 ### 2D interpolate
 interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
-  cbar = theta[4]; lambda = theta[6]
+  cbar = theta[4]; hbar = theta[5]; lambda = theta[6]
   if(var=="Tw") Tw = w$Tw else if (var %in% c("cfx", "aidcfx")) Tw = w$cfx else if (var %in% c("ifx", "aidifx")) Tw = w$ifx
   if (method=="simplical") {
     fi = function(x,h){
+      if (x+h<=hbar+cbar-lambda) {x = cbar-lambda} ## ensures default zone is enforced
       r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
       return(r)
     }
@@ -108,6 +109,7 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
       tmat = matrix(TwC, ncol = xn)
       cmat = chebcoefs(tmat, degree = hn-1)
       fi = function(x, h){
+        if (x+h<=hbar+cbar-lambda) {x = cbar-lambda} ## ensures default zone is enforced
         if(x<=cbar-lambda){
           r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
         } else {
@@ -122,6 +124,7 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
       hnorm = (cs$h - min(cs$h))/(max(cs$h) - min(cs$h))
       mod = gam(obj ~ te(xnorm, hnorm))
       fi = function(x, h){
+        if (x+h<=hbar+cbar-lambda) {x = cbar-lambda} ## ensures default zone is enforced
         xn = (x - min(cs$x))/(max(cs$x) - min(cs$x))
         hn = (h - min(cs$h))/(max(cs$h) - min(cs$h))
         if(x<=cbar-lambda){
@@ -137,8 +140,9 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
         xnorm = (cs$x - min(cs$x))/(max(cs$x) - min(cs$x))
         hnorm = (cs$h - min(cs$h))/(max(cs$h) - min(cs$h))
         mod = neuralnet(obj ~ xnorm + hnorm, data = data.frame(obj = obj, xnorm = xnorm, hnorm = hnorm), 
-                        hidden=11, act.fct = "logistic", linear.output = FALSE, stepmax = 3e5)
+                        hidden=11, act.fct = "logistic", linear.output = FALSE, stepmax = 5e5)
         fi = function(x, h){
+          if (x+h<=hbar+cbar-lambda) {x = cbar-lambda} ## ensures default zone is enforced
           xn = (x - min(cs$x))/(max(cs$x) - min(cs$x))
           hn = (h - min(cs$h))/(max(cs$h) - min(cs$h))
           if(x<=cbar-lambda){
@@ -257,32 +261,31 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
   
   hhprob = function(ci){
     c = ci[1]; i = ci[2]
-    if (is.nan(c)|is.na(c)) {return(Inf)} else {
+    if (is.nan(c)|is.na(c)|c+i>x-B) {return((c+i)*1e10)} else {  ### built in constraint 
       payoff = u(c, h, i, theta)
       htplus1 = delta*(h+i)
       xtplus1 = R*(x - c - i) 
-      mindraw = B - xtplus1
-      pdef = plnorm(mindraw, meanlog = 1, sdlog = sigma)
+      mindraw = B+cbar+max(hbar-htplus1, 0) - xtplus1 ## minimum draw to not default
+      pdef = plnorm(mindraw, meanlog = -sigma^2/2, sdlog = sigma)
       draws = exp(great.expectations(sigma, gqpts))
       if (any(draws>mindraw)){
         wts = gqpts$w[draws>mindraw]/sqrt(pi)
-        if (length(wts)>1) wts[1] = 1 - pdef - sum(wts[2:length(wts)]) else wts[1] = 1 - pdef
         draws = draws[draws>mindraw]
+        if (pdef!=0){  ### adjust wts and draws for probability of default
+          extrawt = 1 - pdef - sum(wts)
+          if (extrawt>0) wts = c(extrawt, wts) else wts[1] = extrawt + wts[1]
+          extradraw = qlnorm(pdef + wts[1]/2, meanlog = -sigma^2/2, sdlog = sigma)
+          if (extrawt>0) draws = c(extradraw, draws) else draws[1] = extradraw
+        }
         EVp = sum(mapply(Valfunc, x = xtplus1 + draws, h = htplus1)*wts)
-        EV = pdef*Valfunc(B, max(htplus1, hbar)) + EVp
+        EV = pdef*Valfunc(B, max(htplus1, delta*hbar)) + EVp
       } else {
-        EV = pdef*Valfunc(B, max(htplus1, hbar)) + (1-pdef)*Valfunc(xtplus1+mindraw+1, htplus1)
+        EV = pdef*Valfunc(B, max(htplus1, delta*hbar)) + (1-pdef)*Valfunc(xtplus1+mindraw+1.856, htplus1) ### mean excess for lognormal
       }
       r = payoff + beta*EV
       return(-r)}
   }
-  constraint <- function(ci){
-    c = ci[1]
-    i = ci[2]
-    c1 = x-B-c-i
-    return(c1)
-  }
-  return(list(hhprob, constraint))
+  return(hhprob)
 }
 
 hhgradfact <- function(x, h, theta, w, gqpts){
@@ -292,22 +295,27 @@ hhgradfact <- function(x, h, theta, w, gqpts){
     c = ci[1]; i = ci[2]
     htplus1 = delta*(h+i)
     xtplus1 = R*(x - c - i) 
-    mindraw = B - xtplus1
-    pdef = plnorm(mindraw, meanlog = 1, sdlog = sigma)
+    mindraw = B+cbar+max(hbar-htplus1, 0) - xtplus1
+    pdef = plnorm(mindraw, meanlog = -sigma^2/2, sdlog = sigma)
     draws = exp(great.expectations(sigma, gqpts))
     if (any(draws>mindraw)){
       wts = gqpts$w[draws>mindraw]/sqrt(pi)
-      if (length(wts)>1) wts[1] = 1 - pdef - sum(wts[2:length(wts)]) else wts[1] = 1 - pdef
       draws = draws[draws>mindraw]
+      if (pdef!=0){  ### adjust wts and draws for probability of default
+        extrawt = 1 - pdef - sum(wts)
+        if (extrawt>0) wts = c(extrawt, wts) else wts[1] = extrawt + wts[1]
+        extradraw = qlnorm(pdef + wts[1]/2, meanlog = -sigma^2/2, sdlog = sigma)
+        if (extrawt>0) draws = c(extradraw, draws) else draws[1] = extradraw
+      }
       Edvdc = sum(mapply(simplrdifferentiator, x0 = xtplus1 + draws, y0 = htplus1, statespace = list(w), deriv = list("dx"))*wts)
       Edvdi = sum(mapply(simplrdifferentiator, x0 = xtplus1 + draws, y0 = htplus1, statespace = list(w), deriv = list("dy"))*wts)
-      EVc = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, hbar), statespace = w, deriv = list("dx")) + Edvdc
-      EVi = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, hbar), statespace = w, deriv = list("dy")) + Edvdi
+      EVc = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, delta*hbar), statespace = w, deriv = list("dx")) + Edvdc
+      EVi = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, delta*hbar), statespace = w, deriv = list("dy")) + Edvdi
     } else {
-      EVc = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, hbar), statespace = w, deriv = list("dx")) + 
-        (1-pdef)*simplrdifferentiator(x0 = xtplus1+mindraw+1, y0 = htplus1, statespace = w, deriv = list("dx"))
-      EVi = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, hbar), statespace = w, deriv = list("dy")) + 
-        (1-pdef)*simplrdifferentiator(x0 = xtplus1+mindraw+1, y0 = htplus1, statespace = w, deriv = list("dy"))
+      EVc = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, delta*hbar), statespace = w, deriv = list("dx")) + 
+        (1-pdef)*simplrdifferentiator(x0 = xtplus1+mindraw+1.856, y0 = htplus1, statespace = w, deriv = list("dx"))
+      EVi = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, delta*hbar), statespace = w, deriv = list("dy")) + 
+        (1-pdef)*simplrdifferentiator(x0 = xtplus1+mindraw+1.856, y0 = htplus1, statespace = w, deriv = list("dy"))
     }
     dhdc = beta*R*EVc - dudc(c, h, i, theta)
     dhdi = beta*R*EVc - dudi(c, h, i, theta) - beta*delta*EVi
@@ -334,23 +342,15 @@ bellman <- function(w, theta, shockpts = 13, m = 2000){
       return(c(cbar, 0, vfx))
     } else {
       hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
-      #hhgrad = hhgradfact(x, h, theta, w, gqpts)
       lbi = max(round(hbar - h,10), 0.0)
-      sps = incenter(cbar, lbi, x, lambda)
-      sol = cobyla(x0 = sps, fn = hhprob[[1]], hin = hhprob[[2]],
-                     lower = c(cbar,lbi), upper = c(x+lambda-lbi, x+lambda-cbar), 
-                     control = list(ftol_rel = 1e-8, ftol_abs = 0, xtol_rel = 0, maxeval = m))
-      sol2 = cobyla(x0 = cbar, fn = function(c){hhprob[[1]](c(c, x+lambda-c))}, 
-                    lower = cbar, upper = x+lambda-lbi, 
-                    control = list(ftol_rel = 1e-8, ftol_abs = 0, xtol_rel = 0, maxeval = m))
-      if (sol$value > sol2$value) {
-        par = c(sol2$par, x+lambda-sol2$par)
-        sol = sol2
-      } else {par = sol$par}
-      vfxdefault = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = max(delta*h, hbar))
+      sol = directL(fn = hhprob, 
+                  lower = c(cbar,lbi), upper = c(x+lambda-lbi, x+lambda-cbar), 
+                  control = list(ftol_rel = 1e-4, ftol_abs = 0, xtol_rel = 0, maxeval = m))
+      r = c(sol$par, -sol$value)
+      vfxdefault = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = delta*max(h, hbar))
       if (vfxdefault < -sol$value) {
-        return(c(par, -sol$value))
-      } else {return(c(cmin, 0, vfxdefault))}
+        return(r)
+      } else {return(c(cbar, 0, vfxdefault))}
     }
   }
   Tw = mclapply(c(1:nrow(w)), optwrap, mc.cores = detectCores())
@@ -371,12 +371,12 @@ howard <- function(w, theta, shockpts = 13){
     x = w$x[rowidx]; h = w$h[rowidx]
     cfx = w$cfx[rowidx]; ifx = w$ifx[rowidx]
     if (round(x + lambda,10) <= round(cbar,10) | round(x + lambda - cbar,10) <= round(hbar - h,10)) {
-      v = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = max(delta*h, hbar))
+      v = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = delta*max(h, hbar))
       return(v)
     } else {
       hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
-      v1 = -1*hhprob[[1]](c(cfx, ifx))
-      v2 = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = max(delta*h, hbar))
+      v1 = -1*hhprob(c(cfx, ifx))
+      v2 = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = delta*max(h, hbar))
       return(max(v1, v2))
     }
   }
@@ -385,29 +385,31 @@ howard <- function(w, theta, shockpts = 13){
 }
 
 ### VFI
-VFI <- function(v0, theta, maxiter = 30, tol = 1e-6, howardk = 10){
+VFI <- function(v0, theta, maxiter = 30, tol = 1e-5, howardk = 10){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   w = vector(mode = "list", length = maxiter)
   w[[1]] = v0
-  tolmet = FALSE; i = 2; d = 1
-  while (i<=maxiter & !tolmet) {
-    if (d<tol | i==maxiter) tolmet = TRUE
-    wnext = bellman(w = w[[i-1]], theta)
-    if (!tolmet) wnext = monotonizer(wnext)
+  tol1 = FALSE; tol2 = FALSE; i = 2; d = 1; s = 13
+  while (i<=maxiter & !tol2) {
+    wnext = bellman(w = w[[i-1]], theta, shockpts = s)
     ## howard
     k = vector(mode = "list", length = howardk+1)
     k[[1]] = wnext
     for (j in c(1:howardk)) {
-      wnext$Tw = howard(wnext, theta)
+      wnext$Tw = howard(wnext, theta, shockpts = s)
       k[[j+1]] = wnext
     }
     ### MQP error bounds
     b = beta/(1-beta)*mean(k[[howardk+1]]$Tw - k[[howardk]]$Tw)
     wnext$Tw = wnext$Tw + b
-    ## check tol
     w[[i]] = wnext
+    ## check tol
     d = mean((w[[i]]$Tw - w[[i-1]]$Tw)^2)/mean((w[[i-1]]$Tw)^2)
+    ### if tol is met increase gq points
+    if (d < tol) {
+      if (tol1) tol2 = TRUE else s = 101; tol1 = TRUE
+    }
     print(d)
     i = i+1
     print(i)
@@ -426,10 +428,10 @@ momentmatcher <- function(i, vfx, t0, data){
   e4 = df$imputed_bufferstock - df$quake_aid - df$lag_y - R*(df$lag_x - df$lag_c - df$lag_i)
   e5 = sqrt(df$var_inc) - sigma
   e6 = e1*df$imputed_bufferstock
-  e7 = e1*log(df$avg_inc)
+  e7 = e1*log(df$M_avg)
   e8 = e1*log(df$lag_h+1)
   e9 = e2*df$imputed_bufferstock
-  e10 = e2*log(df$avg_inc)
+  e10 = e2*log(df$M_avg)
   e11 = e2*log(df$lag_h+1)
   return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)*wt)
 }
@@ -468,17 +470,15 @@ hhgradient <- function(i, df, vfx, dvlist, theta){
   r4 = wt*c(0,0, -(hh$lag_x - hh$lag_c - hh$lag_i), rep(0,6))
   r5 = wt*c(rep(0,6), -1, 0, 0)
   r6 = wt*hh$imputed_bufferstock*r1
-  r7 = wt*log(hh$avg_inc)*r1
+  r7 = wt*log(hh$M_avg)*r1
   r8 = wt*log(hh$lag_h+1)*r1
   r9 = wt*hh$imputed_bufferstock*r2
-  r10 = wt*log(hh$avg_inc)*r2
+  r10 = wt*log(hh$M_avg)*r2
   r11 = wt*log(hh$lag_h+1)*r2
   return(rbind(r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11))
 }
 
 momentgradient <- function(theta, df){
-  ### if using in mlsl for global optimizer get rid of df arg
-  ## df <- df.hh
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
@@ -531,7 +531,6 @@ momentgradient <- function(theta, df){
   dvlist = list(dVdg, dVdB, dVdR, dVdc, dVdh, dVdl, dVds, dVda, dVdd)
   gradlist = mclapply(c(1:nrow(df)), hhgradient, df = df, vfx = vfx, dvlist = dvlist, theta = theta, mc.cores = detectCores())
   grad = apply(simplify2array(gradlist), c(1,2), mean)
-  ## grad = sum(colMeans(grad)^2) ### for global
   return(grad)
 }
 
@@ -651,5 +650,17 @@ threedplotter = function(w, theta, fillvar, iter = length(w), method = "simplica
   p
 }
 
-
+hhprobtroubleshooter <- function(rowidx, w){
+  gqpts = gaussHermiteData(13)
+  Valfunc = interpolater.creater(w, theta, method = "simplical")
+  x = w$x[rowidx]; h = w$h[rowidx]
+  hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
+  lbi = max(round(hbar - h,10), 0.0)
+  cs = seq(cbar, x+lambda-lbi, length.out = 40)
+  is = seq(lbi, x+lambda-cbar, length.out = 40)
+  testgrid = crossing(cs, is) %>%
+    filter(cs + is <= x + lambda)
+  testgrid$tw = sapply(c(1:nrow(testgrid)), function(i)hhprob(c(testgrid$cs[i], testgrid$is[i])))
+  ggplot(testgrid) + geom_tile(aes(x = cs, y = is, fill = tw)) + scale_fill_viridis_c()
+}
 

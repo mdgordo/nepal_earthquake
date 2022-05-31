@@ -98,7 +98,7 @@ pifx = threedplotter(V, "ifx", d3 = FALSE, ubm = 14, method = "neuralnet", theta
   geom_contour(aes(x = x, y = h, z = proj), color = "grey") + 
   geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + theme_bw()
 cowplot::plot_grid(pcfx, pifx)
-ggsave(paste(rootdir, "/presentation_materials/policyfx.png", sep = ""), width = 16, height = 7)
+#ggsave(paste(rootdir, "/presentation_materials/policyfx.png", sep = ""), width = 16, height = 7)
 ```
 
 ```{r}
@@ -113,7 +113,7 @@ p2 = p +
   labs(x = "Wealth", y = "Housing Stock", fill = "Change in Housing\nInvestment") + 
   geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + theme_bw() + theme(text = element_text(size = 17)) 
 cowplot::plot_grid(p1, p2)
-ggsave(paste(rootdir, "/presentation_materials/policysurf.png", sep = ""), width = 16, height = 7)
+#ggsave(paste(rootdir, "/presentation_materials/policysurf.png", sep = ""), width = 16, height = 7)
 ```
 
 ```{r}
