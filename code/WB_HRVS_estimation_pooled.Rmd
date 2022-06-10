@@ -394,15 +394,15 @@ cvarst <- paste("t", cvarscutpts, sep = "")
 cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv")
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv", wide = TRUE)
 rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
@@ -416,7 +416,7 @@ boot.ci(b, type = "perc")
 ```
 
 ```{r, warning=FALSE}
-qplot("consumption", filter(df.hh, designation!="none")) +
+qplot("consumption", filter(df.hh, designation!="none"), grid = cvarscutpts[2:10], wide = TRUE) +
   theme(text = element_text(size = 20))
 ggsave(paste(rootdir, "/presentation_materials/qplot_consumption.png", sep = ""), width = 10, height = 7)
 ```
@@ -433,15 +433,15 @@ cvarst <- paste("t", cvarscutpts, sep = "")
 cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv")
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv", wide = TRUE)
 rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
@@ -460,8 +460,8 @@ boot.ci(b, type = "perc", conf = c(.9, .95, .99))
 
 
 ```{r, warning=FALSE}
-q1 <- qplot("food_consumption", filter(df.hh, designation!="none")) +
-  theme(text = element_text(size = 20)) + labs(x = "Food Consumption", y = "P(X<x)")
+q1 <- qplot("food_consumption", filter(df.hh, designation!="none"), grid = cvarscutpts[2:10], wide = TRUE) +
+  theme(text = element_text(size = 20)) + labs(x = "Food Consumption", y = "P(X<x)", color = "Aid")
 q1
 ggsave(paste(rootdir, "/presentation_materials/qplot_food.png", sep = ""), width = 10, height = 7)
 ```
@@ -476,15 +476,15 @@ cvarst <- paste("t", cvarscutpts, sep = "")
 cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv")
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv", wide = TRUE)
 rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
@@ -499,7 +499,7 @@ boot.ci(b, type = "perc", conf = c(.9, .95, .99))
 
 
 ```{r, warning = FALSE}
-q2 <- qplot("income_gross", filter(df.hh, designation!="none")) +
+q2 <- qplot("income_gross", filter(df.hh, designation!="none"), grid = cvarscutpts[2:10], wide = TRUE) +
   theme(text = element_text(size = 20)) + labs(x = "Income", y = "P(X<x)")
 q2
 ggsave(paste(rootdir, "/presentation_materials/qplot_income.png", sep = ""), width = 10, height = 7)
@@ -514,15 +514,15 @@ cvarst <- paste("t", cvarscutpts, sep = "")
 cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv")
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv", wide = TRUE)
 rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 ```
@@ -535,7 +535,7 @@ boot.ci(b, type = "perc", conf = c(.9, .95, .99))
 ```
 
 ```{r, warning = FALSE}
-qplot("productive_assets", filter(df.hh, designation!="none")) +
+qplot("productive_assets", filter(df.hh, designation!="none"), grid = cvarscutpts[2:10], wide = TRUE) +
   theme(text = element_text(size = 20))
 ggsave(paste(rootdir, "/presentation_materials/qplot_assets.png", sep = ""), width = 10, height = 7)
 ```
@@ -549,15 +549,15 @@ cvarst <- paste("t", cvarscutpts, sep = "")
 cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv")
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv", wide = TRUE)
 rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
@@ -575,8 +575,8 @@ boot.ci(b, type = "perc", conf = c(.9, .95, .99))
 ```
 
 ```{r, warning = FALSE}
-q3 <- qplot("home_investment", filter(df.hh, designation!="none"), grid = cvarscutpts) +
-  theme(text = element_text(size = 20)) + labs(x = "Housing Investment", y = "P(X<x)")
+q3 <- qplot("home_investment", filter(df.hh, designation!="none"), grid = cvarscutpts, wide = TRUE) +
+  theme(text = element_text(size = 20)) + labs(x = "Housing Investment", y = "P(X<x)", color = "Aid")
 q3
 ggsave(paste(rootdir, "/presentation_materials/qplot_investment.png", sep = ""), width = 10, height = 7)
 ```
@@ -590,15 +590,15 @@ cvarst <- paste("t", cvarscutpts, sep = "")
 cvarsu <- paste("u", cvarscutpts, sep = "")
 cvarsc <- paste("c", cvarscutpts, sep = "")
 
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv")
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = "inv", wide = TRUE)
 rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
-rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE, wide = TRUE)
 rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
         xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
 
@@ -617,7 +617,7 @@ boot.ci(b, type = "perc", conf = c(.9, .95, .99))
 
 
 ```{r, warning = FALSE}
-q4 <- qplot("total_outlays_net", filter(df.hh, designation!="none")) +
+q4 <- qplot("total_outlays_net", filter(df.hh, designation!="none"), grid = cvarscutpts[2:10], wide = TRUE) +
   theme(text = element_text(size = 20)) + labs(x = "Inter-Household Transfers", y = "P(X<x)")
 q4
 ggsave(paste(rootdir, "/presentation_materials/qplot_transfers.png", sep = ""), width = 10, height = 7)
@@ -625,12 +625,45 @@ ggsave(paste(rootdir, "/presentation_materials/qplot_transfers.png", sep = ""), 
 
 
 ```{r}
-cowplot::plot_grid(q1, q2, q3, q4, nrow = 2)
+cowplot::plot_grid(q1+guides(color = "none"), q2+guides(color = "none"), q3+guides(color = "none"), q4+guides(color = "none"), nrow = 2)
 ggsave(paste(rootdir, "/presentation_materials/qplot4.png", sep = ""), width = 10, height = 7)
 
-cowplot::plot_grid(q3, q4)
+cowplot::plot_grid(q3+guides(color = "none"), q4 + labs(color = "Aid"), rel_widths = c(3,4))
 ggsave(paste(rootdir, "/presentation_materials/qplot2.png", sep = ""), width = 14, height = 7)
 
-cowplot::plot_grid(q1, q3, q4, nrow = 1)
+cowplot::plot_grid(q1+guides(color = "none"), q3+guides(color = "none"), q4+labs(color = "Aid"), nrow = 1, rel_widths = c(2,2,3))
 ggsave(paste(rootdir, "/presentation_materials/qplot3.png", sep = ""), width = 14, height = 7)
 ```
+
+```{r}
+q1 + 
+  geom_segment(aes(x = foodRD[[3]][5], xend = foodRD[[3]][5], y = foodRD[[1]][5], yend = foodRD[[2]][5]), color = "red", size = 2) + 
+  labs(x = "Food Consumption", y = "P(X<x)", color = "Aid")
+ggsave(paste(rootdir, "/presentation_materials/qplot_food_1bar.png", sep = ""), width = 10, height = 7)
+
+q1 + 
+  geom_segment(aes(x = foodRD[[3]][5], xend = foodRD[[3]][5], y = foodRD[[1]][5], yend = foodRD[[2]][5]), color = "red", size = 2) + 
+  geom_segment(aes(x = foodRD[[3]][9], xend = foodRD[[3]][9], y = foodRD[[1]][9], yend = foodRD[[2]][9]), color = "red", size = 2) + 
+  labs(x = "Food Consumption", y = "P(X<x)", color = "Aid")
+ggsave(paste(rootdir, "/presentation_materials/qplot_food_2bar.png", sep = ""), width = 10, height = 7)
+  
+q3 + 
+  geom_segment(aes(x = 0, xend = 0, y = homeRD[[1]][1], yend = homeRD[[2]][1]), color = "red", size = 2) + 
+  labs(x = "Housing Investment", y = "P(X<x)", color = "Aid")
+ggsave(paste(rootdir, "/presentation_materials/qplot_investment_1bar.png", sep = ""), width = 10, height = 7)
+
+q3 + 
+  geom_segment(aes(x = 0, xend = 0, y = homeRD[[1]][1], yend = homeRD[[2]][1]), color = "red", size = 2) + 
+  geom_segment(aes(x = homeRD[[3]][2], xend = homeRD[[3]][2], y = homeRD[[1]][2], yend = homeRD[[2]][2]), color = "red", size = 2) + 
+  labs(x = "Housing Investment", y = "P(X<x)", color = "Aid")
+ggsave(paste(rootdir, "/presentation_materials/qplot_investment_2bar.png", sep = ""), width = 10, height = 7)
+
+q3 + 
+  geom_segment(aes(x = homeRD[[3]][2], xend = homeRD[[3]][2], y = homeRD[[1]][2], yend = homeRD[[2]][2]), color = "red", size = 2) + 
+  geom_segment(aes(x = 0, xend = 0, y = homeRD[[1]][1], yend = homeRD[[2]][1]), color = "red", size = 2) + 
+  geom_segment(aes(x = homeRD[[3]][3], xend = homeRD[[3]][3], y = homeRD[[1]][3], yend = homeRD[[2]][3]), color = "red", size = 2) + 
+  labs(x = "Housing Investment", y = "P(X<x)", color = "Aid")
+ggsave(paste(rootdir, "/presentation_materials/qplot_investment_3bar.png", sep = ""), width = 10, height = 7)
+```
+
+

@@ -100,17 +100,17 @@ gmmwrap <- function(theta, df){
   return(momentmat)
 }
 
-## Global optimizer
-g0 <- directL(fn = globalwrap, 
+## Global optimizer - starting points from kaboski townsend and francisco for housing
+g0 <- crs2lm(x0 = c(1.2, .926, 1.054, .52, .52, .08, .42, .63, .93), fn = globalwrap, 
             lower = c(1.01, .6, 1, .01, .01, .01, .01, .1, .5), 
             upper = c(10, .99, 1.2, .9, .9, 10, 1.5, .99, 1),
-            control = list(ftol_rel = 1e-2, xtol_rel = 1e-2))
+            xtol_rel = 1e-2, maxeval = 2000)
 g0
 
 print("starting GMM")
 
-g <- gmm(g = gmmwrap, x = df.hh, t0 = g0$par,         
-         gradv = momentgradient, type = "twoStep", optfct = "nlminb", 
+g <- gmm(g = gmmwrap, x = df.hh, t0 = g0$par, #gradv = momentgradient,          
+         type = "twoStep", optfct = "nlminb", 
          lower = c(1.01, .6, 1, .01, .01, .01, .01, .1, .5),
          upper = c(10, .99, 1.2, .9, .9, 10, 1.5, .99, 1),
          control = list(x.tol = 1e-4, rel.tol = 1e-4, abs.tol = 1e-10))

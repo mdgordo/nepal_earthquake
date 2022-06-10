@@ -60,7 +60,7 @@ histfunc <- function(b, df, h=40, dist.exclude=NULL){
 }
 
 regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, 
-                   k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL, wide = FALSE){
+                   k = "triangular", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL, wide = FALSE){
   if (donut!=0) df <- filter(df, abs(get(b))>donut)
   if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
   if (wide) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
@@ -152,24 +152,23 @@ rdquant <- function(Y, x, fuzzy = NULL, grid = quantile(Y, seq(.1,.9,.1), na.rm 
 }
 
 
-qplot <- function(qvar, df, plot = TRUE, grid = NULL){
-  qcovs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + df$shake_pga + as.factor(df$wave))[,-c(1,3)]
+qplot <- function(qvar, df, plot = TRUE, grid = NULL, wide = FALSE){
+  if (wide) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
+  qcovs <- covmatmaker("dist_2_seg13", df, wide)
   y <- unlist(df[,qvar])
   if (is.null(grid)) grid = quantile(y, seq(.1,.9,.1), na.rm = TRUE)
   qtab <- rdquant(Y = y, x = df$dist_2_seg13, c = 0, fuzzy = df$aid_cumulative_bin, grid, weights = df$wt_hh, cluster = df$strata, 
                   vce = "hc1", covs = qcovs, kernel = "triangular", h = h0, b = b0)
   qtab = filter(unique(qtab), round(rcoefs,2) >=-.1 & round(rcoefs,2) <=1.1)
-  qtiles <- quantile(y, seq(.1, .9, .1), na.rm = TRUE)
   
   if (plot) {
     p = ggplot() +
       geom_line(data = qtab, aes(x = yvals, y = rcoefs, group = as.factor(treat), color = as.factor(treat))) +
       geom_errorbar(data = qtab, aes(x = yvals, y = rcoefs, group = as.factor(treat), color = as.factor(treat), ymin = rlower, ymax = rupper, 
                                    fill = as.factor(treat)), alpha = .3) + 
-      guides(color = "none") +
       scale_color_manual(values = c("grey18", "deepskyblue2")) +
       scale_fill_manual(values = c("grey18", "deepskyblue2")) +
-      geom_rug(aes(x = qtiles), color = "red") + xlim(NA, max(grid)) +
+      geom_rug(aes(x = grid), color = "red") + xlim(NA, max(grid)) +
       theme_bw() + labs(x = qvar, y = "P(X < x)", fill = "Received Aid", color = "Received Aid")
     p
   } else {
@@ -187,4 +186,9 @@ earthmovers <- function(data, idx, cutpts){
   return(emd$value)
 }
 
-
+rearranger <- function(q, y) {
+  r <- Rearrangement::rearrangement(x = as.data.frame(q), y)
+  r[r<0] <- 0
+  r[r>1] <- 1
+  return(as.vector(r))
+}

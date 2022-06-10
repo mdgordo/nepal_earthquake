@@ -825,9 +825,9 @@ epicenter <- st_sfc(st_point(x = c(84.731, 28.23)), crs = 4326)
 epicenter <- st_sf(district = c(36), distname = c("Gorkha"), vdc = c("na"), ward = c("na"), geometry = c(epicenter), location = c("epicenter"))
 df.wards <- rbind(df.wards, epicenter)
 
-h0 <- optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none")[1,3]
+b0 <- optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none", wide = TRUE)[1,3]
 
-df.sample <- filter(df.hh, abs(dist_2_seg13) <= h0 & designation!="none")
+df.sample <- filter(df.hh, abs(dist_2_seg13) <= b0 & designation!="none")
 samplewards <- unique(df.sample[,c("district", "vdc", "ward")])
 samplewards <- paste(samplewards$district, samplewards$vdc, samplewards$ward)
 df.wards <- mutate(df.wards, borderward14 = if_else(paste(district, vdc, ward) %in% samplewards, "border vdc", 
@@ -870,4 +870,46 @@ RSmap <- ggplot() +
         theme_light() + theme(legend.title = element_blank(), axis.text = element_blank())
 RSmap
 ```
+
+FEMA data from: https://www.fema.gov/openfema-data-page/individuals-and-households-program-valid-registrations-v1 
+
+```{r}
+library(data.table)
+df.fema <- fread(paste(rootdir, "/data/FEMA/ihp.csv", sep = "")) 
+  
+df.femasum <- df.fema %>%
+  mutate(year = year(declarationDate)) %>%
+  group_by(year) %>%
+  summarize(repair = sum(repairAmount),
+            rental = sum(rentalAssistanceAmount),
+            replace = sum(replacementAmount),
+            other = sum(personalPropertyAmount))
+
+df.femafrac <- transmute(df.femasum, year = year,
+                     tot = repair + rental + replace + other,
+                     repair = repair/tot,
+                     rental = rental/tot,
+                     replace = replace/tot,
+                     other = other/tot) %>%
+  pivot_longer(-year, names_to = "type", values_to = "amt")
+
+df.femasum <- df.femasum %>%
+  pivot_longer(-year, names_to = "type", values_to = "amt")
+
+ggplot(filter(df.femafrac, type != "tot")) +
+  geom_line(aes(x = year, y = amt, color = type))
+
+ggplot(df.femasum) +
+  geom_line(aes(x = year, y = amt, color = type))
+
+ggplot(filter(df.femafrac, type == "tot")) +
+  geom_line(aes(x = year, y = amt, color = type))
+
+sum(df.femasum$amt[df.femasum$year>2009 & df.femasum$type=="repair"])/sum(df.femasum$amt[df.femasum$year>2009])
+sum(df.femasum$amt[df.femasum$year>2009 & df.femasum$type=="rental"])/sum(df.femasum$amt[df.femasum$year>2009])
+sum(df.femasum$amt[df.femasum$year>2009 & df.femasum$type=="replace"])/sum(df.femasum$amt[df.femasum$year>2009])
+sum(df.femasum$amt[df.femasum$year>2009 & df.femasum$type=="other"])/sum(df.femasum$amt[df.femasum$year>2009])
+```
+
+
 

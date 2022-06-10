@@ -482,7 +482,7 @@ momentgradient <- function(theta, df){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
-  statespace = create.statespace(ubm = c(20,20), theta, method = "equal")
+  statespace = create.statespace(ubm = c(20,20), theta, method = "log")
   v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
                                     "cfx" = rep(0, nrow(statespace)),
                                     "ifx" = rep(0, nrow(statespace))))

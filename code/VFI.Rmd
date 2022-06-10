@@ -79,6 +79,8 @@ satisficer(V, sigma)
 iterplotter(V, hidx = finalV$h[40], var = "Tw", ifilt = c(2:length(V)))
 iterplotter(V, hidx = finalV$h[3], var = "cfx", ifilt = c(3:length(V)))
 iterplotter(V, hidx = finalV$h[25], var = "cfx", ifilt = c(5:length(V)))
+iterplotter(V, hidx = finalV$h[1], var = "ifx", ifilt = c(5:length(V)))
+iterplotter(V, xidx = finalV$x[250], var = "ifx", ifilt = c(2:length(V)))
 iterplotter(V, xidx = finalV$x[400], var = "ifx", ifilt = c(2:length(V)))
 ```
 
@@ -142,13 +144,6 @@ pdfmaker <- function(var, ctpts){
   xvar = as.vector(cfacts[,var])
   pvec = sapply(ctpts, function(x) weighted.mean(xvar<x, df.bord$wt_hh, na.rm = TRUE))
   return(pvec)
-}
-
-rearranger <- function(q, y) {
-  r <- Rearrangement::rearrangement(x = as.data.frame(q), y)
-  r[r<0] <- 0
-  r[r>1] <- 1
-  return(as.vector(r))
 }
 ```
 
@@ -230,6 +225,28 @@ df.hh$utils <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
                         y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta))
 df.hh$utilL <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
                         y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta))
+
+### consumption and investment
+cf2 <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hh, 
+                   mc.cores = detectCores())
+cf2 <- do.call(rbind, cf2)*df.hh$M_avg
+colnames(cf2) <- c("Consumption_noAid", "Consumption_Aid", "Investment_noAid", "Investment_Aid",
+                      "Borrowing_noAid", "Borrowing_Aid")
+df.hh <- cbind(df.hh, cf2) %>%
+  mutate(consumption_delta = Consumption_Aid - Consumption_noAid,
+         investment_delta = Investment_Aid - Investment_noAid,
+         borrowing_delta = Borrowing_Aid - Borrowing_noAid)
+
+df.hhL <- mutate(df.hh, x_aid = x_noaid + 300000*budgetconstraint/M_avg)
+cf2L <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hhL, 
+                   mc.cores = detectCores())
+cf2L <- do.call(rbind, cf2L)*df.hh$M_avg
+colnames(cf2L) <- c("Consumption_noAid", "Consumption_AidL", "Investment_noAid", "Investment_AidL",
+                      "Borrowing_noAid", "Borrowing_AidL")
+df.hh <- cbind(df.hh, cf2L[,c("Consumption_AidL", "Investment_AidL", "Borrowing_AidL")]) %>%
+  mutate(consumption_deltaL = Consumption_AidL - Consumption_noAid,
+         investment_deltaL = Investment_AidL - Investment_noAid,
+         borrowing_deltaL = Borrowing_AidL - Borrowing_noAid)
 ```
 
 ```{r}
@@ -372,6 +389,13 @@ ggplot(filter(df.als, al!="Emergency"), aes(x = al, y = bens, color = as.factor(
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
 ggsave(paste(rootdir, "/presentation_materials/counterfactuals.png", sep = ""), width = 17, height = 7)
+
+ggplot(filter(df.als, al %in% c("Actual", "Damages", "Consumption", "Consumption rel.", "Universal")), 
+       aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
+ggsave(paste(rootdir, "/presentation_materials/counterfactuals_prez.png", sep = ""), width = 17, height = 7)
 ```
 
 ```{r}
@@ -461,6 +485,182 @@ ggplot(filter(df.alsU, al!="Emergency"), aes(x = al, y = bens, color = as.factor
 ggsave(paste(rootdir, "/presentation_materials/benthamite.png", sep = ""), width = 17, height = 7)
 ```
 ```{r}
+### counterfactuals consumption
+
+consboot <- function(data, idx, condition) {
+  data$i <- condition
+  df = data[idx,]
+  ct = mean(df$consumption_delta[df$i])
+  a = mean(df$consumption_delta)
+  return(ct/a)
+}
+
+df.alsA <- data.frame("al" = factor(c("Actual", "Emergency", "NGO", "Damages", 
+                                     "Consumption", "Wealth", "Consumption rel.", "Wealth rel.", "Universal"), 
+                                 levels = c("Actual", "Emergency", "NGO", "Damages", 
+                                            "Consumption", "Wealth", "Consumption rel.", "Wealth rel.", "Universal")),
+                     "bens" = rep(NA, 9),
+                     "cil" = rep(NA, 9),
+                     "cih" = rep(NA, 9))
+
+### Actual
+b = boot(df.w1, statistic = consboot, R = 1000, condition = as.vector(df.w1$received_aid==1),
+     weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsA$bens[df.alsA$al=="Actual"] = b$t0; df.alsA$cil[df.alsA$al=="Actual"] = b$normal[,2]; df.alsA$cih[df.alsA$al=="Actual"] = b$normal[,3]
+
+### Emergency
+b = boot(df.w1, statistic = consboot, R = 1000, condition = as.vector(df.w1$emergency_aid==1),
+     weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsA$bens[df.alsA$al=="Emergency"] = b$t0; df.alsA$cil[df.alsA$al=="Emergency"] = b$normal[,2]; df.alsA$cih[df.alsA$al=="Emergency"] = b$normal[,3]
+
+### NGOs
+b = boot(df.w1, statistic = consboot, R = 1000, condition = as.vector(df.w1$NGO_transfers>0),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsA$bens[df.alsA$al=="NGO"] = b$t0; df.alsA$cil[df.alsA$al=="NGO"] = b$normal[,2]; df.alsA$cih[df.alsA$al=="NGO"] = b$normal[,3]
+
+### Quake losses (in the period they occurred)
+qd <- quantile(df.w1$quake_losses, 1-budgetconstraint) 
+b = boot(df.w1, statistic = consboot, R = 1000, condition = as.vector(df.w1$quake_losses>qd),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsA$bens[df.alsA$al=="Damages"] = b$t0; df.alsA$cil[df.alsA$al=="Damages"] = b$normal[,2]; df.alsA$cih[df.alsA$al=="Damages"] = b$normal[,3]
+
+### Food Consumption
+qc <- quantile(df.w1$food_consumption*df.w1$M_avg, budgetconstraint) 
+b = boot(df.w1, statistic = consboot, R = 1000, condition = as.vector(df.w1$food_consumption*df.w1$M_avg<qc),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsA$bens[df.alsA$al=="Consumption"] = b$t0; df.alsA$cil[df.alsA$al=="Consumption"] = b$normal[,2]; df.alsA$cih[df.alsA$al=="Consumption"] = b$normal[,3]
+
+qc <- quantile(df.w1$food_consumption, budgetconstraint) 
+b = boot(df.w1, statistic = consboot, R = 1000, condition = as.vector(df.w1$food_consumption<qc),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsA$bens[df.alsA$al=="Consumption rel."] = b$t0; df.alsA$cil[df.alsA$al=="Consumption rel."] = b$normal[,2]; df.alsA$cih[df.alsA$al=="Consumption rel."] = b$normal[,3]
+
+### Wealth
+qb <- quantile(df.w1$imputed_bufferstock*df.w1$M_avg, budgetconstraint)
+b = boot(df.w1, statistic = consboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock*df.w1$M_avg<qb),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsA$bens[df.alsA$al=="Wealth"] = b$t0; df.alsA$cil[df.alsA$al=="Wealth"] = b$normal[,2]; df.alsA$cih[df.alsA$al=="Wealth"] = b$normal[,3]
+
+qb <- quantile(df.w1$imputed_bufferstock, budgetconstraint)
+b = boot(df.w1, statistic = consboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock<qb),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsA$bens[df.alsA$al=="Wealth rel."] = b$t0; df.alsA$cil[df.alsA$al=="Wealth rel."] = b$normal[,2]; df.alsA$cih[df.alsA$al=="Wealth rel."] = b$normal[,3]
+
+### Universal
+cuboot <- function(data, idx) {
+  df = data[idx,]
+  a = mean(df$consumption_delta, na.rm = TRUE)
+  ct = mean(df$consumption_deltaL)*(1/budgetconstraint)
+  return(ct/a)
+}
+
+b = boot(df.w1, statistic = cuboot, R = 1000, weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsA$bens[df.alsA$al=="Universal"] = b$t0; df.alsA$cil[df.alsA$al=="Universal"] = b$normal[,2]; df.alsA$cih[df.alsA$al=="Universal"] = b$normal[,3]
+
+ggplot(filter(df.alsA, al!="Emergency"), aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Consumption Relative to Random")
+ggsave(paste(rootdir, "/presentation_materials/cfacts_consumption.png", sep = ""), width = 17, height = 7)
+```
+
+```{r}
+### counterfactuals investment
+
+invboot <- function(data, idx, condition) {
+  data$i <- condition
+  df = data[idx,]
+  ct = mean(df$investment_delta[df$i])
+  a = mean(df$investment_delta)
+  return(ct/a)
+}
+
+df.alsB <- data.frame("al" = factor(c("Actual", "Emergency", "NGO", "Damages", 
+                                     "Consumption", "Wealth", "Consumption rel.", "Wealth rel.", "Universal"), 
+                                 levels = c("Actual", "Emergency", "NGO", "Damages", 
+                                            "Consumption", "Wealth", "Consumption rel.", "Wealth rel.", "Universal")),
+                     "bens" = rep(NA, 9),
+                     "cil" = rep(NA, 9),
+                     "cih" = rep(NA, 9))
+
+### Actual
+b = boot(df.w1, statistic = invboot, R = 1000, condition = as.vector(df.w1$received_aid==1),
+     weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsB$bens[df.alsB$al=="Actual"] = b$t0; df.alsB$cil[df.alsB$al=="Actual"] = b$normal[,2]; df.alsB$cih[df.alsB$al=="Actual"] = b$normal[,3]
+
+### Emergency
+b = boot(df.w1, statistic = invboot, R = 1000, condition = as.vector(df.w1$emergency_aid==1),
+     weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsB$bens[df.alsB$al=="Emergency"] = b$t0; df.alsB$cil[df.alsB$al=="Emergency"] = b$normal[,2]; df.alsB$cih[df.alsB$al=="Emergency"] = b$normal[,3]
+
+### NGOs
+b = boot(df.w1, statistic = invboot, R = 1000, condition = as.vector(df.w1$NGO_transfers>0),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsB$bens[df.alsB$al=="NGO"] = b$t0; df.alsB$cil[df.alsB$al=="NGO"] = b$normal[,2]; df.alsB$cih[df.alsB$al=="NGO"] = b$normal[,3]
+
+### Quake losses (in the period they occurred)
+qd <- quantile(df.w1$quake_losses, 1-budgetconstraint) 
+b = boot(df.w1, statistic = invboot, R = 1000, condition = as.vector(df.w1$quake_losses>qd),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsB$bens[df.alsB$al=="Damages"] = b$t0; df.alsB$cil[df.alsB$al=="Damages"] = b$normal[,2]; df.alsB$cih[df.alsB$al=="Damages"] = b$normal[,3]
+
+### Food Consumption
+qc <- quantile(df.w1$food_consumption*df.w1$M_avg, budgetconstraint) 
+b = boot(df.w1, statistic = invboot, R = 1000, condition = as.vector(df.w1$food_consumption*df.w1$M_avg<qc),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsB$bens[df.alsB$al=="Consumption"] = b$t0; df.alsB$cil[df.alsB$al=="Consumption"] = b$normal[,2]; df.alsB$cih[df.alsB$al=="Consumption"] = b$normal[,3]
+
+qc <- quantile(df.w1$food_consumption, budgetconstraint) 
+b = boot(df.w1, statistic = invboot, R = 1000, condition = as.vector(df.w1$food_consumption<qc),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsB$bens[df.alsB$al=="Consumption rel."] = b$t0; df.alsB$cil[df.alsB$al=="Consumption rel."] = b$normal[,2]; df.alsB$cih[df.alsB$al=="Consumption rel."] = b$normal[,3]
+
+### Wealth
+qb <- quantile(df.w1$imputed_bufferstock*df.w1$M_avg, budgetconstraint)
+b = boot(df.w1, statistic = invboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock*df.w1$M_avg<qb),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsB$bens[df.alsB$al=="Wealth"] = b$t0; df.alsB$cil[df.alsB$al=="Wealth"] = b$normal[,2]; df.alsB$cih[df.alsB$al=="Wealth"] = b$normal[,3]
+
+qb <- quantile(df.w1$imputed_bufferstock, budgetconstraint)
+b = boot(df.w1, statistic = invboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock<qb),
+         weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsB$bens[df.alsB$al=="Wealth rel."] = b$t0; df.alsB$cil[df.alsB$al=="Wealth rel."] = b$normal[,2]; df.alsB$cih[df.alsB$al=="Wealth rel."] = b$normal[,3]
+
+### Universal
+iuboot <- function(data, idx) {
+  df = data[idx,]
+  a = mean(df$investment_delta, na.rm = TRUE)
+  ct = mean(df$investment_deltaL)*(1/budgetconstraint)
+  return(ct/a)
+}
+
+b = boot(df.w1, statistic = iuboot, R = 1000, weights = df.w1$wt_hh)
+b = boot.ci(b, type = "norm", conf = .95)
+df.alsB$bens[df.alsB$al=="Universal"] = b$t0; df.alsB$cil[df.alsB$al=="Universal"] = b$normal[,2]; df.alsB$cih[df.alsB$al=="Universal"] = b$normal[,3]
+
+ggplot(filter(df.alsB, al!="Emergency"), aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Housing Investment Relative to Random")
+ggsave(paste(rootdir, "/presentation_materials/cfacts_investment.png", sep = ""), width = 17, height = 7)
+```
+
+```{r}
 qc <- quantile(df.w1$food_consumption*df.w1$M_avg, .5)
 df.w1$lowCHH <- df.w1$food_consumption*df.w1$M_avg < qc
 
@@ -486,8 +686,8 @@ finalV$tau = mcmapply(wtpeliciter, x = finalV$x, h = finalV$h,
                       y = list(1), aidamt = list(1), vfx = list(finalV), theta = list(theta), 
                       mc.cores = detectCores()-2, mc.preschedule = FALSE)
 
-pwtp = ggplot(filter(finalV, x>cbar-lambda, x<4, h<4)) + geom_tile(aes(x = x, y = h, fill = tau)) + 
-  labs(x = "Wealth", y = "Housing Stock", fill = "Tau") + 
+pwtp = ggplot(filter(finalV, x>cbar-lambda, h > hbar, x<3, h<3)) + geom_tile(aes(x = x, y = h, fill = tau)) + 
+  labs(x = "Wealth", y = "Housing Stock", fill = "Tau") +
   scale_fill_viridis_c() + theme_bw() + theme(text = element_text(size = 20)) 
 pwtp
 ggsave(paste(rootdir, "/presentation_materials/wtpsurf.png", sep = ""), width = 12, height = 7)
@@ -533,4 +733,24 @@ for (i in c(1:50)) {
 }
 
 ggplot(df.cv) + geom_line(aes(x = nodes, y = mse))
+
+```
+
+```{r}
+iterations <- readRDS(paste(rootdir, "/data/model_output/iterations.rds", sep =""))
+colnames(iterations) <- c("g", "b", "r", "c", "h", "l", "s", "a", "d", "f")
+ggplot(iterations) + geom_point(aes(x = g, y = f))
+ggplot(iterations) + geom_point(aes(x = b, y = f))
+ggplot(iterations) + geom_point(aes(x = r, y = f))
+ggplot(iterations) + geom_point(aes(x = c, y = f))
+ggplot(iterations) + geom_point(aes(x = h, y = f))
+ggplot(iterations) + geom_point(aes(x = l, y = f))
+ggplot(iterations) + geom_point(aes(x = s, y = f))
+ggplot(iterations) + geom_point(aes(x = a, y = f))
+ggplot(iterations) + geom_point(aes(x = d, y = f))
+ggplot(iterations) + geom_point(aes(x = g, y = b, color = f*-1)) + scale_color_viridis_c()
+ggplot(iterations) + geom_point(aes(x = r, y = b, color = f*-1)) + scale_color_viridis_c()
+ggplot(iterations) + geom_point(aes(x = a, y = l, color = f*-1)) + scale_color_viridis_c()
+ggplot(iterations) + geom_point(aes(x = c, y = l, color = f*-1)) + scale_color_viridis_c()
+ggplot(iterations) + geom_point(aes(x = h, y = d, color = f*-1)) + scale_color_viridis_c()
 ```
