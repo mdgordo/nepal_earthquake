@@ -35,103 +35,39 @@ df.hh <- df.hh[complete.cases(df.hh),]
 ### Grid size
 xn = 40; hn = 40
 
-### Define GMM function
+### generate starting points - run 35 versions of this on cluster using dSQ
+### dsq --job-file /home/mdg59/project/HPC_WBHRVS_DSQ.txt -c 20 --mem-per-cpu 2g -t 24:00:00 --mail-type ALL
 
-gmmmomentmatcher <- function(theta, df) {
-  print(theta)
-  saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
-  
-  ### initial guess
-  statespace = create.statespace(ubm = c(20,20), theta, method = "log")
-  v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
-                                    "cfx" = rep(0, nrow(statespace)),
-                                    "ifx" = rep(0, nrow(statespace))))
-  
-  ### VFI
-  V = VFI(v0, theta)
-  saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
-  finalV <- V[[length(V)]]
-  policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "neuralnet")
-  policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "neuralnet")
-  
-  ### data
-  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx), t0 = theta, 
-                        data = df[,-c(1:2)], mc.cores = detectCores())
-  momentmat <- do.call(rbind, momentmat)
-  return(momentmat)
-}
+slurmseed <- as.integer(Sys.getenv("SLURM_ARRAY_TASK_ID"))
+set.seed(slurmseed); gamma <- runif(60, 1.01, 10)
+set.seed(slurmseed); beta <- runif(60, .6, .99)
+set.seed(slurmseed); R <- runif(60, 1, 1.4)
+set.seed(slurmseed); cbar <- runif(60, .01, .9)
+set.seed(slurmseed); hbar <- runif(60, .01, .9)
+set.seed(slurmseed); lambda <- runif(60, .01, 10)
+set.seed(slurmseed); sigma <- runif(60, .01, 1)
+set.seed(slurmseed); alpha <- runif(60, .1, .99)
+set.seed(slurmseed); delta <- runif(60, .5, 1)
 
-iterations <- data.frame("gamma" <- c(), "beta" <- c(), "R" <- c(), "cbar" <- c(),
-                         "hbar" <- c(), "lambda" <- c(), "sigma" <- c(), "alpha" <- c(),
-                         "delta" <- c(), "fval" = c())
-saveRDS(iterations, paste(getwd(), "/data/model_output/iterations.rds", sep = ""))
+iterations <- data.frame(gamma, beta, R, cbar, hbar,
+                         lambda, sigma, alpha, delta)
+iterations = filter(iterations, R*beta<1)
 
-### reasonable penalty value for R*B>1
-momentmat <- lapply(c(1:nrow(df.hh)), momentmatcher, vfx = list(function(c,i){return(mean(df.hh$food_consumption))}, 
-                                                                function(c,i){return(mean(df.hh$home_investment))}), 
-                    t0 = rep(1,9), data = df.hh[,-c(1:2)])
-momentmat <- do.call(rbind, momentmat)
-gpenalty <- sum(colMeans(momentmat^2))
-
-### wrapper functions
-globalwrap <- function(theta){
-  if (theta[2]*theta[3]>1) {
-    return(gpenalty*theta[2]*theta[3]) }
-  else { 
-    momentmat = gmmmomentmatcher(theta, df.hh)
-  }
+globalwrap <- function(ridx){
+  theta = as.vector(t(iterations[ridx, ]))
+  momentmat = gmmmomentmatcher(theta, df.hh)
   g = sum(colMeans(momentmat^2)); print(g)
-  iterations = readRDS(paste(getwd(), "/data/model_output/iterations.rds", sep = ""))
-  iterations = rbind(iterations, c(theta, g))
-  saveRDS(iterations, paste(getwd(), "/data/model_output/iterations.rds", sep = ""))
   return(g)
 }
 
-gmmwrap <- function(theta, df){
-  if (theta[2]*theta[3]>1) {
-    return(matrix(gpenalty*theta[2]*theta[3], nrow = nrow(df), ncol = 11)) }
-  else {
-    momentmat = gmmmomentmatcher(theta, df)
-  }
-  g = sum(colMeans(momentmat^2)); print(g)
-  iterations = readRDS(paste(getwd(), "/data/model_output/iterations.rds", sep = ""))
-  iterations = rbind(iterations, c(theta, g))
-  saveRDS(iterations, paste(getwd(), "/data/model_output/iterations.rds", sep = ""))
-  return(momentmat)
-}
+f <- sapply(c(1:nrow(iterations)), globalwrap)
+iterations$f <- f
 
-## Global optimizer - starting points from kaboski townsend and francisco for housing
-g0 <- crs2lm(x0 = c(1.2, .926, 1.054, .52, .52, .08, .42, .63, .93), fn = globalwrap, 
-            lower = c(1.01, .6, 1, .01, .01, .01, .01, .1, .5), 
-            upper = c(10, .99, 1.2, .9, .9, 10, 1.5, .99, 1),
-            xtol_rel = 1e-2, maxeval = 2000)
-g0
+saveRDS(iterations, paste(getwd(), "/data/model_output/iterations", slurmseed, ".rds", sep = ""))
 
-print("starting GMM")
-
-g <- gmm(g = gmmwrap, x = df.hh, t0 = g0$par, #gradv = momentgradient,          
-         type = "twoStep", optfct = "nlminb", 
-         lower = c(1.01, .6, 1, .01, .01, .01, .01, .1, .5),
-         upper = c(10, .99, 1.2, .9, .9, 10, 1.5, .99, 1),
-         control = list(x.tol = 1e-4, rel.tol = 1e-4, abs.tol = 1e-10))
-saveRDS(g, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
-summary(g)
-
-
-theta = g$par
-gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
-lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
-saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
-
-### statespace
-xn = 40; hn = 40
-
-### Final Value function
-statespace = create.statespace(ubm = c(20,20), theta, method = "log")
-v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
-                                  "cfx" = rep(0, nrow(statespace)),
-                                  "ifx" = rep(0, nrow(statespace))))
-V = VFI(v0, theta)
-saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
-
-
+### after all jobs finish, run
+# setwd("/data/model_output")
+# ifiles <- list.files(pattern = "^iter")
+# ilist <- lapply(ifiles, readRDS)
+# iterations <- do.call(rbind, ilist)
+# saveRDS(iterations, paste(getwd(), "/data/model_output/iterations.rds", sep = ""))

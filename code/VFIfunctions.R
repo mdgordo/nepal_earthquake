@@ -118,7 +118,7 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
           return(r)
         }
       } 
-  } else if (method=="spline"){
+    } else if (method=="spline"){
       obj = (TwC - min(TwC))/(max(TwC) - min(TwC))
       xnorm = (cs$x - min(cs$x))/(max(cs$x) - min(cs$x))
       hnorm = (cs$h - min(cs$h))/(max(cs$h) - min(cs$h))
@@ -131,7 +131,7 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
           r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
         } else {
           if (x>max(w$x)) xn = 1; if (h>max(w$h)) hn = 1
-          r = predict(mod, newdata = data.frame("x" = xn, "h" = hn))
+          r = predict(mod, newdata = data.frame("xnorm" = xn, "hnorm" = hn))
           return(r*(max(TwC) - min(TwC)) + min(TwC))
         }
       } 
@@ -149,7 +149,7 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
             r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
           } else {
             if (x>max(w$x)) xn = 1; if (h>max(w$h)) hn = 1
-            r = predict(mod, newdata = data.frame("x" = xn, "h" = hn))
+            r = predict(mod, newdata = data.frame("xnorm" = xn, "hnorm" = hn))
             return(r*(max(TwC) - min(TwC)) + min(TwC))
           }
       } 
@@ -415,6 +415,56 @@ VFI <- function(v0, theta, maxiter = 30, tol = 1e-5, howardk = 10){
     print(i)
   }
   return(compact(w))
+}
+
+### Define GMM function
+
+gmmmomentmatcher <- function(theta, df) {
+  print(theta)
+  saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
+  
+  ### initial guess
+  statespace = create.statespace(ubm = c(20,20), theta, method = "log")
+  v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
+                                    "cfx" = rep(0, nrow(statespace)),
+                                    "ifx" = rep(0, nrow(statespace))))
+  
+  ### VFI
+  V = VFI(v0, theta)
+  saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
+  finalV <- V[[length(V)]]
+  policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "spline")
+  policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "spline")
+  
+  ### data
+  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx), t0 = theta, 
+                        data = df[,-c(1:2)], mc.cores = detectCores())
+  momentmat <- do.call(rbind, momentmat)
+  return(momentmat)
+}
+
+gmmmomentmatcher <- function(theta, df) {
+  print(theta)
+  saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
+  
+  ### initial guess
+  statespace = create.statespace(ubm = c(20,20), theta, method = "log")
+  v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
+                                    "cfx" = rep(0, nrow(statespace)),
+                                    "ifx" = rep(0, nrow(statespace))))
+  
+  ### VFI
+  V = VFI(v0, theta)
+  saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
+  finalV <- V[[length(V)]]
+  policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "spline")
+  policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "spline")
+  
+  ### data
+  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx), t0 = theta, 
+                        data = df[,-c(1:2)], mc.cores = detectCores())
+  momentmat <- do.call(rbind, momentmat)
+  return(momentmat)
 }
 
 momentmatcher <- function(i, vfx, t0, data){

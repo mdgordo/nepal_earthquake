@@ -60,7 +60,7 @@ histfunc <- function(b, df, h=40, dist.exclude=NULL){
 }
 
 regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, 
-                   k = "triangular", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL, wide = FALSE){
+                   k = "triangular", weights = TRUE, donut = 0, poly = 1, vce = "hc1", dist.exclude=NULL, wide = FALSE){
   if (donut!=0) df <- filter(df, abs(get(b))>donut)
   if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
   if (wide) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
@@ -73,7 +73,8 @@ regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE,
   Y <- unlist(df[, v])
   if (ihs==TRUE) Y <- ihs(Y)
   if (weights==TRUE) w <- df$wt_hh else w <- NULL
-  out <- rdrobust(y = Y, x = X, c = 0, fuzzy = f, h = h, b = b0, weights = w, cluster = c, kernel = k, vce = vce, covs = covs)
+  out <- rdrobust(y = Y, x = X, c = 0, fuzzy = f, h = h, b = b0, weights = w, cluster = c, kernel = k,
+                  p = poly, vce = vce, covs = covs)
   return(out)
 }
 
@@ -152,13 +153,14 @@ rdquant <- function(Y, x, fuzzy = NULL, grid = quantile(Y, seq(.1,.9,.1), na.rm 
 }
 
 
-qplot <- function(qvar, df, plot = TRUE, grid = NULL, wide = FALSE){
+qplot <- function(qvar, df, plot = TRUE, grid = NULL, wide = FALSE, k = "triangular", h = h0, b = b0, donut = 0, poly = 1){
+  if (donut!=0) df <- filter(df, abs(dist_2_seg13)>donut)
   if (wide) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
   qcovs <- covmatmaker("dist_2_seg13", df, wide)
   y <- unlist(df[,qvar])
   if (is.null(grid)) grid = quantile(y, seq(.1,.9,.1), na.rm = TRUE)
   qtab <- rdquant(Y = y, x = df$dist_2_seg13, c = 0, fuzzy = df$aid_cumulative_bin, grid, weights = df$wt_hh, cluster = df$strata, 
-                  vce = "hc1", covs = qcovs, kernel = "triangular", h = h0, b = b0)
+                  vce = "hc1", covs = qcovs, kernel = k, h = h, b = b, p = poly)
   qtab = filter(unique(qtab), round(rcoefs,2) >=-.1 & round(rcoefs,2) <=1.1)
   
   if (plot) {

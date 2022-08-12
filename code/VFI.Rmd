@@ -76,12 +76,12 @@ satisficer(V, sigma)
 
 
 ```{r}
-iterplotter(V, hidx = finalV$h[40], var = "Tw", ifilt = c(2:length(V)))
-iterplotter(V, hidx = finalV$h[3], var = "cfx", ifilt = c(3:length(V)))
-iterplotter(V, hidx = finalV$h[25], var = "cfx", ifilt = c(5:length(V)))
-iterplotter(V, hidx = finalV$h[1], var = "ifx", ifilt = c(5:length(V)))
-iterplotter(V, xidx = finalV$x[250], var = "ifx", ifilt = c(2:length(V)))
-iterplotter(V, xidx = finalV$x[400], var = "ifx", ifilt = c(2:length(V)))
+iterplotter(V, hidx = finalV$h[40], var = "Tw")
+iterplotter(V, hidx = finalV$h[3], var = "cfx")
+iterplotter(V, hidx = finalV$h[25], var = "cfx")
+iterplotter(V, hidx = finalV$h[1], var = "ifx")
+iterplotter(V, xidx = finalV$x[250], var = "ifx")
+iterplotter(V, xidx = finalV$x[400], var = "ifx")
 ```
 
 ```{r}

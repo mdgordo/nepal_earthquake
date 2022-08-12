@@ -825,7 +825,7 @@ epicenter <- st_sfc(st_point(x = c(84.731, 28.23)), crs = 4326)
 epicenter <- st_sf(district = c(36), distname = c("Gorkha"), vdc = c("na"), ward = c("na"), geometry = c(epicenter), location = c("epicenter"))
 df.wards <- rbind(df.wards, epicenter)
 
-b0 <- optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none", wide = TRUE)[1,3]
+b0 <- optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none", wide = TRUE, k = "triangular")[1,3]
 
 df.sample <- filter(df.hh, abs(dist_2_seg13) <= b0 & designation!="none")
 samplewards <- unique(df.sample[,c("district", "vdc", "ward")])

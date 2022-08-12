@@ -59,8 +59,8 @@ copingvars <- c("dissaving", "felt_hunger", "school_interrupt",
 Can try also with aid_total - similar
 
 ```{r, warning=FALSE}
-bws <- rbind(optbw("aid_cumulative_bin", b = "dist_2_seg13", df = df.hh, dist.exclude = "none", wide = TRUE),
-      optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none", wide = TRUE))
+bws <- rbind(optbw("aid_cumulative_bin", b = "dist_2_seg13", df = df.hh, dist.exclude = "none", wide = TRUE, k = "triangular"),
+      optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none", wide = TRUE, k = "triangular"))
 
 h0 <- bws[2,1]
 b0 <- bws[2,3]
@@ -85,15 +85,6 @@ a <- rdpower(data = cbind(df.pow$food_consumption, df.pow$dist_2_seg13), h = h0,
         covs =  powcovs, cluster = df.pow$strata, weights = df.pow$wt_hh)
 print("Consumption w IV")
 a <- rdpower(data = cbind(df.pow$food_consumption, df.pow$dist_2_seg13), h = h0, b = b0, kernel = "triangular", vce = "hc1", 
-        covs =  powcovs, cluster = df.pow$strata, weights = df.pow$wt_hh, fuzzy = df.pow$aid_cumulative_bin)
-print("Consumption Dummies")
-a <- rdpower(data = cbind(df.pow$fcs60, df.pow$dist_2_seg13), h = h0, b = b0, kernel = "triangular", vce = "hc1", 
-        covs =  powcovs, cluster = df.pow$strata, weights = df.pow$wt_hh, fuzzy = df.pow$aid_cumulative_bin)
-
-a <- rdpower(data = cbind(df.pow$fcs100, df.pow$dist_2_seg13), h = h0, b = b0, kernel = "triangular", vce = "hc1", 
-        covs =  powcovs, cluster = df.pow$strata, weights = df.pow$wt_hh, fuzzy = df.pow$aid_cumulative_bin)
-
-a <- rdpower(data = cbind(df.pow$fcs200up, df.pow$dist_2_seg13), h = h0, b = b0, kernel = "triangular", vce = "hc1", 
         covs =  powcovs, cluster = df.pow$strata, weights = df.pow$wt_hh, fuzzy = df.pow$aid_cumulative_bin)
 ```
 
@@ -241,12 +232,31 @@ ggsave(paste(rootdir, "/presentation_materials/migrants.png", sep = ""), width =
 First stage
 
 ```{r, warnings=FALSE}
-rdstg1 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, k = "triangular", vce = "hc1", 
+rdstg11 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, k = "triangular", vce = "hc1", 
                  dist.exclude = "none", wide = TRUE)
 
-rdgazer(rdstg1, dvlabs = c("Received Aid", "Cumulative Aid"), 
-        xlines = list(c("Wards", sapply(rdstg1, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+rdstg12 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, k = "epanechnikov", vce = "hc1", 
+                 dist.exclude = "none", wide = TRUE)
 
+rdstg13 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = 15, b0 = 15, k = "triangular", vce = "hc1", 
+                 dist.exclude = "none", wide = TRUE)
+
+rdstg14 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, k = "triangular", vce = "hc1", 
+                 poly = 2, dist.exclude = "none", wide = TRUE)
+
+rdstg15 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, k = "triangular", vce = "hc1", 
+                 donut = 5, dist.exclude = "none", wide = TRUE)
+
+rdstg1 <- c(rdstg11, rdstg13, rdstg14, rdstg15, rdstg12)
+
+rdgazer(rdstg1, dvlabs = rep(c("Received Aid", "Cumulative Aid"), 5), type = "text", 
+        xlines = list(c("Kernel", rep("triangular", 8), rep("epanechnikov", 2)),
+                      c("Polynomial", rep("linear", 4), rep("quadratic", 2), rep("linear", 4)),
+                      c("5km Donut", rep("", 6), rep("X", 2), rep("", 2)),
+                      c("Wards", sapply(rdstg1, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))))
+```
+
+```{r}
 rdplacebo <- lapply(c(placebos[!(placebos %in% c("elevation", "shake_pga", "slope"))]), regout, b = "dist_2_seg13", df = df.hh, 
                     h = h0, b0 = b0, k = "triangular", vce = "hc1", dist.exclude = "none")
 rdgazer(rdplacebo, dvlabs = str_replace_all(c(placebos[!(placebos %in% c("elevation", "shake_pga", "slope"))]), "_", " "), 
@@ -310,7 +320,7 @@ rdgazer(rdshock, dvlabs = str_replace_all(copingvars, "_", " "),
 ### Main Outcomes
 
 ```{r, warning=FALSE}
-mainvars <- c("consumption", "food_consumption", "home_investment", "income_gross", "productive_assets", "total_outlays_net", "n_migrants")
+mainvars <- c("consumption", "food_consumption", "home_investment", "income_gross", "productive_assets", "loan_payments", "total_outlays_net", "n_migrants")
 
 rdmain <- lapply(mainvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, fuzzy = TRUE, 
                  k = "triangular", vce = "hc1", dist.exclude = "none", wide = TRUE)
@@ -328,56 +338,35 @@ df.int <- filter(df.hh, designation!="none", !is.na(age_hh), !is.na(class5)) %>%
          dist_neg = if_else(dist_2_seg13<0, dist_2_seg13, 0),
          kwt = wt_hh*(1-abs(dist_2_seg13)/h0))
 
-reg1 <- ivreg(food_consumption ~ aid_cumulative_bin + aid_cumulative_bin:gorkha_hh + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
+reg1 <- ivreg(food_consumption ~ aid_cumulative_bin + aid_cumulative_bin:log(gorkha_loss_amt+1) + aid_cumulative_bin:as.factor(land_qtle) + 
+                dist_pos + dist_neg + shake_pga + as.factor(wave) + as.factor(land_qtle) + 
                as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) +
-                high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh | 
-          dist_14 + dist_14:gorkha_hh + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
-          as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) + 
-            high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh,
+                high_caste + class5 + poly(age_hh,2) + slope + elevation + log(gorkha_loss_amt+1) | 
+          dist_14 + dist_14:log(gorkha_loss_amt+1) + dist_14:as.factor(land_qtle) + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
+            as.factor(land_qtle) + as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) + 
+            high_caste + class5 + poly(age_hh,2) + slope + elevation + log(gorkha_loss_amt+1),
       data = df.int, cluster = strata, weights = kwt, subset = abs(dist_2_seg13)<h0)
 
-reg2 <- ivreg(food_consumption ~ aid_cumulative_bin + aid_cumulative_bin:as.factor(land_qtle) + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
+reg3 <- ivreg(home_investment ~ aid_cumulative_bin + aid_cumulative_bin:log(gorkha_loss_amt+1) + aid_cumulative_bin:as.factor(land_qtle) + 
+                dist_pos + dist_neg + shake_pga + as.factor(wave) + as.factor(land_qtle) + 
                as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) +
-                high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh + as.factor(land_qtle) | 
-          dist_14 + dist_14:as.factor(land_qtle) + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
-          as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) + 
-            high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh + as.factor(land_qtle),
-      data = df.int, cluster = strata, weights = kwt, subset = abs(dist_2_seg13)<h0)
-
-reg3 <- ivreg(home_investment ~ aid_cumulative_bin + aid_cumulative_bin:gorkha_hh + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
-               as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) +
-                high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh | 
-          dist_14 + dist_14:gorkha_hh + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
-          as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) + 
-            high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh,
-      data = df.int, cluster = strata, weights = kwt, subset = abs(dist_2_seg13)<h0)
-
-reg4 <- ivreg(home_investment ~ aid_cumulative_bin + aid_cumulative_bin:as.factor(land_qtle) + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
-               as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) +
-                high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh + as.factor(land_qtle) | 
-          dist_14 + dist_14:as.factor(land_qtle) + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
-          as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) + 
-            high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh + as.factor(land_qtle),
+                high_caste + class5 + poly(age_hh,2) + slope + elevation + log(gorkha_loss_amt+1) | 
+          dist_14 + dist_14:log(gorkha_loss_amt+1) + dist_14:as.factor(land_qtle) + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
+            as.factor(land_qtle) + as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) + 
+            high_caste + class5 + poly(age_hh,2) + slope + elevation + log(gorkha_loss_amt+1),
       data = df.int, cluster = strata, weights = kwt, subset = abs(dist_2_seg13)<h0)
 
 
-reg5 <- ivreg(total_outlays_net ~ aid_cumulative_bin + aid_cumulative_bin:gorkha_hh + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
+reg5 <- ivreg(remittance_income ~ aid_cumulative_bin + aid_cumulative_bin:log(gorkha_loss_amt+1) + aid_cumulative_bin:as.factor(land_qtle) + 
+                dist_pos + dist_neg + shake_pga + as.factor(wave) + as.factor(land_qtle) + 
                as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) +
-                high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh | 
-          dist_14 + dist_14:gorkha_hh + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
-          as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) + 
-            high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh,
+                high_caste + class5 + poly(age_hh,2) + slope + elevation + log(gorkha_loss_amt+1) | 
+          dist_14 + dist_14:log(gorkha_loss_amt+1) + dist_14:as.factor(land_qtle) + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
+            as.factor(land_qtle) + as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) + 
+            high_caste + class5 + poly(age_hh,2) + slope + elevation + log(gorkha_loss_amt+1),
       data = df.int, cluster = strata, weights = kwt, subset = abs(dist_2_seg13)<h0)
 
-reg6 <- ivreg(total_outlays_net ~ aid_cumulative_bin + aid_cumulative_bin:as.factor(land_qtle) + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
-               as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) +
-                high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh + as.factor(land_qtle) | 
-          dist_14 + dist_14:as.factor(land_qtle) + dist_pos + dist_neg + shake_pga + as.factor(wave) + 
-          as.factor(border_segment13) + dist_2_seg13:as.factor(border_segment13) + 
-            high_caste + class5 + poly(age_hh,2) + slope + elevation + gorkha_hh + as.factor(land_qtle),
-      data = df.int, cluster = strata, weights = kwt, subset = abs(dist_2_seg13)<h0)
-
-stargazer(reg1, reg2, reg3, reg4, reg5, reg6, type = "text",
+stargazer(reg1, reg3, reg5, type = "text",
           omit.stat = "all", digits = 2, df = FALSE, 
           omit = c("Constant", "dist_pos", "dist_neg", "shake_pga", "wave", "border_segment13", "dist_2_seg13", 
                    "high_caste", "class5", "age_hh", "slope", "elevation"))
@@ -465,7 +454,13 @@ q1 <- qplot("food_consumption", filter(df.hh, designation!="none"), grid = cvars
 q1
 ggsave(paste(rootdir, "/presentation_materials/qplot_food.png", sep = ""), width = 10, height = 7)
 ```
+```{r, warning=FALSE}
+qplot("food_consumption", filter(df.hh, designation!="none"), grid = cvarscutpts[2:10], wide = TRUE, k = "epanechnikov") +
+  theme(text = element_text(size = 20)) + labs(x = "Food Consumption", y = "P(X<x)", color = "Aid")
 
+qplot("food_consumption", filter(df.hh, designation!="none"), grid = cvarscutpts[2:10], wide = TRUE, h = 15, b = 15) +
+  theme(text = element_text(size = 20)) + labs(x = "Food Consumption", y = "P(X<x)", color = "Aid")
+```
 
 ```{r, warning = FALSE}
 cvarscutpts <- quantile(df.hh$income_gross, seq(0,1,.1), na.rm = TRUE)
