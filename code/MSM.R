@@ -36,18 +36,19 @@ df.hh <- df.hh[complete.cases(df.hh),]
 xn = 40; hn = 40
 
 ### generate starting points - run 35 versions of this on cluster using dSQ
-### dsq --job-file /home/mdg59/project/HPC_WBHRVS_DSQ.txt -c 20 --mem-per-cpu 2g -t 24:00:00 --mail-type ALL
+### dsq --job-file ~/project/HPC_WBHRVS_DSQ.txt -c 20 --mem-per-cpu 2g -t 24:00:00 --mail-type ALL
 
 slurmseed <- as.integer(Sys.getenv("SLURM_ARRAY_TASK_ID"))
-set.seed(slurmseed); gamma <- runif(60, 1.01, 10)
-set.seed(slurmseed); beta <- runif(60, .6, .99)
-set.seed(slurmseed); R <- runif(60, 1, 1.4)
-set.seed(slurmseed); cbar <- runif(60, .01, .9)
-set.seed(slurmseed); hbar <- runif(60, .01, .9)
-set.seed(slurmseed); lambda <- runif(60, .01, 10)
-set.seed(slurmseed); sigma <- runif(60, .01, 1)
-set.seed(slurmseed); alpha <- runif(60, .1, .99)
-set.seed(slurmseed); delta <- runif(60, .5, 1)
+set.seed(slurmseed); seeds = sample(c(1:1e6),9)
+set.seed(seeds[1]); gamma <- runif(100, 1.01, 10)
+set.seed(seeds[2]); beta <- runif(100, .6, .99)
+set.seed(seeds[3]); R <- runif(100, 1, 1.4)
+set.seed(seeds[4]); cbar <- runif(100, .01, .9)
+set.seed(seeds[5]); hbar <- runif(100, .01, .9)
+set.seed(seeds[6]); lambda <- runif(100, .01, 10)
+set.seed(seeds[7]); sigma <- runif(100, .01, 1)
+set.seed(seeds[8]); alpha <- runif(100, .1, .99)
+set.seed(seeds[9]); delta <- runif(100, .5, 1)
 
 iterations <- data.frame(gamma, beta, R, cbar, hbar,
                          lambda, sigma, alpha, delta)
@@ -66,8 +67,8 @@ iterations$f <- f
 saveRDS(iterations, paste(getwd(), "/data/model_output/iterations", slurmseed, ".rds", sep = ""))
 
 ### after all jobs finish, run
-# setwd("/data/model_output")
+# setwd("data/model_output")
 # ifiles <- list.files(pattern = "^iter")
 # ilist <- lapply(ifiles, readRDS)
 # iterations <- do.call(rbind, ilist)
-# saveRDS(iterations, paste(getwd(), "/data/model_output/iterations.rds", sep = ""))
+# saveRDS(iterations, iterations.rds")

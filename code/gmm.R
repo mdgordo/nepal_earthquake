@@ -11,19 +11,30 @@ library(neuralnet)
 options('nloptr.show.inequality.warning'=FALSE)
 source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
 
-iterations <- readRDS(paste(getwd(), "/data/model_output/iterations.rds", sep = ""))
+iterations <- readRDS(paste(getwd(), "/data/model_output/iterations.rds", sep = "")) %>%
+  filter(complete.cases(.))
 
 ### fit smoothed function to iteration data and minimize it
 inormed = as.data.frame(lapply(iterations, function(x) (x-min(x))/(max(x)-min(x))))
 colmins = unlist(lapply(iterations[,c(1:9)], min))
 colrange = unlist(lapply(iterations[,c(1:9)], function(x) max(x) - min(x)))
-mod = neuralnet(f ~ gamma + beta + R + cbar + hbar + lambda + sigma + alpha + delta, data = inormed,
-                hidden=7, act.fct = "logistic", linear.output = FALSE, stepmax = 5e5)
 
-sol <- directL(function(t) predict(mod, newdata = data.frame("gamma" = t[1], "beta" = t[2], "R" = t[3],
-                                                             "cbar" = t[4], "hbar" = t[5], "lambda" = t[6],
-                                                             "sigma" = t[7], "alpha" = t[8], "delta" = t[9])), 
-               lower = rep(0, 9), upper = rep(1,9), control = list(maxeval = 3000))
+form <- paste("f ~ .^2+", paste0("I(", colnames(inormed)[1:8], "^2)", collapse = "+"), sep = "")
+mod = lm(as.formula(form),
+         data = inormed)
+
+smoothedobj <- function(t){
+  if ((t[2]*colrange[2] + colmins[2])*(t[3]*colrange[3] + colmins[3])>1){
+    r = max(inormed$f)} else{
+      r = predict(mod, newdata = data.frame("gamma" = t[1], "beta" = t[2], "R" = t[3],
+                                        "cbar" = t[4], "hbar" = t[5], "lambda" = t[6],
+                                        "sigma" = t[7], "alpha" = t[8], "delta" = t[9]))
+    }
+  return(r)
+}
+
+sol <- lbfgs(x0 = rep(.5, 9), fn = smoothedobj, 
+            lower = rep(0, 9), upper = rep(1,9), control = list(maxeval = 3000))
 theta = sol$par*colrange + colmins
 print(theta)
 
@@ -53,12 +64,28 @@ df.hh <- df.hh[complete.cases(df.hh),]
 xn = 40; hn = 40
 
 ### GMM using theta as starting point
+### reasonable penalty value for R*B>1
+momentmat <- lapply(c(1:nrow(df.hh)), momentmatcher, vfx = list(function(c,i){return(mean(df.hh$food_consumption))}, 
+                                                                function(c,i){return(mean(df.hh$home_investment))}), 
+                    t0 = rep(1,9), data = df.hh[,-c(1:2)])
+momentmat <- do.call(rbind, momentmat)
+gpenalty <- sum(colMeans(momentmat^2))
 
-g <- gmm(g = gmmmomentmatcher, x = df.hh, t0 = theta,        
+gmmwrap <- function(t, x){
+  if (t[2]*t[3]>1){
+    return(matrix(gpenalty*theta[2]*theta[3], nrow = nrow(x), ncol = 11))
+  } else{
+    momentmat = gmmmomentmatcher(theta = t, df = x)
+    print(sum(colMeans(momentmat^2)))
+    return(momentmat)
+  }
+} 
+
+g <- gmm(g = gmmwrap, x = df.hh, t0 = theta,        
          type = "twoStep", optfct = "nlminb", 
          lower = c(1.01, .6, 1, .01, .01, .01, .01, .1, .5),
          upper = c(10, .99, 1.4, .9, .9, 10, 1, .99, 1),
-         control = list(x.tol = 1e-4, rel.tol = 1e-4, abs.tol = 1e-10))
+         control = list(x.tol = 1e-4, rel.tol = 1e-2, abs.tol = 1e-8))
 summary(g)
 
 theta = g$par
