@@ -28,7 +28,7 @@ source(paste(rootdir, "/code/VFIfunctions.R", sep = ""))
 source(paste(rootdir, "/code/rdhelpers.R", sep = ""))
 
 ### Read in final Value function
-theta = readRDS(paste(rootdir, "/data/model_output/theta.rds", sep = ""))
+theta = readRDS(paste(rootdir, "/data/model_output/theta.rds", sep = "")) ## theta0 and V0 are based on Kaboski/Townsend and Francisco
 V = readRDS(paste(rootdir, "/data/model_output/V.rds", sep = ""))
 finalV = V[[length(V)]]
 xn = length(unique(finalV$x)); hn = length(unique(finalV$h))
@@ -45,7 +45,7 @@ homeRD <- readRDS(paste(rootdir, "/data/model_output/homeRD.rds", sep = ""))
 loanRD <- readRDS(paste(rootdir, "/data/model_output/loanRD.rds", sep = ""))
 
 df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500) 
-b <- optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none")[1,3]
+b <- optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = "none", vars = "opt")[1,3]
 
 df.hh <- df.hh %>% 
   filter(designation !="none") %>%
@@ -81,41 +81,45 @@ iterplotter(V, hidx = finalV$h[3], var = "cfx")
 iterplotter(V, hidx = finalV$h[25], var = "cfx")
 iterplotter(V, hidx = finalV$h[1], var = "ifx")
 iterplotter(V, xidx = finalV$x[250], var = "ifx")
-iterplotter(V, xidx = finalV$x[400], var = "ifx")
+iterplotter(V, xidx = finalV$x[1650], var = "ifx")
+iterplotter(V, xidx = finalV$x[250], var = "cfx")
+iterplotter(V, xidx = finalV$x[1400], var = "cfx")
 ```
 
 ```{r}
 qdat = data.frame("qx" = quantile(df.hh$imputed_bufferstock, seq(.1, .9, .1)), 
                   "qh" = quantile(df.hh$lag_h, seq(.1, .9, .1)))
 #library(rayshader)
-threedplotter(V, "Tw", ubm = 14, d3 = FALSE, theta = theta) +
+threedplotter(V, "Tw", ubm = 30, ubh = 30, lbm = -1, lbh = 0, d3 = FALSE, theta = theta, ) +
   geom_contour(aes(x = x, y = h, z = -1*log(-proj)), color = "grey") + 
   geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + theme_bw()
-pcfx = threedplotter(V, "cfx", d3 = FALSE, ubm = 14, method = "neuralnet", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) + 
+pcfx = threedplotter(V, "cfx", d3 = FALSE, ubm = 30, ubh = 30, lbm = -1, lbh = 0,
+                     method = "neuralnet", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) + 
   labs(x = "Wealth", y = "Housing Stock", fill = "Consumption") +
   geom_contour(aes(x = x, y = h, z = proj), color = "grey") + 
   geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + theme_bw()
-pifx = threedplotter(V, "ifx", d3 = FALSE, ubm = 14, method = "neuralnet", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) + 
+pifx = threedplotter(V, "ifx", d3 = FALSE, ubm = 30, ubh = 30, lbm = -1, lbh = 0, 
+                     method = "neuralnet", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) + 
   labs(x = "Wealth", y = "Housing Stock", fill = "Housing Investment") +
   geom_contour(aes(x = x, y = h, z = proj), color = "grey") + 
   geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + theme_bw()
 cowplot::plot_grid(pcfx, pifx)
-#ggsave(paste(rootdir, "/presentation_materials/policyfx.png", sep = ""), width = 16, height = 7)
+ggsave(paste(rootdir, "/presentation_materials/policyfx.png", sep = ""), width = 16, height = 7)
 ```
 
 ```{r}
 ### Policy Induced Surface
 
-p = threedplotter(V, "aidcfx", d3=FALSE, aidamt = 1, ubm = 14, method = "neuralnet", theta = theta) 
+p = threedplotter(V, "aidcfx", d3=FALSE, aidamt = 1, ubm = 3.5, ubh = 15, lbm = -.5, method = "neuralnet", lbh = 0, theta = theta) 
 p1 = p +
   labs(x = "Wealth", y = "Housing Stock", fill = "Change in\nConsumption") + 
   geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + theme_bw() + theme(text = element_text(size = 17)) 
-p = threedplotter(V, "aidifx", d3=FALSE, aidamt = 1, ubm = 14, method = "neuralnet", theta = theta)
+p = threedplotter(V, "aidifx", d3=FALSE, aidamt = 1, ubm = 3.5, ubh = 15, lbm = -.5, method = "neuralnet", lbh = 0, theta = theta)
 p2 = p + 
   labs(x = "Wealth", y = "Housing Stock", fill = "Change in Housing\nInvestment") + 
   geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + theme_bw() + theme(text = element_text(size = 17)) 
 cowplot::plot_grid(p1, p2)
-#ggsave(paste(rootdir, "/presentation_materials/policysurf.png", sep = ""), width = 16, height = 7)
+ggsave(paste(rootdir, "/presentation_materials/policysurf.png", sep = ""), width = 16, height = 7)
 ```
 
 ```{r}
@@ -252,6 +256,7 @@ df.hh <- cbind(df.hh, cf2L[,c("Consumption_AidL", "Investment_AidL", "Borrowing_
 ```{r}
 w1 = ggplot() +
   geom_histogram(aes(x = df.hh$wtp)) + theme_bw() + theme(text = element_text(size = 20)) + labs(x = "HH Surplus")
+w1
 w2 = ggplot() +
   geom_histogram(aes(x = df.hh$tau)) + xlim(0,1) + theme_bw() + theme(text = element_text(size = 20)) + labs(x = "tau")
 cowplot::plot_grid(w1, w2)
@@ -289,6 +294,8 @@ ggsave(paste(rootdir, "/presentation_materials/counterfactualsbywave.png", sep =
 ```
 
 ```{r}
+sum(is.na(df.hh$wtp))
+df.hh <- filter(df.hh, !is.na(wtp))
 weighted.mean(df.hh$tau, df.hh$wt_hh, na.rm = TRUE)
 a = weighted.mean(df.hh$wtp, df.hh$wt_hh, na.rm = TRUE)
 a
@@ -300,6 +307,8 @@ cor(df.hh$food_consumption, df.hh$wtp)
 
 weighted.mean(df.hh$quake_losses[df.hh$wave==1]>0, df.hh$wt_hh[df.hh$wave==1])
 ```
+
+
 ```{r}
 ### Restrict to first wave
 df.w1 = filter(df.hh, wave==1)
@@ -482,8 +491,16 @@ df.alsU$bens[df.alsU$al=="Universal"] = b$t0; df.alsU$cil[df.alsU$al=="Universal
 ggplot(filter(df.alsU, al!="Emergency"), aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Utility Relative to Random")
+
+ggplot(filter(df.alsU, al %in% c("Actual", "Damages", "Consumption", "Consumption rel.", "Universal")), 
+       aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Utility Relative to Random")
 ggsave(paste(rootdir, "/presentation_materials/benthamite.png", sep = ""), width = 17, height = 7)
 ```
+
+
 ```{r}
 ### counterfactuals consumption
 
@@ -569,6 +586,12 @@ df.alsA$bens[df.alsA$al=="Universal"] = b$t0; df.alsA$cil[df.alsA$al=="Universal
 ggplot(filter(df.alsA, al!="Emergency"), aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Consumption Relative to Random")
+
+ggplot(filter(df.alsA, al %in% c("Actual", "Damages", "Consumption", "Consumption rel.", "Universal")), 
+       aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Change in Consumption Relative to Random")
 ggsave(paste(rootdir, "/presentation_materials/cfacts_consumption.png", sep = ""), width = 17, height = 7)
 ```
 
@@ -657,6 +680,12 @@ df.alsB$bens[df.alsB$al=="Universal"] = b$t0; df.alsB$cil[df.alsB$al=="Universal
 ggplot(filter(df.alsB, al!="Emergency"), aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Housing Investment Relative to Random")
+
+ggplot(filter(df.alsB, al %in% c("Actual", "Damages", "Consumption", "Consumption rel.", "Universal")), 
+       aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Housing Investment Relative to Random")
 ggsave(paste(rootdir, "/presentation_materials/cfacts_investment.png", sep = ""), width = 17, height = 7)
 ```
 
@@ -694,12 +723,13 @@ ggsave(paste(rootdir, "/presentation_materials/wtpsurf.png", sep = ""), width = 
 ```
 
 ```{r}
-### Inequality
+### Inequality - do this for different targeting schemes
 
 ggplot() +
-  geom_density(aes(x = df.hh$x_noaid*df.hh$M_avg + df.hh$quake_losses), color = "black", position = "identity") +
   geom_density(aes(x = df.hh$x_noaid*df.hh$M_avg), color = "blue", position = "identity") +
-  geom_density(aes(x = df.hh$imputed_bufferstock*df.hh$M_avg), color = "red", position = "identity") + xlim(-5e5, 1.5e6)
+  geom_density(aes(x = df.hh$imputed_bufferstock*df.hh$M_avg), color = "red", position = "identity") + 
+  #geom_density(aes(x = df.hh$x_noaid*df.hh$M_avg + ), color = "blue", position = "identity") + 
+  xlim(-5e5, 1.5e6)
 
 ```
 

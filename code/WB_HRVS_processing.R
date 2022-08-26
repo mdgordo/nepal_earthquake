@@ -1019,12 +1019,6 @@ df.aid <- df.hh %>% arrange(wave) %>%
           total_remit = sum(remittance_income), 
           total_loans_taken = sum(loans_taken_past_year))
 
-df.ward_losses <- df.hh %>% 
-  group_by(district, vdc, ward) %>%
-  summarize(ward_avg_losses = mean(gorkha_loss_amt, na.rm=TRUE),
-            ward_frac_losses = mean(gorkha_loss, na.rm = TRUE))
-
-df.hh <- merge(df.hh, df.ward_losses, by = c("district", "vdc", "ward"))
 df.hh <- merge(df.hh, df.land, by = c("hhid"), all.x = TRUE)
 df.hh <- merge(df.hh, df.aid, by = "hhid") %>%
   mutate(received_aid = if_else(aid_total>0, 1, 0),
@@ -1038,6 +1032,14 @@ df.hh <- merge(df.hh, df.aid, by = "hhid") %>%
          aid_cumulative_bin = as.numeric(aid_cumulative>0),
          recon_aid_cum_bin = as.numeric(recon_aid_cum>0),
          aid_cumulative0000s = aid_cumulative/10000) %>% ungroup()
+
+df.ward_losses <- df.hh %>% 
+  group_by(district, vdc, ward) %>%
+  summarize(ward_avg_losses = mean(gorkha_loss_amt, na.rm=TRUE),
+            ward_frac_losses = mean(gorkha_loss, na.rm = TRUE),
+            vdc_aid_frac = mean(received_aid, na.rm = TRUE))
+
+df.hh <- merge(df.hh, df.ward_losses, by = c("district", "vdc", "ward"))
 
 df.hh$consumption_qtle <- cut(df.hh$avg_cons, quantile(df.hh$avg_cons, seq(0, 1, by = .2), na.rm = TRUE), labels = FALSE, include.lowest = TRUE)
 

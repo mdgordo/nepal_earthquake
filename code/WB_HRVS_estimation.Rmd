@@ -1,0 +1,177 @@
+---
+title: "WB_HRVS_estimation"
+author: "Matthew Gordon"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+rootdir <- dirname(getwd())
+```
+
+### Load packages and data
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+library(tidyverse)
+library(sf)
+library(lfe)
+library(AER)
+library(ggnewscale)
+library(cowplot)
+library(stargazer)
+library(sandwich)
+library(readstata13)
+#devtools::install_github("mdgordo/rdrobust",ref="master")
+library(rdrobust)
+#devtools::install_github("mdgordo/dumbells",ref="master")
+library(dumbells)
+library(rdpower)
+library(hdm)
+library(boot)
+library(parallel)
+source(paste(rootdir, "/code/rdhelpers.r", sep = ""))
+
+df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
+df.hh <- filter(df.hh, !is.na(income_gross) & income_gross>0 & food_consumption>0)
+```
+
+Define vars
+
+```{r}
+placebos <- c("elevation", "shake_pga", "gorkha_hh", "gorkha_loss_ever", "high_caste", "age_hh", "highest_ed", 
+              "always_lived_house", "always_lived_dist", "slope", "pub_transfers", "NGO_transfers")
+infravars <- c("time_to_bank", "time_to_school", "time_to_health", "time_to_market")
+pricevars <- c("chicken_price", "rice_price", "lentil_price", "sugar_price", "mutton_price")
+aidvars <- c("aid_cumulative_bin", "aid_cumulative")
+mainvars <- c("food_consumption", "home_investment", "income", "productive_assets", "remittance_income", "loan_payments", "loan_payments_received", "n_migrants")
+
+### regression specs
+de = "none"; kern = "triangular"; covswide = TRUE; takelogs = TRUE; serobust = "hc1"
+```
+
+#### Regression Discontinuity
+
+### MSE bandwidths and Post double Lasso control selection for food consumption
+
+```{r}
+bws <- optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, vars = pdlvarselect("food_consumption"), 
+             dist.exclude = de, k = kern, vce = serobust, ihs = takelogs)
+h0 <- bws[1,1]
+b0 <- bws[1,3]
+```
+
+Power calculations - uses optimal bandwidths and covs for food consumption
+
+```{r, warning = FALSE}
+df.pow <- filter(df.hh, !is.na(consumption) & designation!="none", 
+                 !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
+powcovs <- covmatmaker("dist_2_seg13", df.pow, vars = pdlvarselect("food_consumption"))
+
+print("First Stage")
+a <- rdpower(data = cbind(df.pow$aid_cumulative_bin, df.pow$dist_2_seg13), k = kern, vce = serobust, 
+        covs =  powcovs, cluster = df.pow$strata, weights = df.pow$wt_hh)
+print("Consumption")
+a <- rdpower(data = cbind(log(df.pow$food_consumption+1), df.pow$dist_2_seg13), k = kern, vce = serobust, 
+        covs =  powcovs, cluster = df.pow$strata, weights = df.pow$wt_hh)
+print("Consumption w IV")
+a <- rdpower(data = cbind(log(df.pow$food_consumption+1), df.pow$dist_2_seg13), k = kern, vce = serobust,  
+        covs =  powcovs, cluster = df.pow$strata, weights = df.pow$wt_hh, fuzzy = df.pow$received_aid)
+```
+
+### regressions
+
+First stage - uses bandwidth for food consumption (as starting point)
+
+```{r, warnings=FALSE}
+rdstg11 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, 
+                 dist.exclude = de, vars = "none", k = kern, vce = serobust)
+
+rdstg12 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, 
+                 dist.exclude = de, vars = "none", k = "epanechnikov", vce = serobust)
+
+rdstg13 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0*2/3, b0 = b0*2/3, 
+                 dist.exclude = de, vars = "none", k = kern, vce = serobust)
+
+rdstg13a <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0*2, b0 = b0*2, 
+                 dist.exclude = de, vars = "none", k = kern, vce = serobust)
+
+rdstg14 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, 
+                 dist.exclude = de, vars = "none", k = kern, vce = serobust, poly = 2)
+
+rdstg15 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, 
+                 dist.exclude = de, vars = "none", k = kern, vce = serobust, donut = h0/5)
+
+rdstg1 <- c(rdstg11, rdstg13, rdstg13a, rdstg14, rdstg15, rdstg12)
+
+rdgazer(rdstg1, dvlabs = rep(c("Received Aid", "Cumulative Aid"), 6), type = "text", 
+        xlines = list(c("Bandwidth (Inference)", rep(round(b0,2), 2), rep(round(b0*2/3,2), 2), rep(round(b0*2,2),2), rep(round(b0,2), 6)),
+                      c("Kernel", rep("triangular", 10), rep("epanechnikov", 2)),
+                      c("Polynomial", rep("linear", 6), rep("quadratic", 2), rep("linear", 4)),
+                      c(paste(round(h0/5,1), "km Donut"), rep("", 8), rep("X", 2), rep("", 2)),
+                      c("Wards", sapply(rdstg1, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))))
+```
+
+### Placebo checks - no covariates - optimal bandwidths
+
+```{r}
+rdplacebo <- lapply(c(placebos, infravars), regout, b = "dist_2_seg13", df = df.hh, 
+                    dist.exclude = de, vars = "none", k = kern, vce = serobust)
+rdgazer(rdplacebo, dvlabs = str_replace_all(c(placebos, infravars), "_", " "), 
+        xlines = list(c("Wards", sapply(rdplacebo, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdprice <- lapply(pricevars, regout, b = "dist_2_seg13", df = df.hh, 
+                  dist.exclude = de, vars = "none", k = kern, vce = serobust)
+rdgazer(rdprice, dvlabs = str_replace_all(pricevars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdprice, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+```
+
+### Main Outcomes - log + 1, individualized optimal bandwidths and covariate selection 
+Note - optimal covariate selection will not work properly for log outcomes or alternate kernels
+
+```{r, warning=FALSE}
+rdmain <- lapply(mainvars, regout, b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, 
+                 dist.exclude = de, vars = "opt", k = kern, vce = serobust, ihs = takelogs)
+rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+```
+Food Consumption - 100,000 is about $2.7/day, close to the median
+
+```{r, warning = FALSE}
+cvarscutpts <- quantile(df.hh$food_consumption_pc, seq(0, 1, .1), na.rm = TRUE)
+ctlist <- lapply(cvarscutpts, cutvars, var = "food_consumption_pc", filter(df.hh, designation!="none"))
+df <- cbind(filter(df.hh, designation!="none"), do.call(cbind, ctlist))
+
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, k = "triangular", vce = "hc1", fuzzy = TRUE, vars = "opt")
+rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, k = "triangular", vce = "hc1", fuzzy = "inv", vars = "opt")
+rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, k = "triangular", vce = "hc1", fuzzy = TRUE, vars = "opt")
+rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+foodt <- unlist(lapply(rdc, function(x) x$Estimate[1]))
+foodu <- unlist(lapply(rdcu, function(x) x$Estimate[1]))
+foodRD <- list(foodt, foodu, cvarscutpts)
+saveRDS(foodRD, paste(rootdir, "/data/model_output/foodRD.rds", sep = ""))
+```
+
+
+### Functions for Mccrary test
+Discrete version based on: https://cattaneo.princeton.edu/aie-rdd/Frandsen_2016_AIE.pdf
+Sampling frame based on 2010 census - need to adjust to hhs per unit area
+
+```{r}
+mcplot <- histfunc("dist_2_seg13", filter(df.hh, wave==1), h = h0, dist.exclude = "none")
+
+mcplot + labs(x = "distance to border") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/mccrary.png", sep = ""), width = 10, height = 7)
+```

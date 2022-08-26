@@ -35,20 +35,21 @@ df.hh <- df.hh[complete.cases(df.hh),]
 ### Grid size
 xn = 40; hn = 40
 
-### generate starting points - run 35 versions of this on cluster using dSQ
+### generate starting points - run 30 versions of this on cluster using dSQ - 20 and 27 failed, 4 timed out
+### changes lost?? gmm neural net and tnorm; VFI ???
 ### dsq --job-file ~/project/HPC_WBHRVS_DSQ.txt -c 20 --mem-per-cpu 2g -t 24:00:00 --mail-type ALL
 
 slurmseed <- as.integer(Sys.getenv("SLURM_ARRAY_TASK_ID"))
 set.seed(slurmseed); seeds = sample(c(1:1e6),9)
-set.seed(seeds[1]); gamma <- runif(100, 1.01, 10)
-set.seed(seeds[2]); beta <- runif(100, .6, .99)
-set.seed(seeds[3]); R <- runif(100, 1, 1.4)
-set.seed(seeds[4]); cbar <- runif(100, .01, .9)
-set.seed(seeds[5]); hbar <- runif(100, .01, .9)
-set.seed(seeds[6]); lambda <- runif(100, .01, 10)
-set.seed(seeds[7]); sigma <- runif(100, .01, 1)
-set.seed(seeds[8]); alpha <- runif(100, .1, .99)
-set.seed(seeds[9]); delta <- runif(100, .5, 1)
+set.seed(seeds[1]); gamma <- runif(70, 1.01, 10)
+set.seed(seeds[2]); beta <- runif(70, .6, .99)
+set.seed(seeds[3]); R <- runif(70, 1, 1.4)
+set.seed(seeds[4]); cbar <- runif(70, .01, .9)
+set.seed(seeds[5]); hbar <- runif(70, .01, .9)
+set.seed(seeds[6]); lambda <- runif(70, .01, 10)
+set.seed(seeds[7]); sigma <- runif(70, .01, 1)
+set.seed(seeds[8]); alpha <- runif(70, .1, .9)
+set.seed(seeds[9]); delta <- runif(70, .6, .99)
 
 iterations <- data.frame(gamma, beta, R, cbar, hbar,
                          lambda, sigma, alpha, delta)
@@ -57,12 +58,14 @@ iterations = filter(iterations, R*beta<1)
 globalwrap <- function(ridx){
   theta = as.vector(t(iterations[ridx, ]))
   momentmat = gmmmomentmatcher(theta, df.hh)
-  g = sum(colMeans(momentmat^2)); print(g)
+  g = colSums(momentmat); print(g)
   return(g)
 }
 
-f <- sapply(c(1:nrow(iterations)), globalwrap)
-iterations$f <- f
+f <- lapply(c(1:nrow(iterations)), globalwrap)
+f <- do.call(rbind, f)
+colnames(f) <- paste("m", seq(1,11,1), sep = "_")
+iterations <- cbind(iterations, f)
 
 saveRDS(iterations, paste(getwd(), "/data/model_output/iterations", slurmseed, ".rds", sep = ""))
 
@@ -71,4 +74,4 @@ saveRDS(iterations, paste(getwd(), "/data/model_output/iterations", slurmseed, "
 # ifiles <- list.files(pattern = "^iter")
 # ilist <- lapply(ifiles, readRDS)
 # iterations <- do.call(rbind, ilist)
-# saveRDS(iterations, iterations.rds")
+# saveRDS(iterations, "iterations.rds")

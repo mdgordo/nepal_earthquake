@@ -1,43 +1,130 @@
 ### RD functions
-
-covmatmaker <- function(b, df, wide = FALSE){
-  if (wide) {
-    if (b=="dist_2_14") {
-      covs <- model.matrix(~as.factor(df$border14_segment)+as.factor(df$border14_segment)*df$dist_2_14 + df$shake_pga + as.factor(df$wave) + 
-                           df$high_caste + df$class5 + df$age_hh + df$age_hh^2 + df$slope + df$elevation + df$gorkha_hh)
-      covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_14"))]
-    } else if (b=="dist_2_seg13"){
-      covs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + df$shake_pga + as.factor(df$wave) + 
-                           df$high_caste + df$class5 + df$age_hh + df$age_hh^2 + df$slope + df$elevation + df$gorkha_hh)
-      covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_seg13"))]
-    } else {
-      covs <- model.matrix(~df$shake_pga + as.factor(df$wave) + 
-                             df$high_caste + df$class5 + df$age_hh + df$age_hh^2 + df$slope + df$elevation + df$gorkha_hh)
-      covs <- covs[, !(colnames(covs) %in% c("(Intercept)"))]} 
-  } else {
-    if (b=="dist_2_14") {
-      covs <- model.matrix(~as.factor(df$border14_segment)+as.factor(df$border14_segment)*df$dist_2_14 + df$shake_pga + as.factor(df$wave))
-      covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_14"))]
-    } else if (b=="dist_2_seg13"){
-      covs <- model.matrix(~as.factor(df$border_segment13)+as.factor(df$border_segment13)*df$dist_2_seg13 + df$shake_pga + as.factor(df$wave))
-      covs <- covs[, !(colnames(covs) %in% c("(Intercept)", "df$dist_2_seg13"))]
-    } else {
-      covs <- model.matrix(~df$shake_pga + as.factor(df$wave))
-      covs <- covs[, !(colnames(covs) %in% c("(Intercept)"))]} 
-  }
-  return(covs)
+robustses <- function(x) {
+  sqrt(diag(vcovHC(x, cluster=~strata, type = "HC1")))
 }
 
-plotvar <- function(v, b, df, h=20, ihs=FALSE, span = 1, k = "triangular", weights = TRUE, donut = 0, dist.exclude=NULL, wide =  FALSE) {
+covmatmaker <- function(b, df, vars){
+    if (vars=="all") {vars = c("shake_pga", "as.factor(wave)2", "as.factor(wave)3", "high_caste", "gorkha_hh", "log(gorkha_loss_ever+1)",
+                                "class5", "class10", "age_hh", "I(age_hh^2)", "slope", "elevation", "aspect",
+                                "time_to_market", "time_to_health", "time_to_bank", "time_to_school")
+    } else if (vars=="none") {vars = NULL}
+    if (b=="dist_2_14") {
+      covs <- model.matrix(~ as.factor(border14_segment) + as.factor(border14_segment):dist_2_14 +
+                             shake_pga + as.factor(wave) + high_caste + gorkha_hh + log(gorkha_loss_ever+1) +
+                             class5 + class10 + age_hh + I(age_hh^2) + slope + elevation + aspect +
+                             time_to_market + time_to_health + time_to_bank + time_to_school, 
+                           data = df)
+      covs <- covs[, colnames(covs) %in% c("as.factor(border14_segment)2", "as.factor(border14_segment)3",
+                                           "dist_2_14", "as.factor(border14_segment)2:dist_2_14",
+                                           "as.factor(border14_segment)3:dist_2_14", vars)]
+    } else if (b=="dist_2_seg13"){
+      covs <- model.matrix(~ as.factor(border_segment13) + as.factor(border_segment13):dist_2_14 +
+                             shake_pga + as.factor(wave) + high_caste + gorkha_hh + log(gorkha_loss_ever+1) +
+                             class5 + class10 + age_hh + I(age_hh^2) + slope + elevation + aspect +
+                             time_to_market + time_to_health + time_to_bank + time_to_school, 
+                           data = df)
+      covs <- covs[, colnames(covs) %in% c("as.factor(border_segment13)2", "dist_2_14", 
+                                           "as.factor(border_segment13)2:dist_2_14", vars)]
+    } else {
+      covs <- model.matrix(~ shake_pga + as.factor(wave) + high_caste + gorkha_hh + log(gorkha_loss_ever+1) +
+                             class5 + class10 + age_hh + I(age_hh^2) + slope + elevation + aspect +
+                             time_to_market + time_to_health + time_to_bank + time_to_school, 
+                           data = df)
+      covs <- covs[, colnames(covs) %in% vars]
+    } 
+}
+
+optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, 
+                  vce = "hc1", dist.exclude=NULL, vars = NULL, ihs = FALSE) {
+  if (donut!=0) df <- filter(df, abs(get(b))>donut)
   if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
-  if (wide) {df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "shake_pga", "wave", 
-                         "quake_losses", "high_caste", "class5", "age_hh", "gorkha_hh", "slope")]} 
-  else {df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "shake_pga", "wave", "quake_losses")]}
+  if (!is.null(!is.null(vars) | vars=="none")) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(time_to_market), !is.na(time_to_health))
+  if (vce=="nn") c <- NULL else c <- df$strata
+  if (fuzzy==TRUE) {f <- df$aid_cumulative_bin} else if (fuzzy==FALSE) {f <- NULL} else if (fuzzy=="inv") {f <- 1-df$aid_cumulative_bin} else if (fuzzy=="random") f <- rbinom(nrow(df), 1, mean(df$aid_cumulative_bin)) else {f <- unlist(df[, fuzzy])}
+  covs <- covmatmaker(b, df, vars)
+  Y <- unlist(df[, v])
+  X <- unlist(df[, b])
+  if (ihs==TRUE) Y = log(Y+1)
+  if (weights==TRUE) w <- df$wt_hh else w <- NULL
+  bwsct <- rdbwselect(y = Y, x = X, c = 0, weights = w, fuzzy = f, covs = covs,
+                      cluster = c, kernel = k, vce = vce, silent = TRUE)
+  bws <- data.frame(bwsct$bws)
+  bws$var <- v
+  return(bws)
+}
+
+pdlvarselect <- function(y, maxiter = 10, tol = 1){
+  vars = "all"; vlast = "none"; i = 0
+  bandinit <- optbw(y, b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = de, k = kern, vce = serobust, ihs = takelogs, vars = vars)
+  hlast <- bandinit[1,1]
+  while (i < maxiter){
+    h0 = hlast[length(hlast)]
+    
+    df.lasso <- filter(df.hh, designation!="none", !is.na(age_hh), !is.na(class5), 
+                       abs(dist_2_seg13)<h0) %>%
+      mutate(dist_pos = if_else(dist_2_seg13>0, dist_2_seg13, 0),
+             dist_neg = if_else(dist_2_seg13<0, dist_2_seg13, 0),
+             seg2 = if_else(border_segment13==2, 1, 0),
+             seg2dist = if_else(border_segment13==2, dist_2_seg13, 0),
+             kwt = wt_hh*(1-abs(dist_2_seg13)/h0))
+    
+    reg1 <- lm(log(get(y)+1) ~ dist_pos + dist_neg + seg2 + seg2dist,
+               data = df.lasso, weights = kwt, subset = abs(dist_2_seg13)<h0)
+    
+    reg2 <- lm(aid_cumulative_bin ~ dist_pos + dist_neg + seg2 + seg2dist,
+               data = df.lasso, weights = kwt, subset = abs(dist_2_seg13)<h0)
+    
+    df.lasso$yresid <-reg1$residuals*sqrt(df.lasso$kwt)
+    df.lasso$xresid <-reg2$residuals*sqrt(df.lasso$kwt)
+    covmat <- model.matrix(~ shake_pga + as.factor(wave) + high_caste + gorkha_hh + log(gorkha_loss_ever+1) +
+                             class5 + class10 + age_hh + I(age_hh^2) + slope + elevation + aspect +
+                             time_to_market + time_to_health + time_to_bank + time_to_school,
+                           data = df.lasso)*sqrt(df.lasso$kwt)
+    
+    
+    pdl1 <- rlasso(y = df.lasso$yresid, x = covmat, post = FALSE, intercept = FALSE)
+    pdl2 <- rlasso(y = df.lasso$xresid, x = covmat, post = FALSE, intercept = FALSE)
+    
+    vars <- colnames(pdl1$model)[pdl1$index | pdl2$index]; vars <- vars[c(2:length(vars))]
+    bandinit <- optbw(y, b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, dist.exclude = de, k = kern, vce = serobust, ihs = takelogs, vars = vars)
+    h0 <- bandinit[1,1]
+    if (h0 %in% hlast) i = maxiter else i = i+1; hlast = c(hlast, h0)
+  }
+  return(vars)
+}
+
+regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, 
+                   k = "triangular", weights = TRUE, donut = 0, poly = 1, vce = "hc1", dist.exclude=NULL, vars = NULL){
+  if (donut!=0) df <- filter(df, abs(get(b))>donut)
+  if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
+  if (!is.null(vars) | vars=="none") df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(time_to_market), !is.na(time_to_health))
+  if (vce=="nn") c <- NULL else c <- df$strata
+  if (fuzzy==TRUE) {f <- df$aid_cumulative_bin} else if (fuzzy==FALSE) {f <- NULL} else if (fuzzy=="inv") {f <- 1-df$aid_cumulative_bin} else if (fuzzy=="random") f <- rbinom(nrow(df), 1, mean(df$aid_cumulative_bin)) else {f <- unlist(df[, fuzzy])}
+  if (!is.null(h) & is.null(b0)) b0 <- 2*h
+  X <- unlist(df[, b])
+  Y <- unlist(df[, v])
+  if (ihs==TRUE) Y = log(Y+1)
+  if (vars=="opt") {
+    vopt <- pdlvarselect(v)
+    covs <- covmatmaker(b, df, vopt)
+  } else {covs <- covmatmaker(b, df, vars)}
+  if (weights==TRUE) w <- df$wt_hh else w <- NULL
+  out <- rdrobust(y = Y, x = X, c = 0, fuzzy = f, h = h, b = b0, weights = w, cluster = c, kernel = k,
+                  p = poly, vce = vce, covs = covs)
+  return(out)
+}
+
+plotvar <- function(v, b, df, h=20, ihs=FALSE, span = 1, k = "triangular", weights = TRUE, donut = 0, dist.exclude=NULL, vars = NULL) {
+  if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
+  if (!is.null(!is.null(vars) | vars=="none")) {df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "shake_pga", "wave", 
+                         "quake_losses", "high_caste", "class5", "age_hh", "gorkha_hh", "slope", 
+                         "time_to_market", "time_to_health")]} 
+  else {df <- df[, c(v, b, "wt_hh", "border14_segment", "border_segment13", "elevation", "slope", "shake_pga", "wave", "quake_losses")]}
   df <- filter(df, abs(get(b))<h & complete.cases(df) & abs(get(b))>donut)
   Y <- unlist(df[, v])
   X <- unlist(df[, b])
   if (ihs==TRUE) Y <- ihs(Y)
-  segcovs <- covmatmaker(b, df, wide)
+  segcovs <- covmatmaker(b, df, vars)
   resreg <- lm(Y ~ segcovs)
   resregres <- resreg$residuals
   if (weights==TRUE) w <- df$wt_hh else w <- NULL
@@ -57,42 +144,6 @@ histfunc <- function(b, df, h=40, dist.exclude=NULL){
     geom_smooth(data = filter(freqdf, X >= 0), aes(x = X, y = Freq)) + 
     geom_smooth(data = filter(freqdf, X < 0), aes(x = X, y = Freq)) + 
     theme_light() + labs(y = "weighted count", x = paste("distance to ", b))
-}
-
-regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, ihs = FALSE, 
-                   k = "triangular", weights = TRUE, donut = 0, poly = 1, vce = "hc1", dist.exclude=NULL, wide = FALSE){
-  if (donut!=0) df <- filter(df, abs(get(b))>donut)
-  if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
-  if (wide) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
-  if (vce=="nn") c <- NULL else c <- df$strata
-  if (fuzzy==TRUE) {f <- df$aid_cumulative_bin} else if (fuzzy==FALSE) {f <- NULL} else 
-    if (fuzzy=="inv") {f <- 1-df$aid_cumulative_bin} else if (fuzz=="random") f <- rbinom(nrow(df), 1, mean(df$aid_cumulative_bin)) else {f <- unlist(df[, fuzzy])}
-  if (!is.null(h) & is.null(b0)) b0 <- 2*h
-  covs <- covmatmaker(b, df, wide)
-  X <- unlist(df[, b])
-  Y <- unlist(df[, v])
-  if (ihs==TRUE) Y <- ihs(Y)
-  if (weights==TRUE) w <- df$wt_hh else w <- NULL
-  out <- rdrobust(y = Y, x = X, c = 0, fuzzy = f, h = h, b = b0, weights = w, cluster = c, kernel = k,
-                  p = poly, vce = vce, covs = covs)
-  return(out)
-}
-
-optbw <- function(v, b, df, fuzzy = FALSE, k = "epanechnikov", weights = TRUE, donut = 0, vce = "hc1", dist.exclude=NULL, wide = FALSE){
-  if (donut!=0) df <- filter(df, abs(get(b))>donut)
-  if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude)
-  if (wide) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
-  if (vce=="nn") c <- NULL else c <- df$strata
-  Y <- unlist(df[, v])
-  X <- unlist(df[, b])
-  if (fuzzy==TRUE) f <- df$aid_cumulative_bin else if (fuzzy==FALSE) f <- NULL else if (fuzzy=="inv") f <- 1-df$aid_cumulative_bin else f <- unlist(df[, fuzzy])
-  covs <- covmatmaker(b, df, wide)
-  if (weights==TRUE) w <- df$wt_hh else w <- NULL
-  bwsct <- rdbwselect(y = Y, x = X, c = 0, weights = w, fuzzy = f, covs = covs,
-                      cluster = c, kernel = k, vce = vce, silent = TRUE)
-  bws <- data.frame(bwsct$bws)
-  bws$var <- v
-  return(bws)
 }
 
 rdgazer <- function(rdlist, dvlabs = NULL, xlines = NULL, se_r = "Robust", type = "text", ...){
@@ -153,10 +204,10 @@ rdquant <- function(Y, x, fuzzy = NULL, grid = quantile(Y, seq(.1,.9,.1), na.rm 
 }
 
 
-qplot <- function(qvar, df, plot = TRUE, grid = NULL, wide = FALSE, k = "triangular", h = h0, b = b0, donut = 0, poly = 1){
+qplot <- function(qvar, df, plot = TRUE, grid = NULL, vars = NULL, k = "triangular", h = h0, b = b0, donut = 0, poly = 1){
   if (donut!=0) df <- filter(df, abs(dist_2_seg13)>donut)
-  if (wide) df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(slope), !is.na(elevation))
-  qcovs <- covmatmaker("dist_2_seg13", df, wide)
+  if (!is.null(vars) | vars=="none") df <- filter(df, !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), !is.na(time_to_market), !is.na(time_to_health))
+  qcovs <- covmatmaker("dist_2_seg13", df, vars)
   y <- unlist(df[,qvar])
   if (is.null(grid)) grid = quantile(y, seq(.1,.9,.1), na.rm = TRUE)
   qtab <- rdquant(Y = y, x = df$dist_2_seg13, c = 0, fuzzy = df$aid_cumulative_bin, grid, weights = df$wt_hh, cluster = df$strata, 
