@@ -1,0 +1,2 @@
+load("/Users/mdgordo/Dropbox (YSE)/nepal_earthquake/data/shapefiles/NPL_adm3.rds")
+load("/Users/mdgordo/Dropbox (YSE)/nepal_earthquake/data/shapefiles/NPL_adm4.rds")

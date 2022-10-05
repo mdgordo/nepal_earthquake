@@ -24,6 +24,7 @@ library(sandwich)
 library(readstata13)
 #devtools::install_github("mdgordo/rdrobust",ref="master")
 library(rdrobust)
+library(RDHonest)
 #devtools::install_github("mdgordo/dumbells",ref="master")
 library(dumbells)
 library(rdpower)
@@ -33,33 +34,516 @@ library(parallel)
 source(paste(rootdir, "/code/rdhelpers.r", sep = ""))
 
 df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
-df.hh <- filter(df.hh, !is.na(income_gross) & income_gross>0 & food_consumption>0)
+
+### divide all cash vars by 10000 to get hundreds of dollars - also drop hhs very far from border, otherwise pick up hhs on the other side 
+df.hh <- filter(df.hh, !is.na(total_income), !is.na(home_investment), !is.na(productive_assets), 
+                !is.na(loan_payments), !is.na(loan_payments_received), !is.na(remittance_income), 
+                food_consumption>0, total_income>0,
+                abs(dist_2_seg1pt)<150) %>%
+  mutate(dist_pos1 = if_else(dist_2_seg1>0, dist_2_seg1, 0),
+         dist_pos1pt = if_else(dist_2_seg1pt>0, dist_2_seg1pt, 0),
+         wave2 = if_else(wave==2,1,0),
+         wave3 = if_else(wave==3,1,0),
+         reconstruction_aid_cumulative = reconstruction_aid_cumulative/10000,
+         aid_cumulative = aid_cumulative/10000,
+         gorkha_loss_ever = gorkha_loss_ever/10000,
+         pub_transfers = pub_transfers/10000,
+         NGO_transfers = NGO_transfers/10000,
+         food_consumption = food_consumption/10000,
+         home_investment = home_investment/10000,
+         total_income = total_income/10000,
+         productive_assets = productive_assets/10000,
+         remittance_income = remittance_income/10000,
+         loan_payments = loan_payments/10000,
+         loan_payments_received = loan_payments_received/10000) %>%
+  group_by(hhid) %>%
+  mutate(lag_h = lag(home_value, order_by = wave))
 ```
 
 Define vars
 
-```{r}
-placebos <- c("elevation", "shake_pga", "gorkha_hh", "gorkha_loss_ever", "high_caste", "age_hh", "highest_ed", 
-              "always_lived_house", "always_lived_dist", "slope", "pub_transfers", "NGO_transfers")
+```{r, warning = FALSE}
+placebos <- c("elevation", "shake_pga", "gorkha_hh", "gorkha_loss_ever", "high_caste", "age_hh", "highest_ed", "hhmembers",
+              "always_lived_house", "always_lived_dist", "slope", "NGO_transfers")
 infravars <- c("time_to_bank", "time_to_school", "time_to_health", "time_to_market")
 pricevars <- c("chicken_price", "rice_price", "lentil_price", "sugar_price", "mutton_price")
-aidvars <- c("aid_cumulative_bin", "aid_cumulative")
-mainvars <- c("food_consumption", "home_investment", "income", "productive_assets", "remittance_income", "loan_payments", "loan_payments_received", "n_migrants")
+aidvars <- c("aid_cumulative_bin", "aid_cumulative", "reconstruction_aid_bin", "reconstruction_aid_cumulative")
+mainvars <- c("food_consumption", "home_investment", "total_income", "productive_assets", "pub_transfers",
+              "remittance_income", "loan_payments", "loan_payments_received", "n_migrants")
 
-### regression specs
-de = "none"; kern = "triangular"; covswide = TRUE; takelogs = TRUE; serobust = "hc1"
+### regression specs - note difference between aid definitions in structural and RD sections
+dist.exclude = "none"; k = "triangular"; vce = "hc1"; bvar = "dist_2_seg1pt"; fvar = "reconstruction_aid_cumulative";
+democtrls <- c("high_caste", "time_to_health", "time_to_market")  ### should be time to bank?
+geoctrls <- c("gorkha_loss_ever", "shake_pga", "slope")
 ```
 
 #### Regression Discontinuity
 
-### MSE bandwidths and Post double Lasso control selection for food consumption
+### Plots
+
+McCrary
 
 ```{r}
-bws <- optbw("food_consumption", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, vars = pdlvarselect("food_consumption"), 
+mcplot <- histfunc(bvar, filter(df.hh, wave==1), dist.exclude = "none")
+
+mcplot + labs(x = "distance to border") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/mccrary.png", sep = ""), width = 10, height = 7)
+```
+
+### RD plots
+
+```{r}
+plotlist <- lapply(aidvars, plotvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 4)
+plotlist
+
+plotvar(fvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Aid (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/aidRD1.png", sep = ""), width = 10, height = 7)
+
+bw <- optbw(fvar, bvar, df.hh, fuzzy = FALSE, k, TRUE, 0, vce, dist.exclude, "none", FALSE)
+h0 <- bw[1,1]
+plotvar(fvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0) + 
+  geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
+  labs(x = "Distance to Border", y = "Aid (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/aidRD2.png", sep = ""), width = 10, height = 7)
+
+plotvar(fvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0, residualizer = TRUE) + 
+  geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
+  labs(x = "Distance to Border", y = "Residualized Aid (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/aidRD3.png", sep = ""), width = 10, height = 7)
+```
+
+
+```{r}
+plotlist <- lapply(placebos, plotvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 4)
+plotlist
+
+plotlist <- lapply(pricevars[1:4], plotvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 4)
+plotlist
+
+plotlist <- lapply(infravars, plotvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 4)
+plotlist
+
+plotvar("shake_pga", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Shake Intensity") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/shake.png", sep = ""), width = 10, height = 7)
+
+plotvar("gorkha_loss_ever", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Reported Earthquake Losses") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/gorkhaloss.png", sep = ""), width = 10, height = 7)
+
+plotvar("high_caste", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "High Caste") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/caste.png", sep = ""), width = 10, height = 7)
+
+plotvar("hhmembers", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Household Members") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/hhmembers.png", sep = ""), width = 10, height = 7)
+
+plotvar("always_lived_dist", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Always Lived in the District") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/always.png", sep = ""), width = 10, height = 7)
+
+plotvar("pub_transfers", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Other Public Transfers") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/pubtrans.png", sep = ""), width = 10, height = 7)
+
+plotvar("NGO_transfers", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "NGO Aid") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/ngo.png", sep = ""), width = 10, height = 7)
+
+plotvar("time_to_market", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Travel Time to Market") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/timetomarket.png", sep = ""), width = 10, height = 7)
+
+plotvar("time_to_health", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Travel Time to Health") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/timetohealth.png", sep = ""), width = 10, height = 7)
+```
+
+```{r}
+plotlist <- lapply(mainvars, plotvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 4)
+plotlist
+
+plotlist <- lapply(mainvars, plotvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 4, residualizer = TRUE)
+plotlist
+
+plotvar("home_investment", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Home Investment (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/home1.png", sep = ""), width = 10, height = 7)
+
+bw <- optbw("home_investment", bvar, df.hh, fuzzy = FALSE, k, TRUE, 0, vce, dist.exclude, "none", FALSE)
+h0 <- bw[1,1]
+plotvar("home_investment", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0) + 
+  geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
+  labs(x = "Distance to Border", y = "Home Investment (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/home2.png", sep = ""), width = 10, height = 7)
+
+plotvar("home_investment", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0, residualizer = TRUE) + 
+  geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
+  labs(x = "Distance to Border", y = "Home Investment (10,000 NPR) - Residualized") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/home3.png", sep = ""), width = 10, height = 7)
+
+plotvar("remittance_income", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Remittance Income (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/remit1.png", sep = ""), width = 10, height = 7)
+
+bw <- optbw("remittance_income", bvar, df.hh, fuzzy = FALSE, k, TRUE, 0, vce, dist.exclude, "none", FALSE)
+h0 <- bw[1,1]
+plotvar("remittance_income", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0) + 
+  geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
+  labs(x = "Distance to Border", y = "Remittance Income (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/remit2.png", sep = ""), width = 10, height = 7)
+
+plotvar("remittance_income", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0, residualizer = TRUE) + 
+  geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
+  labs(x = "Distance to Border", y = "Remittance Income (10,000 NPR) - Residualized")
+ggsave(paste(rootdir, "/presentation_materials/remit3.png", sep = ""), width = 10, height = 7)
+
+plotvar("food_consumption", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Food Consumption (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/food1.png", sep = ""), width = 10, height = 7)
+
+bw <- optbw("food_consumption", bvar, df.hh, fuzzy = FALSE, k, TRUE, 0, vce, dist.exclude, "none", FALSE)
+h0 <- bw[1,1]
+plotvar("food_consumption", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0) + 
+  geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
+  labs(x = "Distance to Border", y = "Food Consumption (10,000 NPR)") + theme(text = element_text(size = 20)) 
+ggsave(paste(rootdir, "/presentation_materials/food2.png", sep = ""), width = 10, height = 7)
+
+plotvar("food_consumption", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0, residualizer = TRUE) + 
+  geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
+  labs(x = "Distance to Border", y = "Food Consumption (10,000 NPR) - Residualized") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/food3.png", sep = ""), width = 10, height = 7)
+
+plotvar("productive_assets", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Productive Assets (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/assetsrd.png", sep = ""), width = 10, height = 7)
+
+plotvar("total_income", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Income (10,000 NPR)") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/incomerd.png", sep = ""), width = 10, height = 7)
+
+plotvar("n_migrants", b = bvar, df = df.hh, dist.exclude = dist.exclude, poly = FALSE, method = "loess") + 
+  labs(x = "Distance to Border", y = "Migrants") + theme(text = element_text(size = 20))
+ggsave(paste(rootdir, "/presentation_materials/migrants.png", sep = ""), width = 10, height = 7)
+```
+
+### regressions
+
+First stage
+
+```{r, warnings=FALSE}
+bws <- optbw("food_consumption", b = bvar, df = df.hh, fuzzy = fvar, vars = c(geoctrls, democtrls), 
+             dist.exclude = dist.exclude, k = k, vce = vce, ihs = FALSE)
+h1 <- bws[1,1]
+b1 <- bws[1,3]
+saveRDS(b1, paste(rootdir, "/data/model_output/optbw.rds", sep = ""))
+
+rdstg11 <- lapply(aidvars[3:4], regout, b = bvar, df = df.hh, vars = c(geoctrls, democtrls), 
+                 dist.exclude = dist.exclude, k = k, vce = vce)
+
+rdstg12 <- lapply(aidvars[3:4], regout, b = bvar, df = df.hh, vars = c(geoctrls, democtrls), 
+                 dist.exclude = dist.exclude, k = "epanechnikov", vce = vce)
+
+rdstg13 <- lapply(aidvars[3:4], regout, b = bvar, df = df.hh,
+                h = h1*.75, b0 = b1*.75, vars = c(geoctrls, democtrls), 
+                 dist.exclude = dist.exclude, k = k, vce = vce)
+
+rdstg14 <- lapply(aidvars[3:4], regout, b = bvar, df = df.hh,
+                h = h1*2, b0 = b1*2, vars = c(geoctrls, democtrls), 
+                 dist.exclude = dist.exclude, k = k, vce = vce)
+rdstg15 <- lapply(aidvars[3:4], regout, b = bvar, df = df.hh, vars = c(geoctrls, democtrls), 
+                 dist.exclude = dist.exclude, k = k, vce = vce, donut = 5)
+
+rdstg16 <- lapply(aidvars[3:4], regout, b = bvar, df = df.hh, vars = c(geoctrls), 
+                 dist.exclude = dist.exclude, k = k, vce = vce)
+
+rdstg17 <- lapply(aidvars[3:4], regout, b = bvar, df = df.hh, vars = "none", 
+                 dist.exclude = dist.exclude, k = k, vce = vce)
+
+rdstg1 <- c(rdstg11, rdstg12, rdstg13, rdstg14, rdstg15, rdstg16, rdstg17)
+
+rdgazer(rdstg1[c(1:8)], dvlabs = rep(c("Received Aid", "Aid Amount"), 4), type = "latex", 
+        xlines = list(c("Kernel", rep("triangular", 2),  rep("epanechnikov", 2), rep("triangular", 4)),
+                      c("5 km Donut", rep("", 8)),
+                      c("Geography Controls", rep("X", 8)),
+                      c("Demographic Controls", rep("X", 8)),
+                      c("Wards", sapply(rdstg1, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))))
+
+rdgazer(rdstg1[c(9:14)],dvlabs = rep(c("Received Aid", "Aid Amount"), 3), type = "latex", 
+        xlines = list(c("Kernel", rep("triangular", 6)),
+                      c("5 km Donut", rep("X", 2), rep("", 4)),
+                      c("Geography Controls", rep("X", 4), rep("", 2)),
+                      c("Demographic Controls", rep("X", 2), rep("", 4)),
+                      c("Wards", sapply(rdstg1, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))))
+
+```
+
+### Placebo checks - only geographic covariates - optimal bandwidths
+
+```{r}
+rdplacebo <- lapply(placebos[!(placebos %in% geoctrls)],
+                    regout, b = bvar, df = df.hh, fuzzy = fvar, 
+                    dist.exclude = dist.exclude, vars = geoctrls, k = k, vce = vce)
+
+rdgazer(rdplacebo, dvlabs = str_replace_all(placebos[!(placebos %in% geoctrls)], "_", " "), 
+        xlines = list(c("Wards", sapply(rdplacebo, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+
+rdprice <- lapply(c(pricevars, infravars), regout, b = bvar, df = df.hh, fuzzy = fvar,  
+                  dist.exclude = dist.exclude, vars = geoctrls, k = k, vce = vce)
+rdgazer(rdprice, dvlabs = str_replace_all(c(pricevars, infravars), "_", " "), 
+        xlines = list(c("Wards", sapply(rdprice, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+```
+
+### Main Outcomes - log + 1, individualized optimal bandwidths and covariate selection 
+Note - optimal covariate selection will not work properly for alternate kernels or borders
+
+```{r, warning=FALSE}
+print("main")
+rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = c(democtrls, geoctrls),
+                 dist.exclude = dist.exclude, k = k, vce = vce, ihs = TRUE)
+rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+print("none")
+rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = "none",
+                 dist.exclude = dist.exclude, k = k, vce = vce, ihs = TRUE)
+rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+print("geo")
+rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = geoctrls,
+                 dist.exclude = dist.exclude, k = k, vce = vce, ihs = TRUE)
+rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+print("demo")
+rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = democtrls,
+                 dist.exclude = dist.exclude, k = k, vce = vce, ihs = TRUE)
+rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+print("unlogged")
+rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = c(democtrls, geoctrls),
+                 dist.exclude = dist.exclude, k = k, vce = vce, ihs = FALSE)
+rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+print("alt bws")
+rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = c(democtrls, geoctrls),
+                 dist.exclude = dist.exclude, k = "uniform", vce = vce, ihs = TRUE)
+rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, h = 30, vars = c(democtrls, geoctrls),
+                 dist.exclude = dist.exclude, k = k, vce = vce, ihs = TRUE)
+rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, h = 80, vars = c(democtrls, geoctrls),
+                 dist.exclude = dist.exclude, k = k, vce = vce, ihs = TRUE)
+rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
+```
+
+Honest RD
+
+```{r}
+stg1 <- RDHonest(get(fvar) ~ get(bvar), df.hh)
+stg1
+honfood <- RDHonest(log(food_consumption) ~ get(fvar) | get(bvar), df.hh, opt.criterion = "FLCI")
+honfood
+honhome <- RDHonest(log(home_investment+1) ~ get(fvar) | get(bvar), df.hh, opt.criterion = "FLCI")
+honhome
+honinc <- RDHonest(log(total_income) ~ get(fvar) | get(bvar), df.hh, opt.criterion = "FLCI")
+honinc
+honass <- RDHonest(log(productive_assets+1) ~ get(fvar) | get(bvar), df.hh, opt.criterion = "FLCI")
+honass
+honpub <- RDHonest(log(pub_transfers+1) ~ get(fvar) | get(bvar), df.hh, opt.criterion = "FLCI")
+honpub
+honremit <- RDHonest(log(remittance_income+1) ~ get(fvar) | get(bvar), df.hh, opt.criterion = "FLCI")
+honremit
+honloanp <- RDHonest(log(loan_payments+1) ~ get(fvar) | get(bvar), df.hh, opt.criterion = "FLCI")
+honloanp
+honloanr <- RDHonest(log(loan_payments_received+1) ~ get(fvar) | get(bvar), df.hh, opt.criterion = "FLCI")
+honloanr
+honmig <- RDHonest(n_migrants ~ get(fvar) | get(bvar), df.hh)
+honmig
+```
+
+
+Food Consumption - 100,000 is about $2.7/day, close to the median
+
+```{r, warning = FALSE}
+df <- dfprep(df.hh, 0, "dist_2_seg1pt", de)
+cvarscutpts <- quantile(df$food_consumption, seq(.1, .9, .1), na.rm = TRUE)
+ctlist <- lapply(cvarscutpts, cutvars, var = "food_consumption", df)
+df <- cbind(df, data.frame(do.call(cbind, ctlist)))
+bws <- optbw("food_consumption", b = "dist_2_seg1pt", df = df.hh, fuzzy = "reconstruction_aid_bin", vars = "none", 
              dist.exclude = de, k = kern, vce = serobust, ihs = takelogs)
 h0 <- bws[1,1]
 b0 <- bws[1,3]
+
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg1pt", df = df, fuzzy = "reconstruction_aid_bin", vars = "none", h = h0, b0 = b0, 
+              k = kern, vce = serobust, dist.exclude = de, ihs = FALSE)
+rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg1pt", df = df, fuzzy = "inv", vars = ctrls, h = h0, b0 = b0, 
+               k = kern, vce = serobust, dist.exclude = de)
+rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg1pt", df = df, fuzzy = "reconstruction_aid_bin", vars = "none", h = h0, b0 = b0, 
+               k = kern, vce = serobust, dist.exclude = de)
+rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+foodt <- unlist(lapply(rdc, function(x) x$Estimate[1]))
+foodu <- unlist(lapply(rdcu, function(x) x$Estimate[1]))
+foodRD <- list(foodt, foodu, cvarscutpts)
+saveRDS(foodRD, paste(rootdir, "/data/model_output/foodRD.rds", sep = ""))
 ```
+
+
+```{r, warning=FALSE}
+q1 <- qplot("food_consumption", df, grid = NULL, fuzzy = TRUE, vars = "none", h = h0, b = b0, 
+              k = kern, vce = serobust, dist.exclude = de, ihs = FALSE) +
+  theme(text = element_text(size = 20)) + labs(x = "Food Consumption", y = "P(X<x)", color = "Aid")
+q1
+#ggsave(paste(rootdir, "/presentation_materials/qplot_food.png", sep = ""), width = 10, height = 7)
+```
+
+```{r, warning = FALSE}
+df <- dfprep(df.hh, 0, "dist_2_seg13", de)
+cvarscutpts <- quantile(df$home_investment, c(.5, .75, .9, .95, .99), na.rm = TRUE)
+ctlist <- lapply(cvarscutpts, cutvars, var = "home_investment", df)
+df <- cbind(df, do.call(cbind, ctlist))
+ctrls = pdlvarselect("home_investment", df = df, dist.exclude = de, donut = 0, 
+                     k = kern, vce = serobust, ihs = FALSE)
+bws <- optbw("home_investment", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, vars = "opt", 
+             dist.exclude = de, k = kern, vce = serobust, ihs = takelogs)
+h0 <- bws[1,1]
+b0 <- bws[1,3]
+
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, fuzzy = TRUE, vars = ctrls, h = h0, b0 = b0,
+              k = kern, vce = serobust, dist.exclude = de, ihs = FALSE)
+rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, fuzzy = "inv", vars = ctrls, h = h0, b0 = b0,
+               k = kern, vce = serobust, dist.exclude = de)
+rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, fuzzy = TRUE, vars = ctrls, h = h0, b0 = b0,
+               k = kern, vce = serobust, dist.exclude = de)
+rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+foodt <- unlist(lapply(rdc, function(x) x$Estimate[1]))
+foodu <- unlist(lapply(rdcu, function(x) x$Estimate[1]))
+foodRD <- list(foodt, foodu, cvarscutpts)
+saveRDS(foodRD, paste(rootdir, "/data/model_output/foodRD.rds", sep = ""))
+```
+
+```{r, warning = FALSE}
+df <- dfprep(df.hh, 0, "dist_2_seg13", de)
+cvarscutpts <- quantile(df$total_outlays_net, seq(.1, .9, .1), na.rm = TRUE)
+ctlist <- lapply(cvarscutpts, cutvars, var = "total_outlays_net", df)
+df <- cbind(df, do.call(cbind, ctlist))
+ctrls = pdlvarselect("total_outlays_net", df = df, dist.exclude = de, donut = 0, 
+                     k = kern, vce = serobust, ihs = FALSE)
+bws <- optbw("total_outlays_net", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, vars = "opt", 
+             dist.exclude = de, k = kern, vce = serobust, ihs = takelogs)
+h0 <- bws[1,1]
+b0 <- bws[1,3]
+
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, fuzzy = TRUE, vars = ctrls, h = h0, b0 = b0,
+              k = kern, vce = serobust, dist.exclude = de, ihs = FALSE)
+rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, fuzzy = "inv", vars = ctrls, h = h0, b0 = b0,
+               k = kern, vce = serobust, dist.exclude = de)
+rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, fuzzy = TRUE, vars = ctrls, h = h0, b0 = b0,
+               k = kern, vce = serobust, dist.exclude = de)
+rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+foodt <- unlist(lapply(rdc, function(x) x$Estimate[1]))
+foodu <- unlist(lapply(rdcu, function(x) x$Estimate[1]))
+foodRD <- list(foodt, foodu, cvarscutpts)
+saveRDS(foodRD, paste(rootdir, "/data/model_output/foodRD.rds", sep = ""))
+```
+
+```{r, warning = FALSE}
+df <- dfprep(df.hh, 0, "dist_2_seg13", de)
+cvarscutpts <- quantile(df$total_income, seq(.1, .9, .1), na.rm = TRUE)
+ctlist <- lapply(cvarscutpts, cutvars, var = "total_income", df)
+df <- cbind(df, do.call(cbind, ctlist))
+ctrls = pdlvarselect("total_income", df = df, dist.exclude = de, donut = 0, 
+                     k = kern, vce = serobust, ihs = FALSE)
+bws <- optbw("total_income", b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, vars = "opt", 
+             dist.exclude = de, k = kern, vce = serobust, ihs = takelogs)
+h0 <- bws[1,1]
+b0 <- bws[1,3]
+
+cvarst <- paste("t", cvarscutpts, sep = "")
+cvarsu <- paste("u", cvarscutpts, sep = "")
+cvarsc <- paste("c", cvarscutpts, sep = "")
+
+rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, fuzzy = TRUE, vars = ctrls, h = h0, b0 = b0,
+              k = kern, vce = serobust, dist.exclude = de, ihs = FALSE)
+rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, fuzzy = "inv", vars = ctrls, h = h0, b0 = b0,
+               k = kern, vce = serobust, dist.exclude = de)
+rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, fuzzy = TRUE, vars = ctrls, h = h0, b0 = b0,
+               k = kern, vce = serobust, dist.exclude = de)
+rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
+        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+
+foodt <- unlist(lapply(rdc, function(x) x$Estimate[1]))
+foodu <- unlist(lapply(rdcu, function(x) x$Estimate[1]))
+foodRD <- list(foodt, foodu, cvarscutpts)
+saveRDS(foodRD, paste(rootdir, "/data/model_output/foodRD.rds", sep = ""))
+```
+
+
+
+
+```{r}
+bws <- optbw("pub_transfers", b = "dist_2_seg1", df = df.hh, fuzzy = FALSE, vars = "shake_pga")
+h0 <- bws[1,1]; b0 <- bws[1,3]
+
+df <- filter(df.hh, designation %in% c("severe", "crisis", "heavy")) %>%
+  mutate(kwt = wt_hh*(1-abs(dist_2_seg13)/60)) 
+
+reg1 <- ivreg(gorkha_hh ~ reconstruction_aid_bin + dist_2_seg1 + dist_pos1 + gorkha_loss_ever + shake_pga |
+                dist_14 + dist_2_seg1 + dist_pos1 + gorkha_loss_ever + shake_pga , data = df, weights = kwt, 
+              subset = abs(dist_2_seg13)<20)
+coeftest(reg1, type = "hc1")
+placebos
+```
+
+### Functions for Mccrary test
+Discrete version based on: https://cattaneo.princeton.edu/aie-rdd/Frandsen_2016_AIE.pdf
+Sampling frame based on 2010 census - need to adjust to hhs per unit area
+
 
 Power calculations - uses optimal bandwidths and covs for food consumption
 
@@ -79,99 +563,76 @@ a <- rdpower(data = cbind(log(df.pow$food_consumption+1), df.pow$dist_2_seg13), 
         covs =  powcovs, cluster = df.pow$strata, weights = df.pow$wt_hh, fuzzy = df.pow$received_aid)
 ```
 
-### regressions
-
-First stage - uses bandwidth for food consumption (as starting point)
-
-```{r, warnings=FALSE}
-rdstg11 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, 
-                 dist.exclude = de, vars = "none", k = kern, vce = serobust)
-
-rdstg12 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, 
-                 dist.exclude = de, vars = "none", k = "epanechnikov", vce = serobust)
-
-rdstg13 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0*2/3, b0 = b0*2/3, 
-                 dist.exclude = de, vars = "none", k = kern, vce = serobust)
-
-rdstg13a <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0*2, b0 = b0*2, 
-                 dist.exclude = de, vars = "none", k = kern, vce = serobust)
-
-rdstg14 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, 
-                 dist.exclude = de, vars = "none", k = kern, vce = serobust, poly = 2)
-
-rdstg15 <- lapply(aidvars, regout, b = "dist_2_seg13", df = df.hh, h = h0, b0 = b0, 
-                 dist.exclude = de, vars = "none", k = kern, vce = serobust, donut = h0/5)
-
-rdstg1 <- c(rdstg11, rdstg13, rdstg13a, rdstg14, rdstg15, rdstg12)
-
-rdgazer(rdstg1, dvlabs = rep(c("Received Aid", "Cumulative Aid"), 6), type = "text", 
-        xlines = list(c("Bandwidth (Inference)", rep(round(b0,2), 2), rep(round(b0*2/3,2), 2), rep(round(b0*2,2),2), rep(round(b0,2), 6)),
-                      c("Kernel", rep("triangular", 10), rep("epanechnikov", 2)),
-                      c("Polynomial", rep("linear", 6), rep("quadratic", 2), rep("linear", 4)),
-                      c(paste(round(h0/5,1), "km Donut"), rep("", 8), rep("X", 2), rep("", 2)),
-                      c("Wards", sapply(rdstg1, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))))
-```
-
-### Placebo checks - no covariates - optimal bandwidths
 
 ```{r}
-rdplacebo <- lapply(c(placebos, infravars), regout, b = "dist_2_seg13", df = df.hh, 
-                    dist.exclude = de, vars = "none", k = kern, vce = serobust)
-rdgazer(rdplacebo, dvlabs = str_replace_all(c(placebos, infravars), "_", " "), 
-        xlines = list(c("Wards", sapply(rdplacebo, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
-
-rdprice <- lapply(pricevars, regout, b = "dist_2_seg13", df = df.hh, 
-                  dist.exclude = de, vars = "none", k = kern, vce = serobust)
-rdgazer(rdprice, dvlabs = str_replace_all(pricevars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdprice, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+b = boot(df, earthmovers, R = 1000, cutpts = cvarscutpts, weights = df$wt_hh, strata = df$strata, 
+         parallel = "multicore", ncpus = detectCores() - 2)
+b$t0
+boot.ci(b, type = "perc", conf = c(.9, .95, .99))
 ```
 
-### Main Outcomes - log + 1, individualized optimal bandwidths and covariate selection 
-Note - optimal covariate selection will not work properly for log outcomes or alternate kernels
+### Map
 
-```{r, warning=FALSE}
-rdmain <- lapply(mainvars, regout, b = "dist_2_seg13", df = df.hh, fuzzy = TRUE, 
-                 dist.exclude = de, vars = "opt", k = kern, vce = serobust, ihs = takelogs)
-rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+```{r, message=FALSE, warning=FALSE}
+df.districts <- data.frame("district_name" = c("Gorkha", "Dhading", "Rasuwa", "Nuwakot", "Sindhupalchok", "Dolakha", "Ramechhap",
+                                               "Kathmandu", "Bhaktapur", "Lalitpur", "Kabhrepalanchok", "Okhaldhunga", "Sindhuli", "Makwanpur",
+                                               "Lamjung", "Tanahun", "Chitwan", "Solukhumbu", "Khotang", 
+                                               "Kaski", "Parbat", "Syangja", "Palpa", "Gulmi", "Baglung",
+                                               "Myagdi", "Arghakhanchi", "Nawalparasi", "Bhojpur", "Dhankuta", "Sankhuwasabha"),
+                           "district" = c(36, 30, 29, 28, 23, 22, 21, 27, 26, 25, 24, 12, 20, 31, 37, 38, 35, 11, 13,
+                                          40, 44, 39, 47, 46, 45, 43, 51, 48, 10, 7, 9), 
+                           "dist_14" = c(rep(1, times = 14), rep(0, times = 17)),
+                           "designation" = c(rep("severe", 7), rep("crisis", 7), rep("heavy", 5), rep("hit", 6), rep("slight", 6)))
+
+df.wards <- read_csv(paste(rootdir, "/data/NPL_2016-2018_HRVS_v01_M_STATA12/HRVS_gps.csv", sep = ""))
+df.wards <- st_as_sf(df.wards, coords = c("long", "lat"), crs = 4326)
+
+df.shp <- st_read(paste(rootdir, "/data/shapefiles/NPL_adm", sep = ""), "NPL_adm3") %>%
+              mutate(district_name = if_else(NAME_3=="Chitawan", "Chitwan",
+                                                 if_else(NAME_3=="Tanahu", "Tanahun",
+                                                         if_else(NAME_3=="Kavrepalanchok","Kabhrepalanchok",as.character(NAME_3)))))
+
+df.shp <- merge(df.shp, df.districts, by = "district_name", all = TRUE) %>%
+            mutate(dist_14 = if_else(is.na(dist_14),0,dist_14),
+                 designation = if_else(is.na(designation),"none",as.character(designation)))
+
+severe <- st_union(filter(df.shp, designation == "severe"))
+crisis <- st_union(filter(df.shp, designation == "crisis"))
+heavy_losses <- st_union(filter(df.shp, designation == "heavy"))
+moderate <- st_union(filter(df.shp, designation == "hit"))
+slight <- st_union(filter(df.shp, designation == "slight"))
+dist_14 <- st_cast(st_union(severe, crisis), "LINESTRING")
+df.designations <- st_sf(designation = factor(c("severe", "crisis", "heavy losses", "moderate", "slight"), 
+                                              levels = c("severe", "crisis", "heavy losses", "moderate", "slight")), 
+                         geometry = c(severe, crisis, heavy_losses, moderate, slight))
+
+df.wards$location <- "sample wards"
+epicenter <- st_sfc(st_point(x = c(84.731, 28.23)), crs = 4326)
+epicenter <- st_sf(district = c(36), distname = c("Gorkha"), vdc = c("na"), ward = c("na"), geometry = c(epicenter), location = c("epicenter"))
+#seg1pt <- readRDS(paste(rootdir, "/data/model_ouptut/borderpt.rds", sep = ""))
+# add the border point
+df.wards <- rbind(df.wards, epicenter)
+
+df.sample <- filter(df.hh, abs(dist_2_seg1pt) <= b1 & designation!="none")
+samplewards <- unique(df.sample[,c("district", "vdc", "ward")])
+samplewards <- paste(samplewards$district, samplewards$vdc, samplewards$ward)
+df.wards <- mutate(df.wards, borderward14 = if_else(paste(district, vdc, ward) %in% samplewards, "border vdc", 
+                                                    if_else(location == "epicenter", "epicenter", "other vdc")))
+
+df.wards$borderward14 <- factor(df.wards$borderward14, levels = c("epicenter", "border vdc", "other vdc"))
+
+vdcmap <- ggplot() +
+        geom_sf(data = df.shp) +
+        geom_sf(data = df.designations, aes(color = designation, fill = designation), alpha = .3) +
+        scale_color_manual(values = c("red", "orange", "yellow", "green", "blue")) +
+        scale_fill_manual(values = c("red", "orange", "yellow", "green", "blue")) +
+        new_scale_fill() +
+        geom_sf(data = df.wards, aes(shape = as.factor(borderward14), fill = as.factor(borderward14), size = as.factor(borderward14))) +
+        scale_fill_manual(values = c("firebrick1", "cyan2", "grey32")) +
+        scale_size_manual(values = c(5,2,2)) +
+        scale_shape_manual(values = c(24,21,21)) + 
+        theme_light() + theme(text = element_text(size = 20), legend.title = element_blank(), axis.text = element_blank()) + xlim(82,88) + ylim(26.4,29)
+vdcmap
+ggsave(paste(rootdir, "/presentation_materials/map.png", sep = ""), width = 10, height = 7)
 ```
-Food Consumption - 100,000 is about $2.7/day, close to the median
 
-```{r, warning = FALSE}
-cvarscutpts <- quantile(df.hh$food_consumption_pc, seq(0, 1, .1), na.rm = TRUE)
-ctlist <- lapply(cvarscutpts, cutvars, var = "food_consumption_pc", filter(df.hh, designation!="none"))
-df <- cbind(filter(df.hh, designation!="none"), do.call(cbind, ctlist))
-
-cvarst <- paste("t", cvarscutpts, sep = "")
-cvarsu <- paste("u", cvarscutpts, sep = "")
-cvarsc <- paste("c", cvarscutpts, sep = "")
-
-rdc <- lapply(cvarst, regout, b = "dist_2_seg13", df = df, k = "triangular", vce = "hc1", fuzzy = TRUE, vars = "opt")
-rdgazer(rdc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
-
-rdcu <- lapply(cvarsu, regout, b = "dist_2_seg13", df = df, k = "triangular", vce = "hc1", fuzzy = "inv", vars = "opt")
-rdgazer(rdcu, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdcu, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
-
-rdcc <- lapply(cvarsc, regout, b = "dist_2_seg13", df = df, k = "triangular", vce = "hc1", fuzzy = TRUE, vars = "opt")
-rdgazer(rdcc, dvlabs = paste("<", round(cvarscutpts/1000,0), "k npr", sep = ""), 
-        xlines = list(c("Wards", sapply(rdcc, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
-
-foodt <- unlist(lapply(rdc, function(x) x$Estimate[1]))
-foodu <- unlist(lapply(rdcu, function(x) x$Estimate[1]))
-foodRD <- list(foodt, foodu, cvarscutpts)
-saveRDS(foodRD, paste(rootdir, "/data/model_output/foodRD.rds", sep = ""))
-```
-
-
-### Functions for Mccrary test
-Discrete version based on: https://cattaneo.princeton.edu/aie-rdd/Frandsen_2016_AIE.pdf
-Sampling frame based on 2010 census - need to adjust to hhs per unit area
-
-```{r}
-mcplot <- histfunc("dist_2_seg13", filter(df.hh, wave==1), h = h0, dist.exclude = "none")
-
-mcplot + labs(x = "distance to border") + theme(text = element_text(size = 20))
-ggsave(paste(rootdir, "/presentation_materials/mccrary.png", sep = ""), width = 10, height = 7)
-```

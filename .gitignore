@@ -24,4 +24,5 @@
 *.xlsx
 *.html
 presentation_materials/
+code/inactive/
 .DS_Store

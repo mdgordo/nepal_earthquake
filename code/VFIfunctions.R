@@ -4,6 +4,8 @@ incenter <- function(cbar, lbi, x, lambda) {
 
 euclid <- function(a, b) {sqrt(sum((a - b)^2))}
 
+ihs <- function(x){log(x + sqrt(x ^ 2 + 1))}
+
 ### utility function
 u <- function(c, h, i, theta) {
   alpha = theta[8]; gamma = theta[1]
@@ -12,82 +14,27 @@ u <- function(c, h, i, theta) {
   return(crra)
 }
 
-dudc <- function(c, h, i, theta){
-  alpha = theta[8]; gamma = theta[1]
-  d = alpha*c^(alpha-1)*(c^alpha * (h+i)^(1-alpha))^(-gamma)/(h+i)^(alpha-1)
-}
-
-dudi <- function(c, h, i, theta){
-  alpha = theta[8]; gamma = theta[1]
-  d = (1-alpha)*c^(alpha)*(c^alpha * (h+i)^(1-alpha))^(-gamma)/(h+i)^(alpha)
-}
-
-simplrdifferentiator <- function(x0, y0, statespace, deriv){
-  x = statespace$x
-  y = statespace$h
-  vfx = statespace$Tw
-  ## find closest points
-  xvals = sort(unique(x))
-  xi = findInterval(x0, xvals, all.inside = TRUE)
-  x1 = xvals[xi]
-  x2 = xvals[xi+1]
-  yvals = sort(unique(y))
-  yi = findInterval(y0, yvals, all.inside = TRUE)
-  y1 = yvals[yi]
-  y2 = yvals[yi+1]
-  if (x0>max(x)) x0 = max(x) else if (x0<min(x)) x0 = min(x)
-  if (y0>max(y)) y0 = max(y) else if (y0<min(y)) y0 = min(y)
-  
-  ## function vals at corners
-  v1 = vfx[which(x==x1 & y==y1)]
-  v2 = vfx[which(x==x1 & y==y2)]
-  v3 = vfx[which(x==x2 & y==y1)]
-  v4 = vfx[which(x==x2 & y==y2)]
-  
-  ## change of variables
-  xp = (x0-x1)/(x2-x1)
-  yp = (y0-y1)/(y2-y1)
-  ## derivatives
-  if (xp+yp <= 1) {
-    if (deriv == "dx"){
-      dv = v3/(x2-x1) - v1/(x2-x1) 
-    } else {
-      dv = v2/(y2-y1) - v1/(y2-y1)
-    }
-  } else {
-    if (deriv == "dx"){
-      dv = v4/(x2-x1) - v2/(x2-x1)
-    } else {
-      dv = v4/(y2-y1) - v3/(y2-y1)
-    }
-  }
-  return(dv)
-}
-
 ### Creates points for gaussian quadrature
 great.expectations <- function(sigma, gqpts){
   mu = sqrt(2)*sigma*gqpts$x - sigma^2/2
   return(mu)
 }
 
-create.statespace = function(ubm = c(17,12), theta, method = "equal"){
+create.statespace = function(ubm = c(5,5), theta, method = "log"){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
-  defaultpt = (cbar-lambda)
-  
   if (method=="chebyshev") {
-    cnodesx = chebnodes(xn, lb = defaultpt, ub = ubm[1])
-    x = c(-lambda, cnodesx)
+    x = chebnodes(xn, lb = -lambda, ub = ubm[1])
     h = chebnodes(hn, lb = 0, ub = ubm[2])
   } else if (method=="log") { 
-    h = c(0, hbar/2, exp(seq(log(hbar), log(ubm[2]), length.out = hn-1)))
-    x = c(-lambda, exp(seq(0, log(ubm[1] - defaultpt + 1), length.out = hn)) + defaultpt - 1)
+    x =  exp(seq(0, log(ubm[1] + lambda +1), length.out = hn)) - (lambda+1)
+    h =  exp(seq(0, log(ubm[2]+1), length.out = hn))-1
   } else if (method=="uneven") {
-    x = c(-lambda, seq(defaultpt, ubm[1], length.out = xn))
+    x = seq(-lambda, ubm[1], length.out = xn)
     h = unique(c(seq(0, ubm[2]/2, length.out = round(2*hn/3,0)), seq(ubm[2]/2, ubm[2], length.out = round(1*hn/3,0)+1)))
   } else {
-    x = c(-lambda, seq(defaultpt, ubm[1], length.out = xn))
+    x = seq(-lambda, ubm[1], length.out = xn)
     h = seq(0, ubm[2], length.out = hn)
   }
   css = crossing(x,h)
@@ -95,51 +42,49 @@ create.statespace = function(ubm = c(17,12), theta, method = "equal"){
 }
 
 ###3D interpolate
-extrapolator <- function(w, x, h, Tw) {
+extrapolator <- function(w, x, h, Tw, var) {
   xvals = unique(w$x); hvals = unique(w$h)
   a = max(xvals); b = max(hvals); 
   a0 = sort(xvals,partial=length(xvals)-1)[length(xvals)-1];  b0 = sort(hvals,partial=length(hvals)-1)[length(hvals)-1]
   a0p = sort(xvals,partial=length(xvals)-3)[length(xvals)-3];  b0p = sort(hvals,partial=length(hvals)-3)[length(hvals)-3]
-  if (x>a+1e-10 & h>b+1e-10) {  
+  if (x > a+1e-10 & h > b+1e-10) {  
     bslp = (h-b)/(x-a)
     x0 = a; h0 = b; z0 = simplr(x0 = a, y0 = b, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-    if (bslp>=1) {
+    if (bslp >= b/a) {
       x1 = (b0-b)/bslp + a; h1 = b0; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
       x2 = (b0p-b)/bslp + a; h2 = b0p; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
     } else {
       x1 = a0; h1 = (a0-a)*bslp + b; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
       x2 = a0p; h2 = (a0p-a)*bslp + b; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
     }
-  } else if (x>a+1e-10) {
+  } else if (x > a+1e-10) {
     x0 = a; h0 = h; z0 = simplr(x0 = x0, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
     x1 = a0; h1 = h; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
     x2 = a0p; h2 = h; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-  } else if (h>b+1e-10) {
+  } else if (h > b+1e-10) {
     x0 = x; h0 = b; z0 = simplr(x0 = x0, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
     x1 = x; h1 = b0; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
     x2 = x; h2 = b0p; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
   }
-  if (z1-z2<=1e-10 | z0-z1<=1e-10) rise = 0 else {
+  if (z1-z2 <= 1e-10 | z0-z1 <= 1e-10) rise = 0 else {
     deriv = (z0-z1)/(z1-z2)
     if (deriv >= 1) {
       steps = euclid(c(x,h), c(x0,h0))/euclid(c(x0,h0), c(x2,h2))
       rise = (z0-z2)*steps
-      } else {
+    } else {
       steps = euclid(c(x,h), c(x0,h0))/euclid(c(x0,h0), c(x1,h1))
       rise = (z0-z1)*(1-deriv^steps)/(1-deriv) - (z0-z1)*deriv
-      }
     }
+  }
   r = z0 + rise
+  if (var=="Tw") r = min(r, 0)
   return(r)
 }
 
 interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
   
   cbar = theta[4]; hbar = theta[5]; lambda = theta[6]
-  if(var=="Tw") Tw = w$Tw else if (var %in% c("cfx", "aidcfx")) Tw = w$cfx else if (var %in% c("ifx", "aidifx")) Tw = w$ifx
-  
-  cs = filter(w, x>cbar-lambda)
-  if(var=="Tw") TwC = cs$Tw else if (var %in% c("cfx", "aidcfx")) TwC = cs$cfx else if (var %in% c("ifx", "aidifx")) TwC = cs$ifx
+  if (var=="proj") Tw = w$proj else if (var=="efx") Tw = w$efx else if (var=="Tw") Tw = w$Tw else if (var %in% c("cfx", "aidcfx")) Tw = w$cfx else if (var %in% c("ifx", "aidifx")) Tw = w$ifx
   
   if (method == "chebyshev") { ### currently not working
     tmat = matrix(TwC, ncol = length(unique(cs$x)))
@@ -147,98 +92,42 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
   }
   
   if (method %in% c("spline", "neuralnet")) {
-    obj = (TwC - min(TwC))/(max(TwC) - min(TwC))
-    xnorm = (cs$x - min(cs$x))/(max(cs$x) - min(cs$x))
-    hnorm = (cs$h - min(cs$h))/(max(cs$h) - min(cs$h))
+    obj = (Tw - min(Tw))/(max(Tw) - min(Tw))
+    xnorm = (w$x - min(w))/(max(w$x) - min(w$x))
+    hnorm = (w$h - min(w$h))/(max(w$h) - min(w$h))
     if (method=="spline") {
       mod = gam(obj ~ te(xnorm, hnorm))
     } else {
       mod = neuralnet(obj ~ xnorm + hnorm, data = data.frame(obj = obj, xnorm = xnorm, hnorm = hnorm), 
-                      hidden=11, act.fct = "logistic", linear.output = FALSE, stepmax = 5e5, rep = 5)
+                      hidden=11, act.fct = "logistic", linear.output = FALSE, stepmax = 1e5, rep = 5)
     }
   }
   
   fi = function(x,h){
-    if (x+h <= hbar+cbar-lambda) {x = cbar-lambda} ## ensures default zone is enforced
-    if (x <= cbar-lambda){
-      r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
+    if (x < -1*lambda) x = -1*lambda
+    if (x > max(w$x)+1e-10 | h > max(w$h)+1e-10) {
+      r = extrapolator(w, x, h, Tw, var)
       return(r)
-    } else if (x>max(w$x)+1e-10 | h>max(w$h)+1e-10) {
-      r = extrapolator(w, x, h, Tw)
-      return(r)
-    } else {
-      if (x>max(w$x)) x = max(w$x); if (h>max(w$h)) h = max(w$h)
-    }
-    if (method=="simplical") {
+    } else if (x <= cbar-lambda | method=="simplical") {  ### default zone always simplical
       r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
     } else if (method=="chebyshev") {
       r = chebpred(x,h, cmat, lb = c(cbar-lambda, 0), ub = c(max(w$x), max(w$h)))
+    } else if (method=="rollmean") {
+      xvals = sort(unique(w$x)); hvals = sort(unique(w$h))
+      xi = findInterval(x, xvals, all.inside = TRUE)
+      x1 = xvals[xi]; x2 = xvals[xi+1]
+      hi = findInterval(h, hvals, all.inside = TRUE)
+      h1 = hvals[hi]; h2 = hvals[hi+1]
+      r = mean(Tw[w$x %in% c(x1, x2) & w$h %in% c(h1, h2)])
     } else {
-      xn = (x - min(cs$x))/(max(cs$x) - min(cs$x))
-      hn = (h - min(cs$h))/(max(cs$h) - min(cs$h))
+      xn = (x - min(w$x))/(max(w$x) - min(w$x))
+      hn = (h - min(w$h))/(max(w$h) - min(w$h))
       r = predict(mod, newdata = data.frame("xnorm" = xn, "hnorm" = hn))
-      r = r*(max(TwC) - min(TwC)) + min(TwC)
+      r = r*(max(Tw) - min(Tw)) + min(Tw)
     } 
     return(as.numeric(r))
   }
   return(fi)
-}
-
-### 3D interpolate 
-complexr <- function(x0, statespace, vfx, theta){
-  ## find closest points in y and interpolate
-  yvals = sort(unique(statespace$y))
-  yi = findInterval(x0[2], yvals, all.inside = TRUE)
-  if (x0[2]>max(yvals)) x0[2] <- max(yvals)
-  if (x0[2]<min(yvals)) x0[2] <- min(yvals)
-  yp = c(yvals[yi], yvals[yi+1])
-  xyhfilt = filter(statespace, y==yp[1])
-  
-  vy1 = interpolater.creater(yp[1], theta, statespace, Tw = vfx)
-  vy2 = interpolater.creater(yp[2], theta, statespace, Tw = vfx)
-  
-  ## closest in x and h for y1
-  xvals1 = sort(unique(xyhfilt$x))
-  xi1 = findInterval(x0[1], xvals1, all.inside = TRUE)
-  if (x0[1]>max(xvals1)) x0[1] <- max(xvals1)
-  if (x0[1]<min(xvals1)) x0[1] <- min(xvals1)
-  xp1 = c(xvals1[xi1], xvals1[xi1+1])
-  
-  hvals1 = sort(unique(xyhfilt$h))
-  hi1 = findInterval(x0[3], hvals1, all.inside = TRUE)
-  if (x0[3]>max(hvals1)) x0[3] <- max(hvals1)
-  if (x0[3]<min(hvals1)) x0[3] <- min(hvals1)
-  hp1 = c(hvals1[hi1], hvals1[hi1+1])
-  
-  ### values at vertices
-  d = crossing(y = yp, x = xp1, h = hp1) %>%
-    mutate(xidx = if_else(x==xp1[2],1,0),
-           yidx = if_else(y==yp[2],1,0),
-           hidx = if_else(h==hp1[2],1,0))
-  d$vfx = mapply(vy1, d$x, d$h)
-  d$vfx[d$y==yp[2]] = mapply(vy2, d$x[d$y==yp[2]], d$h[d$y==yp[2]])
-  
-  ### change of variables
-  xcv = (x0[1]-xp1[1])/(xp1[2] - xp1[1])
-  ycv = (x0[2]-yp[1])/(yp[2] - yp[1])
-  hcv = (x0[3]-hp1[1])/(hp1[2] - hp1[1])
-  xcv0 = c(xcv, ycv, hcv)
-  
-  ### algorithm
-  p = order(xcv0)
-  s = vector(mode = "list", length = 4)
-  fs = vector(mode = "list", length = 4)
-  s[[1]] = rep(1, 3)
-  fs[[1]] = d$vfx[d$xidx==s[[1]][1] & d$yidx==s[[1]][2] & d$hidx==s[[1]][3]]
-  for (i in c(2:4)) {
-    svec = rep(0, 3)
-    svec[p[i-1]] = 1
-    s[[i]] = s[[i-1]] - svec
-    f = d$vfx[d$xidx==s[[i]][1] & d$yidx==s[[i]][2] & d$hidx==s[[i]][3]]
-    f2 = d$vfx[d$xidx==s[[i-1]][1] & d$yidx==s[[i-1]][2] & d$hidx==s[[i-1]][3]]
-    fs[[i]] = fs[[i-1]] + (1 - xcv0[p[i-1]])*(f - f2)
-  }
-  return(fs[[4]])
 }
 
 monotonizer <- function(w, policy = TRUE){
@@ -279,80 +168,59 @@ monotonizer <- function(w, policy = TRUE){
   return(finalVr)
 }
 
-### Function factory for generation household maximization problem
+### Function factory for generation household maximization problem (minimizes the negative - which is positive)
 
 hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]; B = -1*lambda
+  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]; 
   
   draws = exp(great.expectations(sigma, gqpts))
+  wts = gqpts$w/sqrt(pi)
   
-  hhprob = function(ci){
+  hhprob = function(ci, default = FALSE){
     c = ci[1]; i = ci[2]
-    if (is.nan(c)|is.na(c)|c+i>x-B) {return((c+i)*1e10)} else {  ### built in constraint 
-      payoff = u(c, h, i, theta)
-      htplus1 = delta*(h+i)
-      xtplus1 = R*(x - c - i) 
-      mindraw = B+cbar+max(hbar-htplus1, 0) - xtplus1 ## minimum draw to not default
-      pdef = plnorm(mindraw, meanlog = -sigma^2/2, sdlog = sigma)
-      if (any(draws>mindraw)){
-        wts = gqpts$w[draws>mindraw]/sqrt(pi)
-        drawsr = draws[draws>mindraw]
-        if (pdef!=0){  ### adjust wts and draws for probability of default
-          extrawt = 1 - pdef - sum(wts)
-          if (extrawt>0) wts = c(extrawt, wts) else wts[1] = extrawt + wts[1]
-          extradraw = qlnorm(pdef + wts[1]/2, meanlog = -sigma^2/2, sdlog = sigma)
-          if (extrawt>0) drawsr = c(extradraw, drawsr) else drawsr[1] = extradraw
-        }
-        EVp = mapply(Valfunc, x = xtplus1 + drawsr, h = htplus1)
-        EV = pdef*Valfunc(B, max(htplus1, delta*hbar)) + sum(EVp*wts)
-      } else {
-        EV = pdef*Valfunc(B, max(htplus1, delta*hbar)) + (1-pdef)*Valfunc(xtplus1+mindraw+1.856, htplus1) ### mean excess for lognormal
+    if (is.nan(c)|is.na(c)) {return((c+i)*1e10)} else { 
+      if (default) {
+        payoff = u(cbar, max(h, hbar), 0, theta)
+        htplus1 = delta*max(hbar, h)
+        xtplus1 = -1*lambda
+      } else if (c+i>x+lambda) {return((c+i)*1e10)} else { ### built in constraint 
+        payoff = u(c, h, i, theta)
+        htplus1 = delta*(h+i)
+        xtplus1 = R*(x - c - i)
       }
+      EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
       r = payoff + beta*EV
-      return(-r)}
+      return(-r)
+    }
   }
   return(hhprob)
 }
 
-hhgradfact <- function(x, h, theta, w, gqpts){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]; B = -1*lambda
-  hhgrad <- function(ci){
-    c = ci[1]; i = ci[2]
+hhprob = function(ci){
+  c = ci[1]; i = ci[2]
+  if (is.nan(c)|is.na(c)|c+i>x-B) {return((c+i)*1e10)} else {  ### built in constraint 
+    payoff = u(c, h, i, theta)
     htplus1 = delta*(h+i)
     xtplus1 = R*(x - c - i) 
-    mindraw = B+cbar+max(hbar-htplus1, 0) - xtplus1
+    mindraw = B+cbar+max(hbar-htplus1, 0) - xtplus1 ## minimum draw to not default
     pdef = plnorm(mindraw, meanlog = -sigma^2/2, sdlog = sigma)
-    draws = exp(great.expectations(sigma, gqpts))
     if (any(draws>mindraw)){
       wts = gqpts$w[draws>mindraw]/sqrt(pi)
-      draws = draws[draws>mindraw]
+      drawsr = draws[draws>mindraw]
       if (pdef!=0){  ### adjust wts and draws for probability of default
         extrawt = 1 - pdef - sum(wts)
         if (extrawt>0) wts = c(extrawt, wts) else wts[1] = extrawt + wts[1]
         extradraw = qlnorm(pdef + wts[1]/2, meanlog = -sigma^2/2, sdlog = sigma)
-        if (extrawt>0) draws = c(extradraw, draws) else draws[1] = extradraw
+        if (extrawt>0) drawsr = c(extradraw, drawsr) else drawsr[1] = extradraw
       }
-      Edvdc = sum(mapply(simplrdifferentiator, x0 = xtplus1 + draws, y0 = htplus1, statespace = list(w), deriv = list("dx"))*wts)
-      Edvdi = sum(mapply(simplrdifferentiator, x0 = xtplus1 + draws, y0 = htplus1, statespace = list(w), deriv = list("dy"))*wts)
-      EVc = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, delta*hbar), statespace = w, deriv = list("dx")) + Edvdc
-      EVi = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, delta*hbar), statespace = w, deriv = list("dy")) + Edvdi
+      EVp = mapply(Valfunc, x = xtplus1 + drawsr, h = htplus1)
+      EV = pdef*Valfunc(B, max(htplus1, delta*hbar)) + sum(EVp*wts)
     } else {
-      EVc = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, delta*hbar), statespace = w, deriv = list("dx")) + 
-        (1-pdef)*simplrdifferentiator(x0 = xtplus1+mindraw+1.856, y0 = htplus1, statespace = w, deriv = list("dx"))
-      EVi = pdef*simplrdifferentiator(x0 = B, y0 = max(htplus1, delta*hbar), statespace = w, deriv = list("dy")) + 
-        (1-pdef)*simplrdifferentiator(x0 = xtplus1+mindraw+1.856, y0 = htplus1, statespace = w, deriv = list("dy"))
+      EV = pdef*Valfunc(B, max(htplus1, delta*hbar)) + (1-pdef)*Valfunc(xtplus1+mindraw+1.856, htplus1) ### mean excess for lognormal
     }
-    dhdc = beta*R*EVc - dudc(c, h, i, theta)
-    dhdi = beta*R*EVc - dudi(c, h, i, theta) - beta*delta*EVi
-    return(c(dhdc, dhdi))
-  }
-  return(hhgrad)
-}
-
-constraintgrad <- function(ci){
-  return(c(-1, -1))
+    r = payoff + beta*EV
+    return(-r)}
 }
 
 ### Bellman Operator
@@ -364,26 +232,29 @@ bellman <- function(w, theta, shockpts = 13, m = 2000){
   Valfunc = interpolater.creater(w, theta, method = "simplical")
   optwrap = function(rowidx){
     x = w$x[rowidx]; h = w$h[rowidx]
-    if (round(x + lambda,10) <= round(cbar,10) | round(x + lambda - cbar,10) <= round(hbar - h,10)) {
-      vfx = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = max(delta*h, hbar))
-      return(c(cbar, 0, vfx))
+    hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
+    
+    ## default decision
+    Vdef = -1*hhprob(c(cbar, 0), default = TRUE)
+    optc = alpha*(x+h+lambda); opti = x + lambda - optc ### derived from FOCs to flow
+    if (opti<0) {optc = x+lambda; opti = 0}  ## investment constraint
+    umax = -1*hhprob(c(optc, opti))
+    if (h+opti <=0 | optc <=0 | umax < Vdef) {
+      r = c(cbar, 0, Vdef, 1)
     } else {
-      hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
-      lbi = max(round(hbar - h,10), 0.0)
+      ### optimization
       sol = directL(fn = hhprob, 
-                  lower = c(cbar,lbi), upper = c(x+lambda-lbi, x+lambda-cbar), 
-                  control = list(ftol_rel = 1e-4, ftol_abs = 0, xtol_rel = 0, maxeval = m))
-      r = c(sol$par, -sol$value)
-      vfxdefault = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = delta*max(h, hbar))
-      if (vfxdefault < -sol$value) {
-        return(r)
-      } else {return(c(cbar, 0, vfxdefault))}
+                    lower = c(0,0), upper = c(x+lambda, x+lambda), 
+                    control = list(ftol_rel = 1e-4, ftol_abs = 0, xtol_rel = 0, maxeval = m))
+      r = c(sol$par, -sol$value, 0)
     }
+    return(r)
   }
   Tw = mclapply(c(1:nrow(w)), optwrap, mc.cores = detectCores())
   wnext = cbind(w[,c("x", "h")], data.frame("Tw" = unlist(lapply(Tw, function(x) x[3])),
-                                       "cfx" = unlist(lapply(Tw, function(x) x[1])),
-                                       "ifx" = unlist(lapply(Tw, function(x) x[2]))))
+                                            "cfx" = unlist(lapply(Tw, function(x) x[1])),
+                                            "ifx" = unlist(lapply(Tw, function(x) x[2])),
+                                            "def" = unlist(lapply(Tw, function(x) x[4]))))
   return(wnext)
 }
 
@@ -396,23 +267,22 @@ howard <- function(w, theta, shockpts = 13){
   
   accelerator = function(rowidx){
     x = w$x[rowidx]; h = w$h[rowidx]
-    cfx = w$cfx[rowidx]; ifx = w$ifx[rowidx]
-    if (round(x + lambda,10) <= round(cbar,10) | round(x + lambda - cbar,10) <= round(hbar - h,10)) {
-      v = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = delta*max(h, hbar))
-      return(v)
-    } else {
-      hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
-      v1 = -1*hhprob(c(cfx, ifx))
-      v2 = u(cbar, h = max(h, hbar), i = 0, theta) + beta*Valfunc(x = -1*lambda, h = delta*max(h, hbar))
-      return(max(v1, v2))
-    }
+    cfx = w$cfx[rowidx]; ifx = w$ifx[rowidx]; def = w$def[rowidx]
+    hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
+    ## default decision
+    if (def==1) {
+      v = -1*hhprob(c(cbar, 0), default = TRUE) 
+      } else {
+      v = -1*hhprob(c(cfx, ifx))
+      }
+    return(v)
   }
   Twh = mclapply(1:nrow(w), accelerator, mc.cores = detectCores())
   return(unlist(Twh))
 }
 
 ### VFI
-VFI <- function(v0, theta, maxiter = 30, tol = 1e-5, howardk = 10, s2 = 101, monotonizer = FALSE){
+VFI <- function(v0, theta, maxiter = 30, tol = 1e-5, howardk = 10, s2 = 51, monotonizer = FALSE){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   w = vector(mode = "list", length = maxiter)
@@ -433,7 +303,9 @@ VFI <- function(v0, theta, maxiter = 30, tol = 1e-5, howardk = 10, s2 = 101, mon
     wnext$Tw = wnext$Tw + b
     w[[i]] = wnext
     ## check tol
-    d = mean((w[[i]]$Tw - w[[i-1]]$Tw)^2)/mean((w[[i-1]]$Tw)^2)
+    if (tol1) {
+      d = mean((w[[i]]$cfx - w[[i-1]]$cfx)^2)*1e-3 ### effective absolute tol of 1e-2 on consumption
+    } else {d = mean(((w[[i]]$Tw - w[[i-1]]$Tw)/w[[i-1]]$Tw)^2)}  ### relative tol
     ### if tol is met increase gq points
     if (d < tol) {
       if (tol1) tol2 = TRUE else s = s2; tol1 = TRUE
@@ -452,41 +324,18 @@ gmmmomentmatcher <- function(theta, df) {
   saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
   
   ### initial guess
-  statespace = create.statespace(ubm = c(20,20), theta, method = "log")
+  statespace = create.statespace(ubm = c(5,5), theta, method = "log")
   v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
                                     "cfx" = rep(0, nrow(statespace)),
-                                    "ifx" = rep(0, nrow(statespace))))
+                                    "ifx" = rep(0, nrow(statespace)),
+                                    "def" = rep(0, nrow(statespace))))
   
   ### VFI
   V = VFI(v0, theta)
   saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
   finalV <- V[[length(V)]]
-  policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "spline")
-  policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "spline")
-  
-  ### data
-  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx), t0 = theta, 
-                        data = df[,-c(1:2)], mc.cores = detectCores())
-  momentmat <- do.call(rbind, momentmat)
-  return(momentmat)
-}
-
-gmmmomentmatcher <- function(theta, df) {
-  print(theta)
-  saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
-  
-  ### initial guess
-  statespace = create.statespace(ubm = c(20,20), theta, method = "log")
-  v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
-                                    "cfx" = rep(0, nrow(statespace)),
-                                    "ifx" = rep(0, nrow(statespace))))
-  
-  ### VFI
-  V = VFI(v0, theta)
-  saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
-  finalV <- V[[length(V)]]
-  policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "neuralnet")
-  policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "neuralnet")
+  policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "rollmean")
+  policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "rollmean")
   
   ### data
   momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx), t0 = theta, 
@@ -499,117 +348,19 @@ momentmatcher <- function(i, vfx, t0, data){
   gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]; hbar = t0[5]
   lambda = t0[6]; sigma = t0[7]; alpha = t0[8]; delta = t0[9]
   df = data[i,]
-  wt = df$wt_hh/sum(data$wt_hh)
-  e1  = log(vfx[[1]](df$imputed_bufferstock, df$lag_h)) - log(df$food_consumption)
-  e2  = log(vfx[[2]](df$imputed_bufferstock, df$lag_h)+1) - log(df$home_investment+1)
-  e3 = log(df$home_value+1) - log(delta*(df$lag_h + df$home_investment)+1)
+  wt = sqrt(df$wt_hh/sum(data$wt_hh))
+  e1  = vfx[[1]](df$imputed_bufferstock, df$lag_h) - df$food_consumption
+  e2  = vfx[[2]](df$imputed_bufferstock, df$lag_h) - df$home_investment
+  e3 = df$home_value - delta*(df$lag_h + df$home_investment)
   e4 = df$imputed_bufferstock - df$quake_aid - df$lag_y - R*(df$lag_x - df$lag_c - df$lag_i)
-  e5 = sqrt(df$var_inc) - sigma
-  e6 = e1*df$imputed_bufferstock
+  e5 = log(df$total_income)^2 - sigma^2
+  e6 = e1*ihs(df$imputed_bufferstock)
   e7 = e1*log(df$M_avg)
   e8 = e1*log(df$lag_h+1)
-  e9 = e2*df$imputed_bufferstock
+  e9 = e2*ihs(df$imputed_bufferstock)
   e10 = e2*log(df$M_avg)
   e11 = e2*log(df$lag_h+1)
   return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)*wt)
-}
-
-hhgradient <- function(i, df, vfx, dvlist, theta, eps){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
-  hh = df[i,]
-  wt = hh$wt_hh/sum(df$wt_hh)
-  
-  cfx0 = vfx[[2]](hh$imputed_bufferstock, hh$lag_h)
-  ifx0 = vfx[[3]](hh$imputed_bufferstock, hh$lag_h)
-  
-  dcdg = (dvlist[[1]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/eps
-  didg = (dvlist[[1]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/eps
-  dcdB = (dvlist[[2]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/eps
-  didB = (dvlist[[2]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/eps
-  dcdR = (dvlist[[3]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/eps
-  didR = (dvlist[[3]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/eps
-  dcdc = (dvlist[[4]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/eps
-  didc = (dvlist[[4]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/eps
-  dcdh = (dvlist[[5]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/eps
-  didh = (dvlist[[5]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/eps
-  dcdl = (dvlist[[6]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/eps
-  didl = (dvlist[[6]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/eps
-  dcds = (dvlist[[7]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/eps
-  dids = (dvlist[[7]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/eps
-  dcda = (dvlist[[8]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/eps
-  dida = (dvlist[[8]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/eps
-  dcdd = (dvlist[[9]][[2]](hh$imputed_bufferstock, hh$lag_h) - cfx0)/eps
-  didd = (dvlist[[9]][[3]](hh$imputed_bufferstock, hh$lag_h) - ifx0)/eps
-  
-  r1 = wt*c(dcdg, dcdB, dcdR, dcdc, dcdh, dcdl, dcds, dcda, dcdd)/cfx0
-  r2 = wt*c(didg, didB, didR, didc, didh, didl, dids, dida, didd)/(ifx0+1)
-  r3 = wt*c(rep(0,8), -(hh$lag_h + hh$home_investment)/(delta*(hh$lag_h + hh$home_investment)+1))
-  r4 = wt*c(0,0, -(hh$lag_x - hh$lag_c - hh$lag_i), rep(0,6))
-  r5 = wt*c(rep(0,6), -1, 0, 0)
-  r6 = wt*hh$imputed_bufferstock*r1
-  r7 = wt*log(hh$M_avg)*r1
-  r8 = wt*log(hh$lag_h+1)*r1
-  r9 = wt*hh$imputed_bufferstock*r2
-  r10 = wt*log(hh$M_avg)*r2
-  r11 = wt*log(hh$lag_h+1)*r2
-  return(rbind(r1,r2,r3,r4,r5,r6,r7,r8,r9,r10,r11))
-}
-
-momentgradient <- function(theta, df, eps = .1){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
-  
-  statespace = create.statespace(ubm = c(20,20), theta, method = "log")
-  v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
-                                    "cfx" = rep(0, nrow(statespace)),
-                                    "ifx" = rep(0, nrow(statespace))))
-  
-  V = VFI(v0, theta)
-  V = V[[length(V)]]
-  vfx = list(V, interpolater.creater(V, theta, var = "cfx", method = "spline"), interpolater.creater(V, theta, var = "ifx", method = "spline"))
-  ## numerical for policy functions
-  tp = c(theta[1] + eps, theta[c(2:9)])
-  dVdg = VFI(V, tp); print("D1 done")
-  dVdg = dVdg[[length(dVdg)]]
-  dVdg = list(dVdg, interpolater.creater(dVdg, theta, var = "cfx", method = "spline"), interpolater.creater(dVdg, theta, var = "ifx", method = "spline"))
-  tp = c(theta[1], theta[2] + eps, theta[c(3:9)])
-  dVdB = VFI(V, tp); print("D2 done")
-  dVdB = dVdB[[length(dVdB)]]
-  dVdB = list(dVdB, interpolater.creater(dVdB, theta, var = "cfx", method = "spline"), interpolater.creater(dVdB, theta, var = "ifx", method = "spline"))
-  tp = c(theta[c(1:2)], theta[3] + eps, theta[c(4:9)])
-  dVdR = VFI(V, tp); print("D3 done")
-  dVdR = dVdR[[length(dVdR)]]
-  dVdR = list(dVdR, interpolater.creater(dVdR, theta, var = "cfx", method = "spline"), interpolater.creater(dVdR, theta, var = "ifx", method = "spline"))
-  tp = c(theta[c(1:3)], theta[4] + eps, theta[c(5:9)])
-  dVdc = VFI(V, tp); print("D4 done")
-  dVdc = dVdc[[length(dVdc)]]
-  dVdc = list(dVdc, interpolater.creater(dVdc, theta, var = "cfx", method = "spline"), interpolater.creater(dVdc, theta, var = "ifx", method = "spline"))
-  tp = c(theta[c(1:4)], theta[5] + eps, theta[c(6:9)])
-  dVdh = VFI(V, tp); print("D5 done")
-  dVdh = dVdh[[length(dVdh)]]
-  dVdh = list(dVdh, interpolater.creater(dVdh, theta, var = "cfx", method = "spline"), interpolater.creater(dVdh, theta, var = "ifx", method = "spline"))
-  tp = c(theta[c(1:5)], theta[6] + eps, theta[c(7:9)])
-  dVdl = VFI(V, tp); print("D6 done")
-  dVdl = dVdl[[length(dVdl)]]
-  dVdl = list(dVdl, interpolater.creater(dVdl, theta, var = "cfx", method = "spline"), interpolater.creater(dVdl, theta, var = "ifx", method = "spline"))
-  tp = c(theta[c(1:6)], theta[7] + eps, theta[c(8:9)])
-  dVds = VFI(V, tp); print("D7 done")
-  dVds = dVds[[length(dVds)]]
-  dVds = list(dVds, interpolater.creater(dVds, theta, var = "cfx", method = "spline"), interpolater.creater(dVds, theta, var = "ifx", method = "spline"))
-  tp = c(theta[c(1:7)], theta[8] + eps, theta[c(9)])
-  dVda = VFI(V, tp); print("D8 done")
-  dVda = dVda[[length(dVda)]]
-  dVda = list(dVda, interpolater.creater(dVda, theta, var = "cfx", method = "spline"), interpolater.creater(dVda, theta, var = "ifx", method = "spline"))
-  tp = c(theta[c(1:8)], theta[9] + eps)
-  dVdd = VFI(V, tp); print("D9 done")
-  dVdd = dVdd[[length(dVdd)]]
-  dVdd = list(dVdd, interpolater.creater(dVdd, theta, var = "cfx", method = "spline"), interpolater.creater(dVdd, theta, var = "ifx", method = "spline"))
-  
-  dvlist = list(dVdg, dVdB, dVdR, dVdc, dVdh, dVdl, dVds, dVda, dVdd)
-  gradlist = mclapply(c(1:nrow(df)), hhgradient, df = df, vfx = vfx, dvlist = dvlist, theta = theta, eps = eps, mc.cores = detectCores())
-  grad = apply(simplify2array(gradlist), c(1,2), mean)
-  return(grad)
 }
 
 ### check tolerance between iterations
@@ -705,15 +456,28 @@ iterplotter = function(w, hidx=NULL, xidx=NULL, ifilt = c(1:99), xfilt = NULL, v
 
 threedplotter = function(w, theta, fillvar, iter = length(w), method = "simplical",
                          d3 = TRUE, aidamt = NULL, ubm = 9, ubh = 9, lbm = NULL, lbh = NULL){
-  Vfx = interpolater.creater(w[[iter]], theta, var = fillvar, method = method)
+  if (method=="double") {Vfx = interpolater.creater(w[[iter]], theta, var = fillvar, method = "rollmean")
+  } else {
+    Vfx = interpolater.creater(w[[iter]], theta, var = fillvar, method = method)
+  }
   if(is.null(lbm)) lbm = -lambda
   if(is.null(lbh)) lbh = 0
-  df.test = crossing(x = seq(lbm, ubm, length.out = 200), h = seq(lbh, ubh, length.out = 200))
+  df.test = crossing(x = seq(lbm, ubm, length.out = 150), h = seq(lbh, ubh, length.out = 150))
   df.test$proj = mapply(Vfx, x = df.test$x, h = df.test$h)
   
   if (fillvar %in% c("aidcfx", "aidifx")) {
     df.test$proj2 = mapply(Vfx, df.test$x + aidamt, df.test$h)
     df.test$efx = df.test$proj2 - df.test$proj
+  }
+  
+  if (method=="double"){
+    if (fillvar %in% c("aidcfx", "aidifx")) {
+      Vfx2 = interpolater.creater(df.test, theta, var = "efx", method = "spline")
+      df.test$efx = mapply(Vfx2, x = df.test$x, h = df.test$h)
+    } else {
+      Vfx2 = interpolater.creater(df.test, theta, var = "proj", method = "spline")
+      df.test$proj = mapply(Vfx2, x = df.test$x, h = df.test$h)
+    }
   }
   
   if (fillvar=="Tw") {
@@ -738,7 +502,7 @@ hhprobtroubleshooter <- function(rowidx, w){
   is = seq(lbi, x+lambda-cbar, length.out = 40)
   testgrid = crossing(cs, is) %>%
     filter(cs + is <= x + lambda)
-  testgrid$tw = sapply(c(1:nrow(testgrid)), function(i)hhprob(c(testgrid$cs[i], testgrid$is[i])))
+  testgrid$tw = sapply(c(1:nrow(testgrid)), function(i) hhprob(c(testgrid$cs[i], testgrid$is[i])))
   ggplot(testgrid) + geom_tile(aes(x = cs, y = is, fill = tw)) + scale_fill_viridis_c()
 }
 

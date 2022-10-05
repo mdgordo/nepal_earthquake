@@ -46,11 +46,18 @@ placebo_border2 <- st_cast(st_union(st_union(severe, crisis), heavy), "LINESTRIN
 df.wards$distance_epicenter <- as.numeric(st_distance(wards.sf, epicenter))/1000
 
 ### creating border segments and finding closest for each ward
-seg1 <- st_union(st_intersection(st_buffer(dist_14, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name %in% c("Chitwan", "Manang", "Lamjung", "Tanahun")]), "MULTILINESTRING")))
-seg2 <- st_union(st_intersection(st_buffer(dist_14, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name %in% c("Makwanpur", "Sindhuli")]), "MULTILINESTRING")))
-seg1 <- st_difference(seg1, st_buffer(seg2, 900))
+seg1 <- st_union(st_intersection(st_buffer(dist_14, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name %in% c("Manang", "Lamjung", "Tanahun")]), "MULTILINESTRING")))
+### eventually either get rid of seg 2 or clean it so norther border isn't there - shouldnt matter for dist 2 seg 1 or 3
+seg2 <- st_union(st_intersection(st_buffer(dist_14, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name %in% c("Dhading", "Makwanpur", "Sindhuli")]), "MULTILINESTRING")))
 seg3 <- st_union(st_intersection(st_buffer(dist_14, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name %in% c("Solukhumbu", "Khotang")]), "MULTILINESTRING")))
 border14_segments <- st_sf(segment = c("seg1", "seg2", "seg3"), geometry = c(seg1, seg2, seg3))
+
+latline <- st_sfc(st_linestring(rbind(c(84,28), c(85, 28))), crs = 4326)
+seg1pt <- st_intersection(seg1, latline)
+saveRDS(seg1pt, paste(getwd(), "/model_output/borderpt.rds", sep = ""))
+
+#ggplot() + geom_sf(data = border14_segments, aes(color = segment)) +
+#  geom_sf(data = seg1pt, shape = 3)
 
 placebo1a <- st_union(st_intersection(st_buffer(placebo_border1, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name=="Dhading"]), "MULTILINESTRING")))
 placebo1b <- st_union(st_intersection(st_buffer(placebo_border1, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name %in% c("Dolakha", "Kabhrepalanchok")]), "MULTILINESTRING")))
@@ -67,6 +74,8 @@ df.wards$placebo2_segment <- st_nearest_feature(wards.sf, placebo2_segments)
 ### distance to border 14 segments doesn't include distance to border with China
 df.wards$dist_2_14 <- as.numeric(st_distance(wards.sf, st_union(border14_segments)))/1000
 df.wards$dist_2_seg1 <- as.numeric(st_distance(wards.sf, seg1))/1000
+df.wards$dist_2_seg1pt <- as.numeric(st_distance(wards.sf, seg1pt))/1000
+df.wards$dist_2_seg3 <- as.numeric(st_distance(wards.sf, seg3))/1000
 df.wards$dist_2_seg13 <- as.numeric(st_distance(wards.sf, st_union(border14_segments[border14_segments$segment!="seg2",])))/1000
 df.wards$dist_2_placebo1 <- as.numeric(st_distance(wards.sf, st_union(placebo1_segments)))/1000
 df.wards$dist_2_placebo2 <- as.numeric(st_distance(wards.sf, st_union(placebo2_segments)))/1000
@@ -111,6 +120,8 @@ df.wards <- mutate(df.wards, dist_14 = if_else(is.na(dist_14),0,dist_14),
                 designation = if_else(is.na(designation),"none",as.character(designation))) %>%
             mutate(dist_2_14 = if_else(dist_14==1, dist_2_14, -1*dist_2_14),
                    dist_2_seg1 = if_else(dist_14==1, dist_2_seg1, -1*dist_2_seg1),
+                   dist_2_seg1pt = if_else(dist_14==1, dist_2_seg1pt, -1*dist_2_seg1pt),
+                   dist_2_seg3 = if_else(dist_14==1, dist_2_seg3, -1*dist_2_seg3),
                    dist_2_seg13 = if_else(dist_14==1, dist_2_seg13, -1*dist_2_seg13),
                    dist_2_placebo1 = if_else(distname %in% c("Rasuwa", "Nuwakot", "Sindhupalchok"), dist_2_placebo1, -1*dist_2_placebo1),
                    dist_2_placebo2 = if_else(designation %in% c("severe", "crisis", "heavy"), dist_2_14, -1*dist_2_14))
@@ -992,8 +1003,8 @@ df.hh <- rbind(df.wave1, df.wave2, df.wave3)
 
 df.hh <- df.hh %>% mutate(quake_aid_bin = if_else(quake_aid > 0, 1, 0),
                           emergency_aid = if_else(quake_aid_bin==1 & wave==1, 1, 0),
-                          reconstruction_aid_bin = if_else(quake_aid_bin==1 & wave!=1, 1, 0),
-                          reconstruction_aid = if_else(quake_aid_bin==1 & wave!=1, quake_aid, 0),
+                          reconstruction_aid_bin = if_else(quake_aid>35000, 1, 0),
+                          reconstruction_aid = if_else(quake_aid>35000, quake_aid, 0),
                           gorkha_loss = if_else(quake_losses>0 & wave==1, 1, 0),
                           gorkha_loss_amt = if_else(wave==1, quake_losses, 0)) %>%
   group_by(hhid) %>%
@@ -1005,16 +1016,17 @@ l1 <- median(df.hh$landvalue[df.hh$wave==1], na.rm = TRUE)
 ## 1 percent of hhs report buying land in first wave
 df.land <- filter(df.hh, wave==1) %>%
   mutate(land_qtle = if_else(landvalue<l1, 1, 2)) %>%
-  select(hhid, land_qtle)
+  rename(inc_wave1 = total_income) %>%
+  select(hhid, land_qtle, inc_wave1)
 
 df.aid <- df.hh %>% arrange(wave) %>%
   group_by(hhid) %>% 
   summarize(aid_total = sum(quake_aid),
+          reconstruction_aid_total = sum(reconstruction_aid),
           var_cons = var(consumption),
           avg_cons = mean(consumption),
           var_inc = var(log(total_income)),
           avg_inc = mean(log(total_income)),
-          M_avg = mean(total_income),
           gorkha_loss_ever = sum(gorkha_loss_amt),
           total_remit = sum(remittance_income), 
           total_loans_taken = sum(loans_taken_past_year))
@@ -1022,15 +1034,16 @@ df.aid <- df.hh %>% arrange(wave) %>%
 df.hh <- merge(df.hh, df.land, by = c("hhid"), all.x = TRUE)
 df.hh <- merge(df.hh, df.aid, by = "hhid") %>%
   mutate(received_aid = if_else(aid_total>0, 1, 0),
+         received_recon_aid = if_else(reconstruction_aid_total>0, 1, 0),
          gorkha_hh = if_else(gorkha_loss_ever>0, 1, 0),
          caste_yr = paste(ethnicity, wave, sep = "_"),
          vdc_yr = paste(district, vdc, wave, sep = "_"),
          cons_shock = consumption - avg_cons) %>%
   arrange(wave) %>% group_by(hhid) %>%
   mutate(aid_cumulative = cumsum(quake_aid),
-         recon_aid_cum = cumsum(reconstruction_aid),
+         reconstruction_aid_cumulative = cumsum(reconstruction_aid),
          aid_cumulative_bin = as.numeric(aid_cumulative>0),
-         recon_aid_cum_bin = as.numeric(recon_aid_cum>0),
+         reconstruction_aid_bin = as.numeric(reconstruction_aid_cumulative>0),
          aid_cumulative0000s = aid_cumulative/10000) %>% ungroup()
 
 df.ward_losses <- df.hh %>% 
