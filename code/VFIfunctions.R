@@ -183,7 +183,7 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
       if (default) {
         payoff = u(cbar, max(h, hbar), 0, theta)
         htplus1 = delta*max(hbar, h)
-        xtplus1 = -1*lambda
+        xtplus1 = -1*R*lambda
       } else if (c+i>x+lambda) {return((c+i)*1e10)} else { ### built in constraint 
         payoff = u(c, h, i, theta)
         htplus1 = delta*(h+i)
