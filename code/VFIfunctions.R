@@ -176,6 +176,7 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
   
   draws = exp(great.expectations(sigma, gqpts))
   wts = gqpts$w/sqrt(pi)
+  set.seed(33); rln <- rlnorm(100000, -sigma^2/2, sigma) ## random numbers for mean excess
   
   hhprob = function(ci, default = FALSE){
     c = ci[1]; i = ci[2]
@@ -183,44 +184,31 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
       if (default) {
         payoff = u(cbar, max(h, hbar), 0, theta)
         htplus1 = delta*max(hbar, h)
-        xtplus1 = -1*R*lambda
+        xtplus1 = -lambda*R
       } else if (c+i>x+lambda) {return((c+i)*1e10)} else { ### built in constraint 
         payoff = u(c, h, i, theta)
         htplus1 = delta*(h+i)
         xtplus1 = R*(x - c - i)
       }
-      EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
+      mindraw = cbar - lambda - xtplus1 ## minimum draw to not default
+      pdef = plnorm(mindraw, meanlog = -sigma^2/2, sdlog = sigma)
+      if (length(rln[rln>mindraw])==0) {
+        EV = Valfunc(-lambda, htplus1)
+      } else if (pdef > 0){
+        wts = wts[draws>mindraw]
+        draws = draws[draws>mindraw]
+        if (length(wts)==0) wts = 0; draws = xtplus1 + mindraw + mean(rln[rln>mindraw]) ## mean excess
+        excessprob = 1 - pdef - sum(wts)
+        wts[1] = wts[1] + excessprob
+        EV = pdef*Valfunc(-lambda, htplus1) + sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
+      } else{
+        EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
+      }
       r = payoff + beta*EV
       return(-r)
     }
   }
   return(hhprob)
-}
-
-hhprob = function(ci){
-  c = ci[1]; i = ci[2]
-  if (is.nan(c)|is.na(c)|c+i>x-B) {return((c+i)*1e10)} else {  ### built in constraint 
-    payoff = u(c, h, i, theta)
-    htplus1 = delta*(h+i)
-    xtplus1 = R*(x - c - i) 
-    mindraw = B+cbar+max(hbar-htplus1, 0) - xtplus1 ## minimum draw to not default
-    pdef = plnorm(mindraw, meanlog = -sigma^2/2, sdlog = sigma)
-    if (any(draws>mindraw)){
-      wts = gqpts$w[draws>mindraw]/sqrt(pi)
-      drawsr = draws[draws>mindraw]
-      if (pdef!=0){  ### adjust wts and draws for probability of default
-        extrawt = 1 - pdef - sum(wts)
-        if (extrawt>0) wts = c(extrawt, wts) else wts[1] = extrawt + wts[1]
-        extradraw = qlnorm(pdef + wts[1]/2, meanlog = -sigma^2/2, sdlog = sigma)
-        if (extrawt>0) drawsr = c(extradraw, drawsr) else drawsr[1] = extradraw
-      }
-      EVp = mapply(Valfunc, x = xtplus1 + drawsr, h = htplus1)
-      EV = pdef*Valfunc(B, max(htplus1, delta*hbar)) + sum(EVp*wts)
-    } else {
-      EV = pdef*Valfunc(B, max(htplus1, delta*hbar)) + (1-pdef)*Valfunc(xtplus1+mindraw+1.856, htplus1) ### mean excess for lognormal
-    }
-    r = payoff + beta*EV
-    return(-r)}
 }
 
 ### Bellman Operator
@@ -243,7 +231,7 @@ bellman <- function(w, theta, shockpts = 13, m = 2000){
       r = c(cbar, 0, Vdef, 1)
     } else {
       ### optimization
-      sol = directL(fn = hhprob, 
+      sol = directL(fn = hhprob, #x0 = c(optc, opti),
                     lower = c(0,0), upper = c(x+lambda, x+lambda), 
                     control = list(ftol_rel = 1e-4, ftol_abs = 0, xtol_rel = 0, maxeval = m))
       r = c(sol$par, -sol$value, 0)
@@ -309,6 +297,7 @@ VFI <- function(v0, theta, maxiter = 30, tol = 1e-5, howardk = 10, s2 = 51, mono
     ### if tol is met increase gq points
     if (d < tol) {
       if (tol1) tol2 = TRUE else s = s2; tol1 = TRUE
+      print("adding shocks")
     }
     print(d)
     i = i+1
@@ -349,10 +338,11 @@ momentmatcher <- function(i, vfx, t0, data){
   lambda = t0[6]; sigma = t0[7]; alpha = t0[8]; delta = t0[9]
   df = data[i,]
   wt = sqrt(df$wt_hh/sum(data$wt_hh))
-  e1  = vfx[[1]](df$imputed_bufferstock, df$lag_h) - df$food_consumption
-  e2  = vfx[[2]](df$imputed_bufferstock, df$lag_h) - df$home_investment
+  xaid = df$imputed_bufferstock + df$quake_aid
+  e1  = vfx[[1]](xaid, df$lag_h) - df$food_consumption
+  e2  = vfx[[2]](xaid, df$lag_h) - df$home_investment
   e3 = df$home_value - delta*(df$lag_h + df$home_investment)
-  e4 = df$imputed_bufferstock - df$quake_aid - df$lag_y - R*(df$lag_x - df$lag_c - df$lag_i)
+  e4 = df$imputed_bufferstock - R*(df$lag_x + df$lag_a - df$lag_c - df$lag_i) - df$lag_y
   e5 = log(df$total_income)^2 - sigma^2
   e6 = e1*ihs(df$imputed_bufferstock)
   e7 = e1*log(df$M_avg)

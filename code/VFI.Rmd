@@ -44,7 +44,7 @@ homeRD <- readRDS(paste(rootdir, "/data/model_output/homeRD.rds", sep = ""))
 loanRD <- readRDS(paste(rootdir, "/data/model_output/loanRD.rds", sep = ""))
 b <- readRDS(paste(rootdir, "/data/model_output/optbw.rds", sep = ""))
 df.hh <- readRDS(paste(rootdir, "/data/model_output/df.adj.rds", sep = "")) %>%
-  mutate(x_noaid = imputed_bufferstock - quake_aid,
+  mutate(x_noaid = imputed_bufferstock,
          x_aid = x_noaid + 300000/M_avg,
          lag_h = if_else(is.na(lag_h), home_value/delta - home_investment, lag_h)) %>%  ### this gives post earthquake housing/could estimate pre quake w/losses
   mutate(lag_h = if_else(lag_h<0, 0, lag_h)) %>%
@@ -348,6 +348,31 @@ ggsave(paste(rootdir, "/presentation_materials/counterfactualsbywave.png", sep =
 ggplot(bensbydist) + geom_col(aes(x = designation, y = wtp, fill = designation)) + theme_bw() + 
   theme(text = element_text(size = 20)) + labs(x = "", y = "WTP By District Designation", fill = "")
 ggsave(paste(rootdir, "/presentation_materials/counterfactualsbydist.png", sep = ""), width = 12, height = 7)
+
+ggplot(filter(df.hh, wave==1), aes(x = tau, y = max_interest)) +
+  geom_point(alpha = .3, color = "darkorchid1") +
+  geom_smooth(method = "lm") + labs(x = "WTP", y = "Max Interest Rate on Loans") + 
+  theme_bw()
+
+df.cope1 <- df.hh %>% filter(wave ==1) %>%
+  group_by(dissaving) %>%
+  summarize(wtp = mean(wtp, na.rm = TRUE),
+            tau = mean(tau, na.rm = TRUE))
+
+df.cope2 <- df.hh %>% filter(wave ==1) %>%
+  group_by(cut_food) %>%
+  summarize(wtp = mean(wtp, na.rm = TRUE),
+            tau = mean(tau, na.rm = TRUE))
+
+ggplot(df.cope1) +
+  geom_col(aes(y = tau, x = dissaving, fill = dissaving)) + 
+  labs(x = "WTP", y = "") + 
+  theme_bw()
+
+ggplot(df.cope2) +
+  geom_col(aes(y = tau, x = cut_food, fill = cut_food)) + 
+  labs(x = "WTP", y = "") + 
+  theme_bw()
 ```
 
 ```{r}
@@ -365,6 +390,7 @@ print("wtp sd:"); sqrt(weighted.mean((df.hh$wtp - weighted.mean(df.hh$wtp, df.hh
 print("cor losses wtp:"); cor(df.hh$quake_losses, df.hh$wtp)
 print("cor losses home val:"); cor(df.hh$quake_losses[df.hh$wave==1], df.hh$lag_h[df.hh$wave==1])
 print("cor food (relative):"); cor(df.hh$food_consumption, df.hh$wtp)
+print("cor interest:"); cor(df.hh$max_interest[!is.na(df.hh$max_interest) & df.hh$wave==1], df.hh$tau[!is.na(df.hh$max_interest) & df.hh$wave==1])
 
 print("fraction with losses:"); weighted.mean(df.hh$quake_losses[df.hh$wave==1]>0, df.hh$wt_hh[df.hh$wave==1])
 ```

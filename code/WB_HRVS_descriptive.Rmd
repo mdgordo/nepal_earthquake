@@ -30,13 +30,13 @@ library(rdrobust)
 source(paste(rootdir, "/code/rdhelpers.r", sep = ""))
 
 df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
-df <- filter(df.hh, !is.na(total_income) & food_consumption>0)
+df <- filter(df.hh, !is.na(labor_income) & food_consumption>0 & labor_income>0)
 ```
 
 #### Summary Stats
 
 ```{r}
-dfsum <- df[,c("consumption", "food_consumption", "income_gross", "productive_assets",
+dfsum <- df[,c("consumption", "food_consumption", "total_income", "productive_assets",
               "home_value", "home_investment", "financial_assets",
               "loans_taken_past_year", "loans_made_past_year", "remittance_income",
               "currentlyliving", "n_migrants", "skipped_meal", "aid_cumulative", "received_aid", 
@@ -103,8 +103,6 @@ ggplot(df.loss) +
 ggsave(paste(rootdir, "/presentation_materials/typeofloss.png", sep = ""), width = 12, height = 7)
 ```
 
-Solukhumbhu had higher average losses than Makwanpur - otherwise all heaviest hit districts are in top two categories
-
 ### Risk sharing regressions
 Income doesnt include remittances/transfers/loans or inputs - zeros dropped
 coefficients usually about .2 (see Morten/Townsend)
@@ -112,35 +110,29 @@ coefficients usually about .2 (see Morten/Townsend)
 Heterogeneity
 
 ```{r}
-df <- filter(df, income_gross>0)
-
-risksharing_all <- felm(log(food_consumption) ~ log(income_gross) 
+risksharing_all <- felm(log(food_consumption) ~ log(labor_income) 
                         | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-risksharing_hc1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):caste_recode
+risksharing_hc1 <- felm(log(food_consumption) ~ log(labor_income) + log(labor_income):caste_recode
                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-risksharing_fh1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):femalehh
+risksharing_fh1 <- felm(log(food_consumption) ~ log(labor_income) + log(labor_income):femalehh
                         | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-risksharing_l1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):land_qtle
+risksharing_l1 <- felm(log(food_consumption) ~ log(labor_income) + log(labor_income):land_qtle
                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-risksharing_r1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):region
+risksharing_q1 <- felm(log(food_consumption) ~ log(labor_income) + log(labor_income):gorkha_hh
                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-risksharing_q1 <- felm(log(food_consumption) ~ log(income_gross) + log(income_gross):gorkha_hh
-                       | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
+mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_q1)
 
-mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_r1, risksharing_q1)
-
-stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           notes = c("All regressions include household and village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
 
 weighted.mean(df.hh$remittance_income[df.hh$femalehh==1]>0, df.hh$wt_hh[df.hh$femalehh==1], na.rm = TRUE)
@@ -151,35 +143,65 @@ weighted.mean(df.hh$remittance_income[df.hh$femalehh==0]>0, df.hh$wt_hh[df.hh$fe
 Interestingly, more likely to sell livestock than buy in a good year, but must be investing in other assets
 
 ```{r}
-pubtransreg <- felm(log(pub_transfers + 1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
+pubtransreg <- felm(log(pub_transfers + 1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-inftransreg <- felm(log(inf_transfers + 1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
+inftransreg <- felm(log(inf_transfers + 1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-aidreg <- felm(log(quake_aid + 1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
+aidreg <- felm(log(quake_aid + 1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-ngoreg <- felm(log(NGO_transfers + 1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
+ngoreg <- felm(log(NGO_transfers + 1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-migreg <- felm(log(migrants_past_year+1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
+migreg <- felm(log(migrants_past_year+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-remreg2 <- felm(log(remittance_income + 1) ~ log(income_gross) + log(lag_remitt + 1) | as.factor(hhid) | 0 | strata,
+remreg2 <- felm(log(remittance_income + 1) ~ log(labor_income) + log(lag_remitt + 1) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-loanreg2 <- felm(log(loans_taken_past_year + 1) ~ log(income_gross) + log(lag_loan + 1) | as.factor(hhid) | 0 | strata,
+loanreg2 <- felm(log(loans_taken_past_year + 1) ~ log(labor_income) + log(lag_loan + 1) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
-livereg2 <- felm(log(productive_assets+1) ~ log(income_gross) | as.factor(hhid) | 0 | strata,
+livereg1 <- felm(log(livestock_purchases+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+livereg2 <- felm(log(livestock_sales+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+landreg1 <- felm(log(land_purchased+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+landreg2 <- felm(log(land_sales+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+eqreg1 <- felm(log(equip_purchases+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+eqreg2 <- felm(log(equip_sales+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+bizreg1 <- felm(log(business_investment+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+bizreg2 <- felm(log(business_asset_sales+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+schoolreg <- felm(log(school_costs+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
                     data = df, weights = df$wt_hh, na.action = na.omit)
 
 mods <- list(aidreg, pubtransreg, ngoreg, remreg2, migreg, loanreg2)
 
-stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
-          add.lines = list(c("Fixed Effects", rep("Household", 8)),
-                           c("Cluster", rep("Ward", 8))))
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Household", 6)),
+                           c("Cluster", rep("Ward", 6))))
+
+mods <- list(livereg1, livereg2, landreg1, landreg2, eqreg1, eqreg2, bizreg1, bizreg2, schoolreg)
+
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Household", 9)),
+                           c("Cluster", rep("Ward", 9))))
 ```
 ### Progressivity - land value - VDC-YR FE
 
@@ -207,7 +229,7 @@ cloanregvdc <- felm(log(loans_taken_past_year+1) ~ land_qtle | as.factor(vdc_yr)
 
 mods <- list(caidregvdc, cpubtransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
 
-stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
           add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
                            c("Cluster", rep("Ward", 8))))
 ```
@@ -620,33 +642,6 @@ ggplot(df.coping) +
 ggsave(paste(rootdir, "/presentation_materials/coping.png", sep = ""), width = 10, height = 7)
 ```
 
-
-### Mapping district designations: 
-https://www.preventionweb.net/files/63268_18moderatelyaffecteddistrictsovervi.pdf 
-#### green dots are border districts (<50 km)
-
-
-```{r}
-df.RS <- read_csv(paste(rootdir, "/data/remote_sensing/UF1416_masked.csv", sep = "")) %>%
-  mutate(UFchg_100m = UF16_100m_mean - UF14_100m_mean,
-         UFchg_250m = UF16_250m_mean - UF14_250m_mean,
-         UFchg_500m = UF16_500m_mean - UF14_500m_mean)
-
-df.wards <- merge(df.wards, df.RS[,c("district", "distname", "vdc", "ward", "UFchg_100m", "UFchg_250m", "UFchg_500m")], 
-                  by = c("district", "distname", "vdc", "ward"))
-```
-
-```{r}
-RSmap <- ggplot() +
-        geom_sf(data = df.shp) +
-        geom_sf(data = df.designations, aes(color = designation, fill = designation), alpha = .3) +
-        scale_color_manual(values = c("red", "orange", "yellow", "green", "blue")) +
-        scale_fill_manual(values = c("red", "orange", "yellow", "green", "blue")) +
-        new_scale_color() +
-        geom_sf(data = df.wards, aes(color = UFchg_250m)) + scale_color_gradient2(low = "red", high = "blue") +
-        theme_light() + theme(legend.title = element_blank(), axis.text = element_blank())
-RSmap
-```
 
 FEMA data from: https://www.fema.gov/openfema-data-page/individuals-and-households-program-valid-registrations-v1 
 

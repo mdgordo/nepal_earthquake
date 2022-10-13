@@ -5,6 +5,7 @@ library(raster, exclude = "select")
 library(sf)
 library(tidyverse)
 library(readstata13)
+library(geodata)
 
 setwd("data")
 
@@ -55,6 +56,12 @@ border14_segments <- st_sf(segment = c("seg1", "seg2", "seg3"), geometry = c(seg
 latline <- st_sfc(st_linestring(rbind(c(84,28), c(85, 28))), crs = 4326)
 seg1pt <- st_intersection(seg1, latline)
 saveRDS(seg1pt, paste(getwd(), "/model_output/borderpt.rds", sep = ""))
+latline2 <- st_sfc(st_linestring(rbind(c(83,27.9), c(86, 27.9))), crs = 4326)
+seg1pt2 <- st_intersection(seg1, latline2)
+saveRDS(seg1pt2, paste(getwd(), "/model_output/borderpt2.rds", sep = ""))
+latline3 <- st_sfc(st_linestring(rbind(c(83,28.1), c(86, 28.1))), crs = 4326)
+seg1pt3 <- st_intersection(seg1, latline3)
+saveRDS(seg1pt3, paste(getwd(), "/model_output/borderpt3.rds", sep = ""))
 
 #ggplot() + geom_sf(data = border14_segments, aes(color = segment)) +
 #  geom_sf(data = seg1pt, shape = 3)
@@ -75,6 +82,8 @@ df.wards$placebo2_segment <- st_nearest_feature(wards.sf, placebo2_segments)
 df.wards$dist_2_14 <- as.numeric(st_distance(wards.sf, st_union(border14_segments)))/1000
 df.wards$dist_2_seg1 <- as.numeric(st_distance(wards.sf, seg1))/1000
 df.wards$dist_2_seg1pt <- as.numeric(st_distance(wards.sf, seg1pt))/1000
+df.wards$dist_2_seg1pt2 <- as.numeric(st_distance(wards.sf, seg1pt2))/1000
+df.wards$dist_2_seg1pt3 <- as.numeric(st_distance(wards.sf, seg1pt3))/1000
 df.wards$dist_2_seg3 <- as.numeric(st_distance(wards.sf, seg3))/1000
 df.wards$dist_2_seg13 <- as.numeric(st_distance(wards.sf, st_union(border14_segments[border14_segments$segment!="seg2",])))/1000
 df.wards$dist_2_placebo1 <- as.numeric(st_distance(wards.sf, st_union(placebo1_segments)))/1000
@@ -86,8 +95,7 @@ raster_sf <- function(r){
   r <- as.data.frame(r, xy=TRUE)
 }
 
-### These rasters have longitude as x and lat as y, hence the flip below
-npl.alt <- getData("alt", country = "NPL", mask = TRUE, path = paste(getwd(), "/elevation", sep = ""))
+npl.alt <- raster(elevation_30s(country = "NPL", mask = TRUE, path = paste(getwd(), "/elevation", sep = "")))
 npl.ter <- raster_sf(terrain(npl.alt, opt = c("slope", "aspect"), unit = "degrees"))
 npl.alt <- raster_sf(npl.alt)
 
@@ -98,18 +106,18 @@ npl.shk <- raster_sf(crop(npl.shk, y = df.shp))
 
 ggplot() + geom_sf(data = df.shp) + geom_sf(data = border14_segments, aes(color = segment)) +
   geom_sf(data = wards.sf) +
-  geom_raster(data = npl.alt, aes(x = y, y = x, fill = NPL_msk_alt), alpha = .5) +
+  geom_raster(data = npl.alt, aes(x = x, y = y, fill = NPL_elv_msk), alpha = .5) +
   scale_fill_viridis_c() + theme_light()
 
 npl.shk <- st_as_sf(npl.shk, coords = c("x", "y")) %>% filter(!is.na(pga_mean))
 st_crs(npl.shk) <- st_crs(wards.sf)
-npl.alt <- st_as_sf(npl.alt, coords = c("y", "x")) %>% filter(!is.na(NPL_msk_alt))
+npl.alt <- st_as_sf(npl.alt, coords = c("x", "y")) %>% filter(!is.na(NPL_elv_msk))
 st_crs(npl.alt) <- st_crs(wards.sf)
 npl.ter <- st_as_sf(npl.ter, coords = c("y", "x")) %>% filter(!is.na(slope))
 st_crs(npl.ter) <- st_crs(wards.sf)
 
 df.wards$shake_pga <- npl.shk$pga_mean[st_nearest_feature(wards.sf, npl.shk)]
-df.wards$elevation <- npl.alt$NPL_msk_alt[st_nearest_feature(wards.sf, npl.alt)]
+df.wards$elevation <- npl.alt$NPL_elv_msk[st_nearest_feature(wards.sf, npl.alt)]
 df.wards$slope <- npl.ter$slope[st_nearest_feature(wards.sf, npl.ter)]
 df.wards$aspect <- npl.ter$aspect[st_nearest_feature(wards.sf, npl.ter)]
 
@@ -121,6 +129,8 @@ df.wards <- mutate(df.wards, dist_14 = if_else(is.na(dist_14),0,dist_14),
             mutate(dist_2_14 = if_else(dist_14==1, dist_2_14, -1*dist_2_14),
                    dist_2_seg1 = if_else(dist_14==1, dist_2_seg1, -1*dist_2_seg1),
                    dist_2_seg1pt = if_else(dist_14==1, dist_2_seg1pt, -1*dist_2_seg1pt),
+                   dist_2_seg1pt2 = if_else(dist_14==1, dist_2_seg1pt2, -1*dist_2_seg1pt2),
+                   dist_2_seg1pt3 = if_else(dist_14==1, dist_2_seg1pt3, -1*dist_2_seg1pt3),
                    dist_2_seg3 = if_else(dist_14==1, dist_2_seg3, -1*dist_2_seg3),
                    dist_2_seg13 = if_else(dist_14==1, dist_2_seg13, -1*dist_2_seg13),
                    dist_2_placebo1 = if_else(distname %in% c("Rasuwa", "Nuwakot", "Sindhupalchok"), dist_2_placebo1, -1*dist_2_placebo1),
@@ -167,7 +177,7 @@ folders <- c("Wave 1 - Household", "Wave 2 - Household", "Wave 3 - Household")
 ### function for finding respondents that answered "don't know"
 finddks <- function(data, vars){
   df <- filter_at(data, vars(vars), all_vars(!is.na(.)))
-  df <- filter_at(df, vars(vars), any_vars(. %in% c(998,999)))
+  df <- filter_at(df, vars(vars), any_vars(. %in% c(998,999,Inf,-Inf)))
   return(df$hhid)
 }
 
@@ -698,7 +708,8 @@ for (i in c(1:3)) {
                         loans_total = sum(s12q06, na.rm = TRUE),
                         loan_payments = sum(s12q11, na.rm = TRUE),
                         avg_interest = weighted.mean(s12q09, s12q06, na.rm = TRUE),
-                        avg_interest_past_year = weighted.mean(s12q09, loans_taken, na.rm = TRUE))                  ### payments are not necessarily last 12 months
+                        avg_interest_past_year = weighted.mean(s12q09, loans_taken, na.rm = TRUE),
+                        max_interest = max(s12q09, na.rm = TRUE))                  ### payments are not necessarily last 12 months
       df.hh <- merge(df.hh, df.credit1, by = "hhid", all = TRUE)
       df.hh <- mutate(df.hh, loans_taken_past_year = if_else(is.na(loans_taken_past_year),0,loans_taken_past_year),
                       loans_total = if_else(is.na(loans_total),0,loans_total),
@@ -709,6 +720,7 @@ for (i in c(1:3)) {
       df.hh$loan_payments[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q11"))] <- NA
       df.hh$avg_interest[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA
       df.hh$avg_interest_past_year[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA
+      df.hh$max_interest[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA
       rm(df.credit1, df.hrvs_12a)
       
       df.hrvs_12b <- read.dta13("Section_12b.dta")
@@ -932,15 +944,12 @@ for (i in c(1:3)) {
         df.hh$emotion_good <- NA
       }
       
-      ######## merge survey and ward dataframes ############# - land rents paid
+      ######## merge survey and ward dataframes ############# 
       df.hh <- mutate(df.hh, income = annual_wages + landrents + rent_earned + wet_ag_sales + dry_ag_sales + food_home_production*52 + livestock_income + business_revenues + 
                           equip_rental_income + if_else(is.na(cap_gains),0,cap_gains) - business_expenses - livestock_costs - ag_costs - landrent_paid_cash - landrent_paid_inkind,
                       income_gross = annual_wages + landrents + rent_earned + wet_ag_sales + dry_ag_sales + food_home_production*52 + livestock_income + business_revenues + 
                         equip_rental_income + if_else(is.na(cap_gains),0,cap_gains),
-                      inputs = business_expenses + livestock_costs + ag_costs + landrent_paid_cash + landrent_paid_inkind,
                       income_pc = income/currentlyliving,
-                      ag_livestock_income = wet_ag_sales + dry_ag_sales + food_home_production*52 + livestock_income - livestock_costs - ag_costs - landrent_paid_cash - landrent_paid_inkind,
-                      business_income = business_revenues - business_expenses,
                       consumption = food_home_production*52 + food_market*52 + food_inkind*52 + durables_consumption + energy + utilities_paid + rent_paid + transportation + 
                           clothing_cleaning_home + entertainment_other + other_expenses + craft_consumption,
                       consumption_pc = consumption/currentlyliving,
@@ -963,12 +972,21 @@ for (i in c(1:3)) {
                       inf_transfers = gifts_received_cash + gifts_received_inkind,
                       inf_transfers_made = gifts_given_cash + gifts_given_inkind,
                       NGO_transfers = NGO_cash + NGO_inkind,
-                      total_income = income_gross + pub_transfers,
-                      total_outlays_net = loans_made_past_year + loan_payments + financial_assets + inf_transfers_made + 
-                        migration_costs - loans_taken_past_year - loan_payments_received - inf_transfers - 
-                        remittance_income - food_inkind*52,
-                      imputed_bufferstock = total_outlays_net + food_consumption + home_investment,
+                      labor_income = annual_wages + work_aid_wages + wet_ag_sales + dry_ag_sales + food_home_production*52 + 
+                        business_revenues,
+                      labor_supply = wage_labor_days + self_emp_days + work_aid_days,
+                      wage_rate = labor_income/labor_supply*(365-days_ill),
+                      passive_income = landrents + pension + non_quake_aid + public_asst_inkind, ## ignores housing rent
+                      total_income = labor_income + passive_income,
                       total_income_pc = total_income/currentlyliving,
+                      savings = loans_made_past_year - loans_taken_past_year + inf_transfers_made - inf_transfers - food_inkind*52 +
+                        financial_assets + savings_group + insurance_assets + equip_stock + livestock_value + livestock_costs +
+                        migration_costs - remittance_income, #treats migration costs and remittances as zero interest loans
+                      capital_income = equip_rental_income + if_else(is.na(cap_gains),0,cap_gains) + livestock_income + 
+                        loan_payments_received - loan_payments,
+                      imputed_bufferstock = savings + food_consumption + home_investment - quake_aid,
+                      cap_inputs = business_expenses + ag_costs + landrent_paid_cash,
+                      human_cap_inputs = school_costs + health_costs,
                       market_shocks = riot_losses + price_shock_losses,
                       natural_shocks = livestock_farm_losses + other_nat_disaster_losses,
                       idiosyncratic_shocks = illness_injury_losses + violence_losses + job_default_losses,
@@ -984,8 +1002,6 @@ for (i in c(1:3)) {
       rm(df.hh, path)
       setwd("..")
 }
-
-## Total loans, total remittances, hh size vars
 
 setwd("..")
 setwd("processed")

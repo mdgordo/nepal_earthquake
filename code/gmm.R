@@ -16,7 +16,7 @@ iterations <- readRDS(paste(getwd(), "/data/model_output/iterations.rds", sep = 
 iterations <- mutate(iterations, obj = m_1^2 + m_2^2 + m_3^2 + m_4^2 + m_5^2 + m_6^2 + 
                        m_7^2 + m_8^2 + m_9^2 + m_10^2 + m_11^2)
 
-#ggplot(iterations) + geom_point(aes(x = cbar, y = alpha, color = obj)) + scale_color_viridis_c(trans = "log")
+ggplot(iterations) + geom_point(aes(x = R, y = gamma, color = m_1^2)) + scale_color_viridis_c(trans = "log")
 
 modfunc <- function(m){
   X = iterations[,c(1:9)]
@@ -31,6 +31,7 @@ modfunc <- function(m){
 #momentvars <- paste("m", seq(1,11,1), sep = "_")
 #modlist <- mclapply(momentvars, modfunc, mc.cores = max(11,detectCores()-2))
 mod <- modfunc("obj")
+#summary(mod)
 
 smoothedobj <- function(t){
   if (t[2]*t[3] > 1 | t[4] > t[8] | t[5] > 1 - t[8]){
@@ -58,6 +59,20 @@ print(theta)
 df.adj <- readRDS(paste(getwd(), "/data/model_output/df.adj.rds", sep = ""))
 df.adj <- df.adj[complete.cases(df.adj),]
 
+### moment scratch pad
+df.adj <- mutate(df.adj, rlhs = imputed_bufferstock - lag_y, rrhs = lag_x + lag_a - lag_c - lag_i,
+                 drhs = lag_h + home_investment)
+rreg <- lm(rlhs ~ rrhs + 0, df.adj)
+dreg <- lm(home_value ~ drhs + 0, df.adj)
+summary(rreg)
+summary(dreg)
+ggplot(df.adj, aes(x = rrhs, y = rlhs)) + geom_point() + geom_smooth(method = "lm", formula = y~x+0)
+ggplot(df.adj, aes(y = home_value, x = drhs)) + geom_point() + geom_smooth(method = "lm", formula = y~x+0) 
+
+ggplot(filter(iterations, abs(m_1)<50)) + geom_point(aes(x = R, y = gamma, color = m_1^2)) + scale_color_viridis_c(trans = "log")
+ggplot(iterations) + geom_histogram(aes(x = m_1))
+lapply(iterations[10:20], var)
+  
 ### Grid size
 xn = 50; hn = 50
 
@@ -96,5 +111,5 @@ v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
                                   "cfx" = rep(0, nrow(statespace)),
                                   "ifx" = rep(0, nrow(statespace)),
                                   "def" = rep(0, nrow(statespace))))
-V = VFI(v0, theta)
+V = VFI(v0, theta, maxiter = 6)
 saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
