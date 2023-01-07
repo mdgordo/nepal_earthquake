@@ -56,38 +56,16 @@ border14_segments <- st_sf(segment = c("seg1", "seg2", "seg3"), geometry = c(seg
 latline <- st_sfc(st_linestring(rbind(c(84,28), c(85, 28))), crs = 4326)
 seg1pt <- st_intersection(seg1, latline)
 saveRDS(seg1pt, paste(getwd(), "/model_output/borderpt.rds", sep = ""))
-latline2 <- st_sfc(st_linestring(rbind(c(83,27.9), c(86, 27.9))), crs = 4326)
-seg1pt2 <- st_intersection(seg1, latline2)
-saveRDS(seg1pt2, paste(getwd(), "/model_output/borderpt2.rds", sep = ""))
-latline3 <- st_sfc(st_linestring(rbind(c(83,28.1), c(86, 28.1))), crs = 4326)
-seg1pt3 <- st_intersection(seg1, latline3)
-saveRDS(seg1pt3, paste(getwd(), "/model_output/borderpt3.rds", sep = ""))
 
 #ggplot() + geom_sf(data = border14_segments, aes(color = segment)) +
 #  geom_sf(data = seg1pt, shape = 3)
 
-placebo1a <- st_union(st_intersection(st_buffer(placebo_border1, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name=="Dhading"]), "MULTILINESTRING")))
-placebo1b <- st_union(st_intersection(st_buffer(placebo_border1, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name %in% c("Dolakha", "Kabhrepalanchok")]), "MULTILINESTRING")))
-placebo1_segments <- st_sf(segment = c("placebo1a", "placebo1b"), geometry = c(placebo1a, placebo1b))
-
-placebo2a <- st_union(st_intersection(st_buffer(placebo_border2, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name %in% c("Lamjung", "Tanahun", "Chitwan")]), "MULTILINESTRING")))
-placebo2b <- st_union(st_intersection(st_buffer(placebo_border2, 5), st_cast(st_union(df.shp$geometry[df.shp$district_name %in% c("Solukhumbu", "Khotang")]), "MULTILINESTRING")))
-placebo2_segments <- st_sf(segment = c("placebo2a", "placebo2b"), geometry = c(placebo2a, placebo2b))
-
 df.wards$border14_segment <- st_nearest_feature(wards.sf, border14_segments)
 df.wards$border_segment13 <- st_nearest_feature(wards.sf, border14_segments[border14_segments$segment!="seg2",])
-df.wards$placebo1_segment <- st_nearest_feature(wards.sf, placebo1_segments)
-df.wards$placebo2_segment <- st_nearest_feature(wards.sf, placebo2_segments)
 ### distance to border 14 segments doesn't include distance to border with China
 df.wards$dist_2_14 <- as.numeric(st_distance(wards.sf, st_union(border14_segments)))/1000
 df.wards$dist_2_seg1 <- as.numeric(st_distance(wards.sf, seg1))/1000
 df.wards$dist_2_seg1pt <- as.numeric(st_distance(wards.sf, seg1pt))/1000
-df.wards$dist_2_seg1pt2 <- as.numeric(st_distance(wards.sf, seg1pt2))/1000
-df.wards$dist_2_seg1pt3 <- as.numeric(st_distance(wards.sf, seg1pt3))/1000
-df.wards$dist_2_seg3 <- as.numeric(st_distance(wards.sf, seg3))/1000
-df.wards$dist_2_seg13 <- as.numeric(st_distance(wards.sf, st_union(border14_segments[border14_segments$segment!="seg2",])))/1000
-df.wards$dist_2_placebo1 <- as.numeric(st_distance(wards.sf, st_union(placebo1_segments)))/1000
-df.wards$dist_2_placebo2 <- as.numeric(st_distance(wards.sf, st_union(placebo2_segments)))/1000
 
 ### Elevation data
 raster_sf <- function(r){
@@ -106,14 +84,15 @@ npl.shk <- raster_sf(crop(npl.shk, y = df.shp))
 
 ggplot() + geom_sf(data = df.shp) + geom_sf(data = border14_segments, aes(color = segment)) +
   geom_sf(data = wards.sf) +
-  geom_raster(data = npl.alt, aes(x = x, y = y, fill = NPL_elv_msk), alpha = .5) +
+  #geom_raster(data = npl.alt, aes(x = x, y = y, fill = NPL_elv_msk), alpha = .5) +
+  geom_raster(data = npl.ter, aes(x = x, y = y, fill = slope), alpha = .5) +
   scale_fill_viridis_c() + theme_light()
 
 npl.shk <- st_as_sf(npl.shk, coords = c("x", "y")) %>% filter(!is.na(pga_mean))
 st_crs(npl.shk) <- st_crs(wards.sf)
 npl.alt <- st_as_sf(npl.alt, coords = c("x", "y")) %>% filter(!is.na(NPL_elv_msk))
 st_crs(npl.alt) <- st_crs(wards.sf)
-npl.ter <- st_as_sf(npl.ter, coords = c("y", "x")) %>% filter(!is.na(slope))
+npl.ter <- st_as_sf(npl.ter, coords = c("x", "y")) %>% filter(!is.na(slope))
 st_crs(npl.ter) <- st_crs(wards.sf)
 
 df.wards$shake_pga <- npl.shk$pga_mean[st_nearest_feature(wards.sf, npl.shk)]
@@ -128,15 +107,9 @@ df.wards <- mutate(df.wards, dist_14 = if_else(is.na(dist_14),0,dist_14),
                 designation = if_else(is.na(designation),"none",as.character(designation))) %>%
             mutate(dist_2_14 = if_else(dist_14==1, dist_2_14, -1*dist_2_14),
                    dist_2_seg1 = if_else(dist_14==1, dist_2_seg1, -1*dist_2_seg1),
-                   dist_2_seg1pt = if_else(dist_14==1, dist_2_seg1pt, -1*dist_2_seg1pt),
-                   dist_2_seg1pt2 = if_else(dist_14==1, dist_2_seg1pt2, -1*dist_2_seg1pt2),
-                   dist_2_seg1pt3 = if_else(dist_14==1, dist_2_seg1pt3, -1*dist_2_seg1pt3),
-                   dist_2_seg3 = if_else(dist_14==1, dist_2_seg3, -1*dist_2_seg3),
-                   dist_2_seg13 = if_else(dist_14==1, dist_2_seg13, -1*dist_2_seg13),
-                   dist_2_placebo1 = if_else(distname %in% c("Rasuwa", "Nuwakot", "Sindhupalchok"), dist_2_placebo1, -1*dist_2_placebo1),
-                   dist_2_placebo2 = if_else(designation %in% c("severe", "crisis", "heavy"), dist_2_14, -1*dist_2_14))
+                   dist_2_seg1pt = if_else(dist_14==1, dist_2_seg1pt, -1*dist_2_seg1pt))
 
-rm(border14_segments, crisis, heavy, dist_14, epicenter, seg1, seg2, seg3, severe, placebo1_segments, placebo2_segments, placebo1a, placebo2a, placebo1b, placebo2b, placebo_border1, placebo_border2)
+rm(border14_segments, crisis, heavy, dist_14, epicenter, seg1, seg2, seg3, severe)
 
 ##### construct weights - email from Thomas Walker ######
 df.wards <- df.wards %>% mutate(strata = if_else(district %in% c(69,70,74), 21,
@@ -308,6 +281,8 @@ for (i in c(1:3)) {
               mutate(utilities = rowSums(.[,c("s04q21", "s04q23")], na.rm = TRUE) + 12*s04q24b,
                      steep_slope = if_else(s04q01==3, 1, 0),
                      home_sqft = s04q13*s04q14*s04q02,
+                     home_plot_area = 508.737047*if_else(s04q12a==1, s04q12b_r + s04q12b_a/16 + s04q12b_p/64,
+                                         13.31*(s04q12b_b + s04q12b_k/20 + s04q12b_d/400)), ## units in sqm - conversions from: https://en.wikipedia.org/wiki/Nepalese_customary_units_of_measurement
                      cement_walls = if_else(s04q15==1,1,0),
                      cement_foundation = if_else(s04q16==2,1,0),
                      iron_cement_roof = if_else(s04q17 %in% c(4,5,6),1,0)) %>%
@@ -332,6 +307,7 @@ for (i in c(1:3)) {
                         n_floors = sum(s04q02, na.rm = TRUE),
                         n_rooms = sum(s04q08, na.rm = TRUE),
                         home_sqft = sum(home_sqft, na.rm = TRUE),
+                        home_plot_area = sum(home_plot_area, na.rm = TRUE),
                         time_to_market = sum(time_to_market, na.rm = TRUE),
                         time_to_bank = sum(time_to_bank, na.rm = TRUE),
                         time_to_school = sum(time_to_school, na.rm = TRUE),
@@ -425,8 +401,10 @@ for (i in c(1:3)) {
                                                         "Funeral and death related expenses", "Income taxes, land taxes, housing and property taxes", 
                                                         "Postal expenses, telegrams, fax, telephone", "Legal expenses and insurance (life, car, etc", 
                                                         "Excursion, holiday, (including travel and lodging)"), 0, s06q02),
-                     home_investment = ifelse(nonfoodid %in% c("Repair and maintenance of the house", "	Repair and servicing of household effects",
-                                                               "Home improvements and additions"), s06q02, 0), 
+                     home_investment = ifelse(nonfoodid %in% c("Repair and maintenance of the house", "Repair and servicing of household effects",
+                                                               "Home improvements and additions", "Heaters (electric, gas, kerosene)",
+                                                               "Kitchen appliances (refrigerator, cooking range, blenders,etc.)",
+                                                               "Furniture and fixtures"), s06q02, 0), 
                      other_expenses = ifelse(nonfoodid %in% c("Postal expenses, telegrams, fax, telephone", "Legal expenses and insurance (life, car, etc", 
                                                              "Excursion, holiday, (including travel and lodging)"), s06q02, 0)) %>%
               group_by(hhid) %>%
@@ -450,11 +428,15 @@ for (i in c(1:3)) {
       
       df.hrvs_6c <- read.dta13("Section_6c.dta")
       df.durables <- df.hrvs_6c %>%
+              mutate(jewelery = if_else(inventoryid=="Jewelry (including watches", s06q03b, 0)) %>%
               group_by(hhid) %>%
-              summarize(durables_stock = sum(s06q03b, na.rm = TRUE))
+              summarize(durables_stock = sum(s06q03b, na.rm = TRUE),
+                        jewelery = sum(jewelery, na.rm = TRUE))
       df.hh <- merge(df.hh, df.durables, by = "hhid", all = TRUE)
-      df.hh <- mutate(df.hh, durables_stock = if_else(is.na(durables_stock),0,durables_stock))
+      df.hh <- mutate(df.hh, durables_stock = if_else(is.na(durables_stock),0,durables_stock), 
+                      jewelery = if_else(is.na(jewelery),0,jewelery))
       df.hh$durables_stock[df.hh$hhid %in% finddks(df.hrvs_6c, c("s06q03b"))] <- NA
+      df.hh$jewelery[df.hh$hhid %in% finddks(df.hrvs_6c, c("s06q03b"))] <- NA
       rm(df.durables, df.hrvs_6c)
       
       df.hrvs_6d <- read.dta13("Section_6d.dta")
@@ -680,40 +662,69 @@ for (i in c(1:3)) {
       df.hrvs_11 <- read.dta13("Section_11.dta")
       df.remittance_income <- mutate(df.hrvs_11, migration_costs = if_else(s11q03 < 13, s11q08b, 0),
                                      pastyear = if_else(s11q03 < 13, 1, 0),
-                                     overseas = if_else(s11q02==2,1,0),
-                                     not_roster = if_else(s11q01a==2,1,0)) %>%
+                                     ### history vars for first wave
+                                     migrant_male = if_else(s11q01c==2 & s11q03 >12,1,0),
+                                     migrant_educated = if_else(s11q01e==2 & s11q03 >12, 1, 0),
+                                     migrant_kat = if_else(s11q02a==27 & s11q03 >12,1,0),
+                                     migrant_india = if_else(s11q02b==81 & s11q03 >12,1,0),
+                                     migrant_other_asia = if_else(s11q02b %in% c(82:86) & s11q03 >12,1,0),
+                                     migrant_mideast = if_else(s11q02b %in% c(87:89) & s11q03 >12,1,0),
+                                     migrant_working = if_else(s11q05a==3 & s11q03 >12,1,0),
+                                     migrant_earnings = if_else(s11q03 >12, if_else(s11q05c==998 | is.na(s11q05c), 0, s11q05c) + if_else(s11q06c==998 | is.na(s11q06c), 0, s11q06c), 0),
+                                     overseas = if_else(s11q02==2,1,0)) %>%
               group_by(hhid) %>%
               summarize(n_migrants = as.numeric(n()),
-                        tot_hhmembers = sum(not_roster, na.rm = TRUE),
+                        migrant_male = sum(migrant_male, na.rm = TRUE),
+                        migrant_educated = sum(migrant_educated, na.rm = TRUE),
+                        migrant_kat = sum(migrant_kat, na.rm = TRUE),
+                        migrant_india = sum(migrant_india, na.rm = TRUE),
+                        migrant_other_asia = sum(migrant_other_asia, na.rm = TRUE),
+                        migrant_mideast = sum(migrant_mideast, na.rm = TRUE),
+                        migrant_working = sum(migrant_working, na.rm = TRUE),
+                        migrant_earnings = sum(migrant_earnings, na.rm = TRUE),
                         migrants_overseas = sum(overseas, na.rm = TRUE),
                         migrants_past_year = sum(pastyear, na.rm = TRUE),
                         remittance_income = sum(s11q07c, na.rm = TRUE),
                         migration_costs = sum(migration_costs, na.rm = TRUE))
       df.hh <- merge(df.hh, df.remittance_income, by = "hhid", all = TRUE)
       df.hh <- mutate(df.hh, n_migrants = if_else(is.na(n_migrants),0,n_migrants),
-                      tot_hhmembers = if_else(is.na(tot_hhmembers),0,tot_hhmembers) + hhmembers,
                       migrants_overseas = if_else(is.na(migrants_overseas),0,migrants_overseas),
                       migrants_past_year = if_else(is.na(migrants_past_year),0,migrants_past_year),
                       remittance_income = if_else(is.na(remittance_income),0,remittance_income),
                       migration_costs = if_else(is.na(migration_costs),0,migration_costs),
-                      prev_migrants = n_migrants - migrants_past_year)
+                      prev_migrants = n_migrants - migrants_past_year,
+                      migrant_male = if_else(is.na(migrant_male),0,migrant_male),
+                      migrant_educated = if_else(is.na(migrant_educated),0,migrant_educated),
+                      migrant_kat = if_else(is.na(migrant_kat),0,migrant_kat),
+                      migrant_india = if_else(is.na(migrant_india),0,migrant_india),
+                      migrant_other_asia = if_else(is.na(migrant_other_asia),0,migrant_other_asia),
+                      migrant_mideast = if_else(is.na(migrant_mideast),0,migrant_mideast),
+                      migrant_working = if_else(is.na(migrant_working),0,migrant_working),
+                      migrant_earnings = if_else(is.na(migrant_earnings),0,migrant_earnings))
       df.hh$remittance_income[df.hh$hhid %in% finddks(df.hrvs_11, c("s11q07c"))] <- NA
       df.hh$migration_costs[df.hh$hhid %in% finddks(df.hrvs_11, c("s11q08b"))] <- NA
       rm(df.remittance_income, df.hrvs_11)
       
       df.hrvs_12a <- read.dta13("Section_12a.dta")
-      df.credit1 <- mutate(df.hrvs_12a, loans_taken = if_else(s12q05 < 13, s12q06, 0)) %>%
+      df.credit1 <- mutate(df.hrvs_12a, loans_taken = if_else(s12q05 < 13, s12q06, 0),
+                           interest_paid = s12q11*s12q09/100,       ### assumption that interest rates are for entire term is a lot cleaner
+                           principal_paid = s12q11 - interest_paid) %>%  
               group_by(hhid) %>%
               summarize(loans_taken_past_year = sum(loans_taken, na.rm = TRUE),
                         loans_total = sum(s12q06, na.rm = TRUE),
-                        loan_payments = sum(s12q11, na.rm = TRUE),
+                        loan_payments = sum(s12q11, na.rm = TRUE),  ### payments are not necessarily last 12 months
+                        interest_paid = sum(interest_paid, na.rm = TRUE),
+                        principal_paid = sum(principal_paid, na.rm = TRUE),
                         avg_interest = weighted.mean(s12q09, s12q06, na.rm = TRUE),
                         avg_interest_past_year = weighted.mean(s12q09, loans_taken, na.rm = TRUE),
-                        max_interest = max(s12q09, na.rm = TRUE))                  ### payments are not necessarily last 12 months
+                        max_interest = max(s12q09, na.rm = TRUE))                  
       df.hh <- merge(df.hh, df.credit1, by = "hhid", all = TRUE)
       df.hh <- mutate(df.hh, loans_taken_past_year = if_else(is.na(loans_taken_past_year),0,loans_taken_past_year),
                       loans_total = if_else(is.na(loans_total),0,loans_total),
                       loan_payments = if_else(is.na(loan_payments),0,loan_payments),
+                      interest_paid = if_else(is.na(interest_paid),0,interest_paid),
+                      principal_paid = if_else(is.na(principal_paid),0,principal_paid),
+                      max_interest = if_else(is.infinite(max_interest),as.numeric(NA),max_interest),
                       prev_loans_taken = loans_total - loans_taken_past_year)
       df.hh$loans_taken_past_year[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06"))] <- NA
       df.hh$loans_total[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06"))] <- NA
@@ -721,24 +732,34 @@ for (i in c(1:3)) {
       df.hh$avg_interest[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA
       df.hh$avg_interest_past_year[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA
       df.hh$max_interest[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA
+      df.hh$interest_paid[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06", "s12q09", "s12q11"))] <- NA
+      df.hh$principal_paid[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06", "s12q09", "s12q11"))] <- NA
       rm(df.credit1, df.hrvs_12a)
       
       df.hrvs_12b <- read.dta13("Section_12b.dta")
-      df.credit2 <- mutate(df.hrvs_12b, loans_made = if_else(s12q16 < 13, s12q17, 0)) %>%
+      df.credit2 <- mutate(df.hrvs_12b, loans_made = if_else(s12q16 < 13, s12q17, 0),
+                           interest_received = s12q21*s12q19/100,
+                           principal_received = s12q21 - interest_received) %>%
               group_by(hhid) %>%
               summarize(loans_made_past_year = sum(loans_made, na.rm = TRUE),
                         loans_made_total = sum(s12q17, na.rm = TRUE),
                         loan_payments_received = sum(s12q21, na.rm = TRUE),
+                        interest_received = sum(interest_received, na.rm = TRUE),
+                        principal_received = sum(principal_received, na.rm = TRUE),
                         avg_interest_charged = weighted.mean(s12q19, s12q17, na.rm = TRUE),
                         avg_interest_charged_past_year = weighted.mean(s12q19, loans_made, na.rm = TRUE))        
       df.hh <- merge(df.hh, df.credit2, by = "hhid", all = TRUE)
       df.hh <- mutate(df.hh, loans_made_past_year = if_else(is.na(loans_made_past_year),0,loans_made_past_year),
                       loans_made_total = if_else(is.na(loans_made_total),0,loans_made_total),
                       loan_payments_received = if_else(is.na(loan_payments_received),0,loan_payments_received),
+                      interest_received = if_else(is.na(interest_received),0,interest_received),
+                      principal_received = if_else(is.na(principal_received),0,principal_received),
                       prev_loans_made = loans_made_total - loans_made_past_year)
       df.hh$loans_made_past_year[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17"))] <- NA
       df.hh$loans_made_total[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17"))] <- NA
       df.hh$loan_payments_received[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q21"))] <- NA
+      df.hh$interest_received[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q21", "s12q19"))] <- NA
+      df.hh$principal_received[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q21", "s12q19"))] <- NA
       df.hh$avg_interest_charged[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q19"))] <- NA
       df.hh$avg_interest_charged_past_year[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q19"))] <- NA
       rm(df.credit2, df.hrvs_12b)
@@ -767,6 +788,7 @@ for (i in c(1:3)) {
       df.hh$cap_gains[df.hh$hhid %in% finddks(df.hrvs_12c, c("s12q24"))] <- NA
       rm(df.assets, df.hrvs_12c)
       
+      #note pensions are also counted in section 14 - I use that number as it has higher response rate
       df.hrvs_12d <- read.dta13("Section_12d.dta")
       df.pension <- df.hrvs_12d %>%
               group_by(hhid) %>%
@@ -948,45 +970,34 @@ for (i in c(1:3)) {
       df.hh <- mutate(df.hh, income = annual_wages + landrents + rent_earned + wet_ag_sales + dry_ag_sales + food_home_production*52 + livestock_income + business_revenues + 
                           equip_rental_income + if_else(is.na(cap_gains),0,cap_gains) - business_expenses - livestock_costs - ag_costs - landrent_paid_cash - landrent_paid_inkind,
                       income_gross = annual_wages + landrents + rent_earned + wet_ag_sales + dry_ag_sales + food_home_production*52 + livestock_income + business_revenues + 
-                        equip_rental_income + if_else(is.na(cap_gains),0,cap_gains),
-                      income_pc = income/currentlyliving,
+                        equip_rental_income + if_else(is.na(cap_gains),0,cap_gains) + interest_received,
+                      capital_income = if_else(is.na(cap_gains),0,cap_gains) + interest_received,
+                      labor_income = annual_wages + work_aid_wages + wet_ag_sales + dry_ag_sales + food_home_production*52 + 
+                        business_revenues + livestock_income,
+                      passive_income = equip_rental_income + landrents + non_quake_aid + public_asst_inkind + capital_income, ## ignores housing rent
+                      total_income = labor_income + passive_income,
+                      labor_supply = wage_labor_days + self_emp_days + work_aid_days,
+                      wage_rate = labor_income/labor_supply*(365-days_ill),
                       consumption = food_home_production*52 + food_market*52 + food_inkind*52 + durables_consumption + energy + utilities_paid + rent_paid + transportation + 
                           clothing_cleaning_home + entertainment_other + other_expenses + craft_consumption,
-                      consumption_pc = consumption/currentlyliving,
                       non_durables = food_home_production*52 + food_market*52 + food_inkind*52 + energy + utilities_paid + rent_paid + transportation + 
                           clothing_cleaning_home + entertainment_other + other_expenses + craft_consumption,
                       food_consumption = food_home_production*52 + food_market*52 + food_inkind*52,
-                      food_consumption_pc = food_consumption/currentlyliving,
-                      energy_utilities = energy + utilities_paid,
-                      other_consumption = clothing_cleaning_home + entertainment_other + other_expenses + craft_consumption + rent_paid,
-                      asset_stock = home_value + durables_stock + landvalue + equip_stock + livestock_value + financial_assets + savings_group + insurance_assets,
+                      cap_inputs = business_expenses + ag_costs + landrent_paid_cash + livestock_costs,
+                      human_cap_inputs = school_costs + health_costs,
                       productive_assets = landvalue + equip_stock + livestock_value,
                       investments = land_purchased + business_investment + livestock_purchases + equip_purchases,
                       asset_sales = land_sales + business_asset_sales + livestock_sales + equip_sales,
-                      net_asset_investment = investments - asset_sales,
-                      net_livestock_sales = livestock_sales - livestock_purchases,
-                      net_loans = loans_taken_past_year - loans_made_past_year,
-                      net_loan_payments = loan_payments - loan_payments_received,
-                      prev_loans = prev_loans_taken - prev_loans_made,
-                      pub_transfers = pension + non_quake_aid + public_asst_inkind + work_aid_wages,
+                      pub_transfers = non_quake_aid + public_asst_inkind + work_aid_wages,
                       inf_transfers = gifts_received_cash + gifts_received_inkind,
                       inf_transfers_made = gifts_given_cash + gifts_given_inkind,
                       NGO_transfers = NGO_cash + NGO_inkind,
-                      labor_income = annual_wages + work_aid_wages + wet_ag_sales + dry_ag_sales + food_home_production*52 + 
-                        business_revenues,
-                      labor_supply = wage_labor_days + self_emp_days + work_aid_days,
-                      wage_rate = labor_income/labor_supply*(365-days_ill),
-                      passive_income = landrents + pension + non_quake_aid + public_asst_inkind, ## ignores housing rent
-                      total_income = labor_income + passive_income,
-                      total_income_pc = total_income/currentlyliving,
-                      savings = loans_made_past_year - loans_taken_past_year + inf_transfers_made - inf_transfers - food_inkind*52 +
-                        financial_assets + savings_group + insurance_assets + equip_stock + livestock_value + livestock_costs +
-                        migration_costs - remittance_income, #treats migration costs and remittances as zero interest loans
-                      capital_income = equip_rental_income + if_else(is.na(cap_gains),0,cap_gains) + livestock_income + 
-                        loan_payments_received - loan_payments,
-                      imputed_bufferstock = savings + food_consumption + home_investment - quake_aid,
-                      cap_inputs = business_expenses + ag_costs + landrent_paid_cash,
-                      human_cap_inputs = school_costs + health_costs,
+                      land_price = landvalue/plot_area,
+                      liq_savings = loans_made_total + financial_assets + savings_group + 
+                        insurance_assets + inf_transfers_made,
+                      tot_savings = liq_savings + investments + school_costs + cap_inputs + jewelery,
+                      credit = loans_total + inf_transfers + food_inkind*52,
+                      credit_cost = interest_paid,
                       market_shocks = riot_losses + price_shock_losses,
                       natural_shocks = livestock_farm_losses + other_nat_disaster_losses,
                       idiosyncratic_shocks = illness_injury_losses + violence_losses + job_default_losses,
@@ -1019,21 +1030,22 @@ df.hh <- rbind(df.wave1, df.wave2, df.wave3)
 
 df.hh <- df.hh %>% mutate(quake_aid_bin = if_else(quake_aid > 0, 1, 0),
                           emergency_aid = if_else(quake_aid_bin==1 & wave==1, 1, 0),
-                          reconstruction_aid_bin = if_else(quake_aid>35000, 1, 0),
-                          reconstruction_aid = if_else(quake_aid>35000, quake_aid, 0),
+                          reconstruction_aid = if_else(quake_aid>=25000, quake_aid, 0),
                           gorkha_loss = if_else(quake_losses>0 & wave==1, 1, 0),
                           gorkha_loss_amt = if_else(wave==1, quake_losses, 0)) %>%
   group_by(hhid) %>%
   mutate(quake_aid_lag = if_else(is.na(lag(quake_aid_bin, order_by = wave)), 0, lag(quake_aid_bin, order_by = wave)),
          lag_remitt = lag(remittance_income, order_by = wave),
-         lag_loan = lag(loans_taken_past_year, order_by = wave))
+         lag_loan = lag(loans_taken_past_year, order_by = wave)) 
 
-l1 <- median(df.hh$landvalue[df.hh$wave==1], na.rm = TRUE)
+lquant = quantile(df.hh$landvalue[df.hh$wave==1], c(.25, .5, .75, 1), na.rm = TRUE)
 ## 1 percent of hhs report buying land in first wave
 df.land <- filter(df.hh, wave==1) %>%
-  mutate(land_qtle = if_else(landvalue<l1, 1, 2)) %>%
+  mutate(land_qtle = findInterval(landvalue, lquant, rightmost.closed = TRUE)+1) %>%
   rename(inc_wave1 = total_income) %>%
-  select(hhid, land_qtle, inc_wave1)
+  select(hhid, land_qtle, inc_wave1, prev_migrants, migrant_male, migrant_educated,
+         migrant_kat, migrant_india, migrant_other_asia, migrant_mideast, migrant_working,
+         migrant_earnings)
 
 df.aid <- df.hh %>% arrange(wave) %>%
   group_by(hhid) %>% 
@@ -1045,22 +1057,24 @@ df.aid <- df.hh %>% arrange(wave) %>%
           avg_inc = mean(log(total_income)),
           gorkha_loss_ever = sum(gorkha_loss_amt),
           total_remit = sum(remittance_income), 
-          total_loans_taken = sum(loans_taken_past_year))
+          total_loans_taken = sum(loans_taken_past_year),
+          n_waves = n())
 
+df.hh <- select(df.hh, -c(prev_migrants, migrant_male, migrant_educated, migrant_earnings, 
+                            migrant_kat, migrant_india, migrant_other_asia, migrant_mideast, migrant_working))
 df.hh <- merge(df.hh, df.land, by = c("hhid"), all.x = TRUE)
 df.hh <- merge(df.hh, df.aid, by = "hhid") %>%
-  mutate(received_aid = if_else(aid_total>0, 1, 0),
+  mutate(received_aid = if_else(aid_total>0, 1, 0),  ### at any point
          received_recon_aid = if_else(reconstruction_aid_total>0, 1, 0),
          gorkha_hh = if_else(gorkha_loss_ever>0, 1, 0),
          caste_yr = paste(ethnicity, wave, sep = "_"),
          vdc_yr = paste(district, vdc, wave, sep = "_"),
          cons_shock = consumption - avg_cons) %>%
   arrange(wave) %>% group_by(hhid) %>%
-  mutate(aid_cumulative = cumsum(quake_aid),
+  mutate(aid_cumulative = cumsum(quake_aid), ### cumulative amounts
          reconstruction_aid_cumulative = cumsum(reconstruction_aid),
-         aid_cumulative_bin = as.numeric(aid_cumulative>0),
-         reconstruction_aid_bin = as.numeric(reconstruction_aid_cumulative>0),
-         aid_cumulative0000s = aid_cumulative/10000) %>% ungroup()
+         aid_cumulative_bin = as.numeric(aid_cumulative>0), ### cumulative dummies
+         reconstruction_aid_bin = as.numeric(reconstruction_aid_cumulative>0)) %>% ungroup()
 
 df.ward_losses <- df.hh %>% 
   group_by(district, vdc, ward) %>%
@@ -1070,9 +1084,15 @@ df.ward_losses <- df.hh %>%
 
 df.hh <- merge(df.hh, df.ward_losses, by = c("district", "vdc", "ward"))
 
-df.hh$consumption_qtle <- cut(df.hh$avg_cons, quantile(df.hh$avg_cons, seq(0, 1, by = .2), na.rm = TRUE), labels = FALSE, include.lowest = TRUE)
+df.landprice <- df.hh %>% filter(!is.infinite(land_price)) %>%
+  group_by(district, vdc, ward, wave) %>%
+  summarize(avg_land_price = median(land_price, na.rm = TRUE))
+
+df.hh <- merge(df.hh, df.landprice, by = c("district", "vdc", "ward", "wave"), all.x = TRUE)
 
 df.hh$caste_recode <- factor(df.hh$caste_recode, levels = c("Other", "Brahman/Chhetri", "Dalit", "Newar", NA))
 
 write_csv(df.hh, "full_panel.csv")
 
+setwd("..")
+setwd("..")

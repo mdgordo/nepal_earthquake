@@ -1,7 +1,3 @@
-incenter <- function(cbar, lbi, x, lambda) {
-  return(c((cbar*2 + x+lambda-lbi)/3, (lbi*2 + x+lambda-cbar)/3))
-}
-
 euclid <- function(a, b) {sqrt(sum((a - b)^2))}
 
 ihs <- function(x){log(x + sqrt(x ^ 2 + 1))}
@@ -41,32 +37,80 @@ create.statespace = function(ubm = c(5,5), theta, method = "log"){
   return(css)
 }
 
-###3D interpolate
-extrapolator <- function(w, x, h, Tw, var) {
-  xvals = unique(w$x); hvals = unique(w$h)
-  a = max(xvals); b = max(hvals); 
-  a0 = sort(xvals,partial=length(xvals)-1)[length(xvals)-1];  b0 = sort(hvals,partial=length(hvals)-1)[length(hvals)-1]
-  a0p = sort(xvals,partial=length(xvals)-3)[length(xvals)-3];  b0p = sort(hvals,partial=length(hvals)-3)[length(hvals)-3]
-  if (x > a+1e-10 & h > b+1e-10) {  
-    bslp = (h-b)/(x-a)
-    x0 = a; h0 = b; z0 = simplr(x0 = a, y0 = b, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-    if (bslp >= b/a) {
-      x1 = (b0-b)/bslp + a; h1 = b0; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-      x2 = (b0p-b)/bslp + a; h2 = b0p; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-    } else {
-      x1 = a0; h1 = (a0-a)*bslp + b; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-      x2 = a0p; h2 = (a0p-a)*bslp + b; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-    }
-  } else if (x > a+1e-10) {
-    x0 = a; h0 = h; z0 = simplr(x0 = x0, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-    x1 = a0; h1 = h; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-    x2 = a0p; h2 = h; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-  } else if (h > b+1e-10) {
-    x0 = x; h0 = b; z0 = simplr(x0 = x0, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-    x1 = x; h1 = b0; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
-    x2 = x; h2 = b0p; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
+simplr <- function (x0, y0, x, y, xvals, yvals, vfx, method = "bilinear") {
+  xi = findInterval(x0, xvals, all.inside = TRUE)
+  x1 = xvals[xi]
+  x2 = xvals[xi + 1]
+  yi = findInterval(y0, yvals, all.inside = TRUE)
+  y1 = yvals[yi]
+  y2 = yvals[yi + 1]
+  if (x0 > max(x)) 
+    x0 = max(x)
+  else if (x0 < min(x)) 
+    x0 = min(x)
+  if (y0 > max(y)) 
+    y0 = max(y)
+  else if (y0 < min(y)) 
+    y0 = min(y)
+  v1 = vfx[which(x == x1 & y == y1)]
+  v2 = vfx[which(x == x1 & y == y2)]
+  v3 = vfx[which(x == x2 & y == y1)]
+  v4 = vfx[which(x == x2 & y == y2)]
+  if (method == "bilinear") {
+    xp = -1 + 2 * (x0 - x1)/(x2 - x1)
+    yp = -1 + 2 * (y0 - y1)/(y2 - y1)
+    vp = 0.25 * (v1 * (1 - xp) * (1 - yp) + v2 * (1 - xp) * 
+                   (1 + yp) + v3 * (1 + xp) * (1 - yp) + v4 * (1 + xp) * (1 + yp))
   }
-  if (z1-z2 <= 1e-10 | z0-z1 <= 1e-10) rise = 0 else {
+  else {
+    xp = (x0 - x1)/(x2 - x1)
+    yp = (y0 - y1)/(y2 - y1)
+    if (xp + yp <= 1) {
+      vp = v1 * (1 - xp - yp) + v2 * yp + v3 * xp
+    }
+    else {
+      vp = v2 * (1 - xp) + v3 * (1 - yp) + v4 * (xp + yp - 1)
+    }
+  }
+  return(vp)
+}
+
+###3D interpolate
+extrapolator <- function(w, x, h, xvals, hvals, Tw, var) {
+  a = max(xvals); b = max(hvals); 
+  a0 = xvals[length(xvals)-1];  b0 = hvals[length(hvals)-1]
+  a0p = xvals[length(xvals)-3];  b0p = hvals[length(hvals)-3]
+  if (x > a+1e-9 & h > b+1e-9) {  
+    bslp = (h-b)/(x-a)
+    x0 = a; h0 = b; z0 = simplr(x0 = a, y0 = b, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                vfx = Tw, method = "simplical")
+    if (bslp >= b/a) {
+      x1 = (b0-b)/bslp + a; h1 = b0; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                                 vfx = Tw, method = "simplical")
+      x2 = (b0p-b)/bslp + a; h2 = b0p; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                                   vfx = Tw, method = "simplical")
+    } else {
+      x1 = a0; h1 = (a0-a)*bslp + b; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                                 vfx = Tw, method = "simplical")
+      x2 = a0p; h2 = (a0p-a)*bslp + b; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                                   vfx = Tw, method = "simplical")
+    }
+  } else if (x > a+1e-9) {
+    x0 = a; h0 = h; z0 = simplr(x0 = x0, y0 = h, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                vfx = Tw, method = "simplical")
+    x1 = a0; h1 = h; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                 vfx = Tw, method = "simplical")
+    x2 = a0p; h2 = h; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, xvals = xvals, yvals = hvals,
+                                  vfx = Tw, method = "simplical")
+  } else if (h > b+1e-9) {
+    x0 = x; h0 = b; z0 = simplr(x0 = x0, y0 = h, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                vfx = Tw, method = "simplical")
+    x1 = x; h1 = b0; z1 = simplr(x0 = x1, y0 = h1, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                 vfx = Tw, method = "simplical")
+    x2 = x; h2 = b0p; z2 = simplr(x0 = x2, y0 = h2, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                                  vfx = Tw, method = "simplical")
+  }
+  if (z1-z2 <= 1e-9 | z0-z1 <= 1e-9) rise = 0 else {
     deriv = (z0-z1)/(z1-z2)
     if (deriv >= 1) {
       steps = euclid(c(x,h), c(x0,h0))/euclid(c(x0,h0), c(x2,h2))
@@ -86,6 +130,10 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
   cbar = theta[4]; hbar = theta[5]; lambda = theta[6]
   if (var=="proj") Tw = w$proj else if (var=="efx") Tw = w$efx else if (var=="Tw") Tw = w$Tw else if (var %in% c("cfx", "aidcfx")) Tw = w$cfx else if (var %in% c("ifx", "aidifx")) Tw = w$ifx
   
+  xvals = sort(unique(w$x)); hvals = sort(unique(w$h))
+  xmax = max(xvals); hmax = max(hvals); Tmax = max(Tw)
+  xmin = min(xvals); hmin = min(hvals); Tmin = min(Tw)
+    
   if (method == "chebyshev") { ### currently not working
     tmat = matrix(TwC, ncol = length(unique(cs$x)))
     cmat = chebcoefs(tmat, degree = length(unique(cs$h))-1)
@@ -105,67 +153,29 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
   
   fi = function(x,h){
     if (x < -1*lambda) x = -1*lambda
-    if (x > max(w$x)+1e-10 | h > max(w$h)+1e-10) {
-      r = extrapolator(w, x, h, Tw, var)
+    if (x > xmax+1e-9 | h > hmax+1e-9) {
+      r = extrapolator(w, x, h, xvals, hvals, Tw, var)
       return(r)
     } else if (x <= cbar-lambda | method=="simplical") {  ### default zone always simplical
-      r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, vfx = Tw, method = "simplical", extrapolation.warning = FALSE)
+      r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
+                 vfx = Tw, method = "simplical")
     } else if (method=="chebyshev") {
-      r = chebpred(x,h, cmat, lb = c(cbar-lambda, 0), ub = c(max(w$x), max(w$h)))
+      r = chebpred(x,h, cmat, lb = c(cbar-lambda, 0), ub = c(xmax, hmax))
     } else if (method=="rollmean") {
-      xvals = sort(unique(w$x)); hvals = sort(unique(w$h))
       xi = findInterval(x, xvals, all.inside = TRUE)
       x1 = xvals[xi]; x2 = xvals[xi+1]
       hi = findInterval(h, hvals, all.inside = TRUE)
       h1 = hvals[hi]; h2 = hvals[hi+1]
       r = mean(Tw[w$x %in% c(x1, x2) & w$h %in% c(h1, h2)])
     } else {
-      xn = (x - min(w$x))/(max(w$x) - min(w$x))
-      hn = (h - min(w$h))/(max(w$h) - min(w$h))
+      xn = (x - xmin)/(xmax - xmin)
+      hn = (h - hmin)/(hmax - hmin)
       r = predict(mod, newdata = data.frame("xnorm" = xn, "hnorm" = hn))
-      r = r*(max(Tw) - min(Tw)) + min(Tw)
+      r = r*(Tmax - Tmin) + Tmin
     } 
     return(as.numeric(r))
   }
   return(fi)
-}
-
-monotonizer <- function(w, policy = TRUE){
-  xvals = sort(unique(w$x))
-  vrT = w %>%
-    pivot_wider(id_cols = x, names_from = h, values_from = Tw) %>%
-    select(!x) %>% as.matrix()
-  finalVrT = rearrangement(x = list(sort(unique(w$x)), sort(unique(w$h))), 
-                           y = vrT, avg = TRUE) %>% as_tibble()
-  finalVrT$x = xvals
-  finalVrT <- pivot_longer(finalVrT, !x, names_to = "h", values_to = "Tw")
-  finalVrT$h = as.double(finalVrT$h)
-  if (policy){
-    vrC = w %>%
-      pivot_wider(id_cols = x, names_from = h, values_from = cfx) %>%
-      select(!x) %>% as.matrix()
-    finalVrC = rearrangement(x = list(sort(unique(w$x)), sort(unique(w$h))), 
-                             y = vrC, avg = TRUE) %>% as_tibble()
-    finalVrC$x = xvals
-    finalVrC <- pivot_longer(finalVrC, !x, names_to = "h", values_to = "cfx")
-    finalVrC$h = as.double(finalVrC$h)
-    vrI = w %>%
-      pivot_wider(id_cols = x, names_from = h, values_from = ifx) %>%
-      select(!x) %>% as.matrix()
-    finalVrI = rearrangement(x = list(sort(unique(w$x)), sort(-1*unique(w$h))), 
-                             y = vrI[,rev(c(1:ncol(vrI)))], avg = TRUE) %>% as_tibble()
-    finalVrI$x = xvals
-    finalVrI <- pivot_longer(finalVrI, !x, names_to = "h", values_to = "ifx")
-    finalVrI$h = as.double(finalVrI$h)
-    finalVrP = merge(finalVrC, finalVrI, by = c("x", "h"))
-  } else {
-    finalVrP = w[,c("x", "h", "cfx", "ifx")]
-  }
-  finalVr = merge(finalVrT, finalVrP, by = c("x", "h"))
-  finalVr = finalVr[order(finalVr$x,finalVr$h),]
-  finalVr = finalVr[,c("x", "h", "Tw", "cfx", "ifx")]
-  rownames(finalVr) = NULL
-  return(finalVr)
 }
 
 ### Function factory for generation household maximization problem (minimizes the negative - which is positive)
@@ -176,39 +186,50 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
   
   draws = exp(great.expectations(sigma, gqpts))
   wts = gqpts$w/sqrt(pi)
-  set.seed(33); rln <- rlnorm(100000, -sigma^2/2, sigma) ## random numbers for mean excess
+  penalty = -1*u(cbar/2, hbar/2, 0, theta)
   
   hhprob = function(ci, default = FALSE){
     c = ci[1]; i = ci[2]
-    if (is.nan(c)|is.na(c)) {return((c+i)*1e10)} else { 
+    if (is.nan(c)|is.na(c)) {return((c+i+1)*penalty)} else { 
       if (default) {
         payoff = u(cbar, max(h, hbar), 0, theta)
         htplus1 = delta*max(hbar, h)
         xtplus1 = -lambda*R
-      } else if (c+i>x+lambda) {return((c+i)*1e10)} else { ### built in constraint 
+      } else if (c+i > x+lambda+1e-9) {return((c+i+1)*penalty)} else { ### built in constraint 
         payoff = u(c, h, i, theta)
         htplus1 = delta*(h+i)
         xtplus1 = R*(x - c - i)
       }
-      mindraw = cbar - lambda - xtplus1 ## minimum draw to not default
-      pdef = plnorm(mindraw, meanlog = -sigma^2/2, sdlog = sigma)
-      if (length(rln[rln>mindraw])==0) {
-        EV = Valfunc(-lambda, htplus1)
-      } else if (pdef > 0){
-        wts = wts[draws>mindraw]
-        draws = draws[draws>mindraw]
-        if (length(wts)==0) wts = 0; draws = xtplus1 + mindraw + mean(rln[rln>mindraw]) ## mean excess
-        excessprob = 1 - pdef - sum(wts)
-        wts[1] = wts[1] + excessprob
-        EV = pdef*Valfunc(-lambda, htplus1) + sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
-      } else{
-        EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
-      }
+      EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
       r = payoff + beta*EV
       return(-r)
     }
   }
   return(hhprob)
+}
+
+firstguesser <- function(w, theta){
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+  guesswrap = function(rowidx){
+    x = w$x[rowidx]; h = w$h[rowidx]
+    optc = alpha*(x+h+lambda); opti = x + lambda - optc ### derived from FOCs to flow
+    if (opti<0) {optc = x+lambda; opti = 0}  ## investment constraint
+    u = u(optc, h, opti, theta)
+    udef = u(cbar, max(h, hbar), 0, theta)
+    umu = u(x+lambda, h , 0, theta)
+    if (udef > max(u, umu)) {return(c(cbar, 0, udef, -lambda, 1))} else if (umu > u) {
+      return(c(x+lambda, 0, umu, -lambda, 0))} else {
+      return(c(optc, opti, u, -lambda, 0)) 
+    }
+  }
+  Tw = mclapply(c(1:nrow(w)), guesswrap, mc.cores = detectCores())
+  wnext = cbind(w[,c("x", "h")], data.frame("Tw" = unlist(lapply(Tw, function(x) x[3])),
+                                            "cfx" = unlist(lapply(Tw, function(x) x[1])),
+                                            "ifx" = unlist(lapply(Tw, function(x) x[2])),
+                                            "savings" = unlist(lapply(Tw, function(x) x[4])),
+                                            "def" = unlist(lapply(Tw, function(x) x[5]))))
+  return(wnext)
 }
 
 ### Bellman Operator
@@ -222,19 +243,26 @@ bellman <- function(w, theta, shockpts = 13, m = 2000){
     x = w$x[rowidx]; h = w$h[rowidx]
     hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
     
-    ## default decision
+    ## default enforced at constraint
     Vdef = -1*hhprob(c(cbar, 0), default = TRUE)
-    optc = alpha*(x+h+lambda); opti = x + lambda - optc ### derived from FOCs to flow
-    if (opti<0) {optc = x+lambda; opti = 0}  ## investment constraint
-    umax = -1*hhprob(c(optc, opti))
-    if (h+opti <=0 | optc <=0 | umax < Vdef) {
-      r = c(cbar, 0, Vdef, 1)
+    if (x + lambda < 1e-9){
+      r = c(cbar, 0, Vdef, -lambda, 1)
     } else {
       ### optimization
-      sol = directL(fn = hhprob, #x0 = c(optc, opti),
+      sol = directL(fn = hhprob, 
                     lower = c(0,0), upper = c(x+lambda, x+lambda), 
-                    control = list(ftol_rel = 1e-4, ftol_abs = 0, xtol_rel = 0, maxeval = m))
-      r = c(sol$par, -sol$value, 0)
+                    control = list(ftol_rel = 1e-6, ftol_abs = 0, xtol_rel = 0, maxeval = m))
+      if (x + lambda - sum(sol$par) < 1e-9) { ### double check solutions near boundary - tend to get stuck in local minima
+        c0 = alpha*(x+h+lambda); i0 = x+lambda-c0
+        if (i0<0) {c0 = x+lambda; i0 = 0}
+        sol2 = cobyla(fn = hhprob, x0 = c(c0, i0),
+                      lower = c(0,0), upper = c(x+lambda, x+lambda), 
+                      control = list(ftol_rel = 1e-6, ftol_abs = 0, xtol_rel = 0, maxeval = m))
+        if (sol2$value < sol$value) {sol <- sol2}
+      }
+      if (Vdef > -sol$value) {
+        r = c(c(cbar, 0), Vdef, -lambda, 1)} else {
+          r = c(sol$par, -sol$value, x - sum(sol$par), 0)} ### default decision
     }
     return(r)
   }
@@ -242,64 +270,23 @@ bellman <- function(w, theta, shockpts = 13, m = 2000){
   wnext = cbind(w[,c("x", "h")], data.frame("Tw" = unlist(lapply(Tw, function(x) x[3])),
                                             "cfx" = unlist(lapply(Tw, function(x) x[1])),
                                             "ifx" = unlist(lapply(Tw, function(x) x[2])),
-                                            "def" = unlist(lapply(Tw, function(x) x[4]))))
+                                            "savings" = unlist(lapply(Tw, function(x) x[4])),
+                                            "def" = unlist(lapply(Tw, function(x) x[5]))))
   return(wnext)
 }
 
-### Howard Policy Iteration
-howard <- function(w, theta, shockpts = 13){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
-  gqpts = gaussHermiteData(shockpts)
-  Valfunc = interpolater.creater(w, theta, method = "simplical")
-  
-  accelerator = function(rowidx){
-    x = w$x[rowidx]; h = w$h[rowidx]
-    cfx = w$cfx[rowidx]; ifx = w$ifx[rowidx]; def = w$def[rowidx]
-    hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
-    ## default decision
-    if (def==1) {
-      v = -1*hhprob(c(cbar, 0), default = TRUE) 
-      } else {
-      v = -1*hhprob(c(cfx, ifx))
-      }
-    return(v)
-  }
-  Twh = mclapply(1:nrow(w), accelerator, mc.cores = detectCores())
-  return(unlist(Twh))
-}
-
 ### VFI
-VFI <- function(v0, theta, maxiter = 30, tol = 1e-5, howardk = 10, s2 = 51, monotonizer = FALSE){
+VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   w = vector(mode = "list", length = maxiter)
   w[[1]] = v0
-  tol1 = FALSE; tol2 = FALSE; i = 2; d = 1; s = 13
-  while (i<=maxiter & !tol2) {
-    wnext = bellman(w = w[[i-1]], theta, shockpts = s)
-    if (monotonizer) wnext = monotonizer(wnext, policy = FALSE)
-    ## howard
-    k = vector(mode = "list", length = howardk+1)
-    k[[1]] = wnext
-    for (j in c(1:howardk)) {
-      wnext$Tw = howard(wnext, theta, shockpts = s)
-      k[[j+1]] = wnext
-    }
-    ### MQP error bounds
-    b = beta/(1-beta)*mean(k[[howardk+1]]$Tw - k[[howardk]]$Tw)
-    wnext$Tw = wnext$Tw + b
-    w[[i]] = wnext
-    ## check tol
-    if (tol1) {
-      d = mean((w[[i]]$cfx - w[[i-1]]$cfx)^2)*1e-3 ### effective absolute tol of 1e-2 on consumption
-    } else {d = mean(((w[[i]]$Tw - w[[i-1]]$Tw)/w[[i-1]]$Tw)^2)}  ### relative tol
-    ### if tol is met increase gq points
-    if (d < tol) {
-      if (tol1) tol2 = TRUE else s = s2; tol1 = TRUE
-      print("adding shocks")
-    }
+  tol1 = FALSE; i = 2; d = 1; s = 13
+  while (i<=maxiter & d > tol) {
+    w[[i]] = bellman(w = w[[i-1]], theta, shockpts = s)
+    d = mean((w[[i]]$cfx - w[[i-1]]$cfx)^2)
     print(d)
+    ## check tol
     i = i+1
     print(i)
   }
@@ -313,11 +300,8 @@ gmmmomentmatcher <- function(theta, df) {
   saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
   
   ### initial guess
-  statespace = create.statespace(ubm = c(5,5), theta, method = "log")
-  v0 = cbind(statespace, data.frame("Tw" = rep(0, nrow(statespace)),
-                                    "cfx" = rep(0, nrow(statespace)),
-                                    "ifx" = rep(0, nrow(statespace)),
-                                    "def" = rep(0, nrow(statespace))))
+  statespace = create.statespace(ubm = c(5,5), theta, method = "equal")
+  v0 = firstguesser(statespace, theta)
   
   ### VFI
   V = VFI(v0, theta)
@@ -328,29 +312,73 @@ gmmmomentmatcher <- function(theta, df) {
   
   ### data
   momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx), t0 = theta, 
-                        data = df[,-c(1:2)], mc.cores = detectCores())
+                        data = df, mc.cores = detectCores())
   momentmat <- do.call(rbind, momentmat)
+  print(sum(colSums(momentmat)^2))
   return(momentmat)
 }
 
 momentmatcher <- function(i, vfx, t0, data){
   gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]; hbar = t0[5]
   lambda = t0[6]; sigma = t0[7]; alpha = t0[8]; delta = t0[9]
-  df = data[i,]
+  df = data[i,]; eybar = mean(data$E_Y); abar = mean(data$tot_savings); credbar = mean(data$credit); agebar = mean(data$years_ago_built)
   wt = sqrt(df$wt_hh/sum(data$wt_hh))
-  xaid = df$imputed_bufferstock + df$quake_aid
-  e1  = vfx[[1]](xaid, df$lag_h) - df$food_consumption
-  e2  = vfx[[2]](xaid, df$lag_h) - df$home_investment
-  e3 = df$home_value - delta*(df$lag_h + df$home_investment)
-  e4 = df$imputed_bufferstock - R*(df$lag_x + df$lag_a - df$lag_c - df$lag_i) - df$lag_y
-  e5 = log(df$total_income)^2 - sigma^2
-  e6 = e1*ihs(df$imputed_bufferstock)
-  e7 = e1*log(df$M_avg)
-  e8 = e1*log(df$lag_h+1)
-  e9 = e2*ihs(df$imputed_bufferstock)
-  e10 = e2*log(df$M_avg)
-  e11 = e2*log(df$lag_h+1)
-  return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11)*wt)
+  x = df$tot_assets + df$food_consumption + df$home_investment - (R-1)*df$debts
+  e1  = vfx[[1]](x, df$lag_h) - df$food_consumption
+  e2  = vfx[[2]](x, df$lag_h) - df$home_investment
+  e3 = (1/(1-delta) - df$years_ago_built)/agebar
+  e4 = ((R-1)*df$tot_savings - df$capital_income)/abar
+  e5 = ((R-1)*df$credit - df$credit_cost)/credbar
+  e6 = log(df$total_income)^2 - sigma^2
+  e7 = e1*ihs(x)
+  e8 = e1*log(df$E_Y)/log(eybar)
+  e9 = e1*log(df$lag_h+1)
+  e10 = e2*ihs(x)
+  e11 = e2*log(df$E_Y)/log(eybar)
+  e12 = e2*log(df$lag_h+1)
+  return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)*wt)
+}
+
+partialderivs <- function(idx, tol, v0, theta){
+  thetap <- theta
+  thetap[idx] <- theta[idx] + tol
+  Vp1 <- VFI(v0, thetap)
+  return(Vp1)
+}
+
+momentgrad <- function(theta, df, tol = .01){
+  print(theta)
+  
+  ### initial value and policy functions
+  statespace = create.statespace(ubm = c(5,5), theta, method = "equal")
+  v0 = firstguesser(statespace, theta)
+  V = VFI(v0, theta)
+  finalV <- V[[length(V)]]
+  policycfx0 <- interpolater.creater(finalV, theta, var = "cfx", method = "rollmean")
+  policyifx0 <- interpolater.creater(finalV, theta, var = "ifx", method = "rollmean")
+  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx0, policyifx0), t0 = theta, 
+                        data = df, mc.cores = detectCores())
+  momentmat <- do.call(rbind, momentmat)
+  moments0 = colMeans(momentmat)
+  
+  ### derivative approximations
+  partiallist <- lapply(c(1:9), partialderivs, tol = tol, v0 = finalV, theta = theta)
+  
+  ddp = matrix(NA, ncol = 9, nrow = 12)
+  
+  ### data
+  for (i in c(1:9)){
+    vprime <- partiallist[[i]][[length(partiallist[[i]])]]
+    tprime = theta; tprime[i] = theta[i] + tol
+    policycfxp <- interpolater.creater(vprime, tprime, var = "cfx", method = "rollmean")
+    policyifxp <- interpolater.creater(vprime, tprime, var = "ifx", method = "rollmean")
+    momentmatp <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfxp, policyifxp), t0 = tprime, 
+                          data = df, mc.cores = detectCores())
+    momentmatp <- do.call(rbind, momentmatp)
+    momentsp <- colMeans(momentmatp)
+    ddp[,i] <- (momentsp - moments0)/tol
+  }
+  return(ddp)
 }
 
 ### check tolerance between iterations
@@ -482,17 +510,26 @@ threedplotter = function(w, theta, fillvar, iter = length(w), method = "simplica
   p
 }
 
-hhprobtroubleshooter <- function(rowidx, w){
+hhprobtroubleshooter <- function(rowidx, w, crange = c(0,x+lambda), irange = c(0, x+lambda)){
   gqpts = gaussHermiteData(13)
   Valfunc = interpolater.creater(w, theta, method = "simplical")
   x = w$x[rowidx]; h = w$h[rowidx]
   hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
-  lbi = max(round(hbar - h,10), 0.0)
-  cs = seq(cbar, x+lambda-lbi, length.out = 40)
-  is = seq(lbi, x+lambda-cbar, length.out = 40)
+  cs = seq(crange[1], crange[2], length.out = 40)
+  is = seq(irange[1], irange[2], length.out = 40)
   testgrid = crossing(cs, is) %>%
     filter(cs + is <= x + lambda)
   testgrid$tw = sapply(c(1:nrow(testgrid)), function(i) hhprob(c(testgrid$cs[i], testgrid$is[i])))
-  ggplot(testgrid) + geom_tile(aes(x = cs, y = is, fill = tw)) + scale_fill_viridis_c()
+  ggplot(testgrid) + geom_tile(aes(x = cs, y = is, fill = -1*log(tw))) + scale_fill_viridis_c()
+}
+
+constrainttroubleshooter = function(rowidx, w, crange = c(0,x+lambda)){
+  gqpts = gaussHermiteData(13)
+  Valfunc = interpolater.creater(w, theta, method = "simplical")
+  x = w$x[rowidx]; h = w$h[rowidx]
+  hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
+  cs = seq(crange[1], crange[2], length.out = 40)
+  hs = sapply(cs, function(c) hhprob(c(c, x+lambda-c)))
+  ggplot() + geom_line(aes(x = cs, y = hs))
 }
 

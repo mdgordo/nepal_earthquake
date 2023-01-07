@@ -17,7 +17,6 @@ library(tidyverse)
 library(sf)
 library(lfe)
 library(AER)
-library(quantreg)
 library(ggnewscale)
 library(cowplot)
 library(stargazer)
@@ -30,31 +29,244 @@ library(rdrobust)
 source(paste(rootdir, "/code/rdhelpers.r", sep = ""))
 
 df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
-df <- filter(df.hh, !is.na(labor_income) & food_consumption>0 & labor_income>0)
+df.hh <- filter(df.hh, !is.na(total_income) & food_consumption>0 & total_income>0)
+df <- filter(df.hh, n_waves==3) %>%
+  mutate(land_med = if_else(land_qtle %in% c(1,2), 1, 2),
+         gorkha_loss_ever = gorkha_loss_ever/1000,
+         quake_aid = quake_aid/1000,
+         NGO_transfers = NGO_transfers/1000,
+         remittance_income = remittance_income/1000,
+         loans_taken_past_year = loans_taken_past_year/1000,
+         lag_remitt = lag_remitt/1000,
+         lag_loan = lag_loan/1000,
+         livestock_purchases = livestock_purchases/1000,
+         livestock_sales = livestock_sales/1000,
+         land_purchased = land_purchased/1000,
+         land_sales = land_sales/1000,
+         equip_purchases = equip_purchases/1000,
+         equip_sales = equip_sales/1000,
+         business_investment = business_investment/1000,
+         business_asset_sales = business_asset_sales/1000,
+         school_costs = school_costs/1000,
+         work_aid_wages = work_aid_wages/1000,
+         non_quake_aid = non_quake_aid/1000,
+         net_informal = (inf_transfers - inf_transfers_made)/1000,
+         financial_assets = financial_assets/1000,
+         jewelery = jewelery/1000)
 ```
 
+### Risk sharing regressions
+Income doesnt include remittances/transfers/loans or inputs - zeros dropped
+coefficients usually about .2 (see Morten/Townsend)
+
+Heterogeneity
+
+```{r}
+risksharing_all <- felm(log(food_consumption) ~ log(total_income) 
+                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+risksharing_hc1 <- felm(log(food_consumption) ~ log(total_income) + log(total_income):caste_recode
+                       | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+risksharing_fh1 <- felm(log(food_consumption) ~ log(total_income) + log(total_income):femalehh
+                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+risksharing_l1 <- felm(log(food_consumption) ~ log(total_income) + log(total_income):as.factor(land_med)
+                       | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+risksharing_q1 <- felm(log(food_consumption) ~ log(total_income) + log(total_income):gorkha_hh
+                       | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_q1)
+
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          notes = c("All regressions include household and village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
+
+risksharing_all <- felm(log(food_consumption) ~ log(total_income) 
+                        | as.factor(hhid) + as.factor(caste_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+risksharing_fh1 <- felm(log(food_consumption) ~ log(total_income) + log(total_income):femalehh
+                        | as.factor(hhid) + as.factor(caste_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+risksharing_l1 <- felm(log(food_consumption) ~ log(total_income) + log(total_income):as.factor(land_med)
+                       | as.factor(hhid) + as.factor(caste_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+risksharing_q1 <- felm(log(food_consumption) ~ log(total_income) + log(total_income):gorkha_hh
+                       | as.factor(hhid) + as.factor(caste_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_q1)
+
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          notes = c("All regressions include household and caste-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
+
+weighted.mean(df.hh$remittance_income[df.hh$femalehh==1]>0, df.hh$wt_hh[df.hh$femalehh==1], na.rm = TRUE)
+weighted.mean(df.hh$remittance_income[df.hh$femalehh==0]>0, df.hh$wt_hh[df.hh$femalehh==0], na.rm = TRUE)
+```
+
+### Cyclicality - ways of smoothing- HH FE
+
+```{r}
+inftransreg <- felm(inf_transfers ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+aidreg <- felm(quake_aid ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+ngoreg <- felm(NGO_transfers ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+migreg <- felm(migrants_past_year ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+remreg2 <- felm(remittance_income ~ log(total_income) + lag_remitt | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+loanreg2 <- felm(loans_taken_past_year ~ log(total_income) + lag_loan | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+infreg <- felm(net_informal ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+finreg <- felm(financial_assets ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(aidreg, ngoreg, infreg, finreg, remreg2, migreg, loanreg2)
+
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Household", 7)),
+                           c("Cluster", rep("Ward", 7))))
+```
+##Assets
+
+```{r}
+
+livereg1 <- felm(livestock_purchases ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+livereg2 <- felm(livestock_sales ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+landreg1 <- felm(land_purchased ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+landreg2 <- felm(land_sales ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+eqreg1 <- felm(equip_purchases ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+eqreg2 <- felm(equip_sales ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+bizreg1 <- felm(business_investment ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+bizreg2 <- felm(business_asset_sales ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+schoolreg <- felm(school_costs ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+jewelreg <- felm(jewelery ~ log(total_income) | as.factor(hhid) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(livereg1, livereg2, landreg1, landreg2, bizreg1, bizreg2, eqreg1, eqreg2, schoolreg, jewelreg)
+
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Household", 10)),
+                           c("Cluster", rep("Ward", 10))))
+```
+### Progressivity - land value - VDC-YR FE
+
+```{r}
+cpubtransregvdc <- felm(work_aid_wages ~ as.factor(land_med) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cpubtransregvdc2 <- felm(non_quake_aid ~ as.factor(land_med) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cinftransregvdc <- felm(inf_transfers ~ as.factor(land_med) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+caidregvdc <- felm(quake_aid ~ as.factor(land_med) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cngoregvdc <- felm(NGO_transfers ~ as.factor(land_med) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cmigregvdc <- felm(migrants_past_year ~ as.factor(land_med) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cremregvdc <- felm(remittance_income ~ as.factor(land_med) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+cloanregvdc <- felm(loans_taken_past_year ~ as.factor(land_med) | as.factor(vdc_yr) | 0 | strata,
+                    data = df, weights = df$wt_hh, na.action = na.omit)
+
+mods <- list(caidregvdc, cpubtransregvdc, cpubtransregvdc2, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
+
+stargazer(mods, type = "latex", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
+          add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
+                           c("Cluster", rep("Ward", 8))))
+```
+### Quake effects on income and labor supply
+
+```{r}
+qinc <- ivreg(log(total_income) ~ gorkha_loss_ever,
+              data = df, weights = df$wt_hh, subset = df$wave==1)
+
+qinciv2 <- ivreg(log(total_income) ~ gorkha_loss_ever | shake_pga,
+              data = df, weights = df$wt_hh, subset = df$wave==1)
+
+qinciv3 <- ivreg(log(total_income) ~ gorkha_loss_ever + as.factor(district)| shake_pga + as.factor(district),
+              data = df, weights = df$wt_hh, subset = df$wave==1)
+
+qlab <- ivreg(labor_supply ~ gorkha_loss_ever,
+              data = df, weights = df$wt_hh, subset = df$wave==1)
+
+qlabiv2 <- ivreg(labor_supply ~ gorkha_loss_ever | shake_pga,
+              data = df, weights = df$wt_hh, subset = df$wave==1)
+
+qlabiv3 <- ivreg(labor_supply ~ gorkha_loss_ever + as.factor(district)| shake_pga + as.factor(district),
+              data = df, weights = df$wt_hh, subset = df$wave==1)
+
+mods <- list(qinc, qinciv2, qinciv3, qlab, qlabiv2, qlabiv3)
+
+stargazer(mods, type = "latex", style = "QJE", omit = c("district", "Constant"), df = FALSE, omit.stat = c("adj.rsq", "ser"))
+weighted.mean(df$labor_supply[df$wave==1], df$wt_hh[df$wave==1])
+weighted.mean(df$gorkha_loss_ever[df$wave==1 & df$gorkha_loss_ever>0], df$wt_hh[df$wave==1 & df$gorkha_loss_ever>0])
+```
 #### Summary Stats
 
 ```{r}
-dfsum <- df[,c("consumption", "food_consumption", "total_income", "productive_assets",
-              "home_value", "home_investment", "financial_assets",
+dfsum <- df.hh[,c("consumption", "food_consumption", "total_income", "productive_assets",
+              "home_value", "home_investment", "liq_savings", "tot_savings", "livestock_value",
               "loans_taken_past_year", "loans_made_past_year", "remittance_income",
               "currentlyliving", "n_migrants", "skipped_meal", "aid_cumulative", "received_aid", 
-              "NGO_transfers", "pub_transfers", "inf_transfers", "gorkha_hh")]
+              "NGO_transfers", "pub_transfers", "inf_transfers", "gorkha_loss_ever")]
 
-xtabwts <- sumstats.wtd(dfsum, df$wt_hh, d = 2, labs = c("Consumption", "Food Consumption", "Income", "Productive Assets", 
-                              "Home Value", "Home Investment", "Financial Assets", "Loans Taken Past Year",
-                              "Loans Made Past Year", "Remittance Income", "Household Members", "Connected Migrants", "Skipped Meal(%)",
-                              "Earthquake Aid", "Earthquake Aid(%)", "NGO Aid", 
-                              "Public Transfers", "Informal Transfers", "Affected by Earthquake"))
+xtabwts <- sumstats.wtd(dfsum, df.hh$wt_hh, d = 0, labs = c("Consumption", "Food Consumption", "Income", "Productive Assets", 
+                              "Home Value", "Home Investment", "Liquid Savings", "Total Savings", "Livestock Value", "Loans Taken Past Year",
+                              "Loans Made Past Year", "Remittance Income", "Household Members", "Connected Migrants", 
+                              "Skipped Meal(%)", "Earthquake Aid", "Earthquake Aid(%)", "NGO Aid", 
+                              "Public Transfers", "Informal Transfers", "Earthquake Losses"))
 print(xtabwts, include.rownames = FALSE)
 
-weighted.mean(df$n_migrants > 0, df$wt_hh)
-weighted.mean(df$migrants_overseas, df$wt_hh)/weighted.mean(df$n_migrants, df$wt_hh)
-weighted.mean(df$migrants_past_year, df$wt_hh)/weighted.mean(df$n_migrants, df$wt_hh)
-weighted.mean(df$skipped_meal[df$wave==1], df$wt_hh[df$wave==1])
-weighted.mean(df$skipped_meal[df$wave==2], df$wt_hh[df$wave==2])
-weighted.mean(df$skipped_meal[df$wave==3], df$wt_hh[df$wave==3])
+weighted.mean(df.hh$n_migrants > 0, df.hh$wt_hh)
+weighted.mean(df.hh$migrants_overseas, df.hh$wt_hh)/weighted.mean(df.hh$n_migrants, df.hh$wt_hh)
+weighted.mean(df.hh$migrants_past_year, df.hh$wt_hh)/weighted.mean(df.hh$n_migrants, df.hh$wt_hh)
+weighted.mean(df.hh$skipped_meal[df.hh$wave==1], df.hh$wt_hh[df.hh$wave==1])
+weighted.mean(df.hh$skipped_meal[df.hh$wave==2], df.hh$wt_hh[df.hh$wave==2])
+weighted.mean(df.hh$skipped_meal[df.hh$wave==3], df.hh$wt_hh[df.hh$wave==3])
 ```
 
 ```{r}
@@ -103,148 +315,6 @@ ggplot(df.loss) +
 ggsave(paste(rootdir, "/presentation_materials/typeofloss.png", sep = ""), width = 12, height = 7)
 ```
 
-### Risk sharing regressions
-Income doesnt include remittances/transfers/loans or inputs - zeros dropped
-coefficients usually about .2 (see Morten/Townsend)
-
-Heterogeneity
-
-```{r}
-risksharing_all <- felm(log(food_consumption) ~ log(labor_income) 
-                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-risksharing_hc1 <- felm(log(food_consumption) ~ log(labor_income) + log(labor_income):caste_recode
-                       | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-risksharing_fh1 <- felm(log(food_consumption) ~ log(labor_income) + log(labor_income):femalehh
-                        | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-risksharing_l1 <- felm(log(food_consumption) ~ log(labor_income) + log(labor_income):land_qtle
-                       | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-risksharing_q1 <- felm(log(food_consumption) ~ log(labor_income) + log(labor_income):gorkha_hh
-                       | as.factor(hhid) + as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_q1)
-
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
-          notes = c("All regressions include household and village-year fixed effects. Standard errors clustered at the ward."), notes.align = "l")
-
-weighted.mean(df.hh$remittance_income[df.hh$femalehh==1]>0, df.hh$wt_hh[df.hh$femalehh==1], na.rm = TRUE)
-weighted.mean(df.hh$remittance_income[df.hh$femalehh==0]>0, df.hh$wt_hh[df.hh$femalehh==0], na.rm = TRUE)
-```
-
-### Cyclicality - ways of smoothing- HH FE
-Interestingly, more likely to sell livestock than buy in a good year, but must be investing in other assets
-
-```{r}
-pubtransreg <- felm(log(pub_transfers + 1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-inftransreg <- felm(log(inf_transfers + 1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-aidreg <- felm(log(quake_aid + 1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-ngoreg <- felm(log(NGO_transfers + 1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-migreg <- felm(log(migrants_past_year+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-remreg2 <- felm(log(remittance_income + 1) ~ log(labor_income) + log(lag_remitt + 1) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-loanreg2 <- felm(log(loans_taken_past_year + 1) ~ log(labor_income) + log(lag_loan + 1) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-livereg1 <- felm(log(livestock_purchases+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-livereg2 <- felm(log(livestock_sales+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-landreg1 <- felm(log(land_purchased+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-landreg2 <- felm(log(land_sales+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-eqreg1 <- felm(log(equip_purchases+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-eqreg2 <- felm(log(equip_sales+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-bizreg1 <- felm(log(business_investment+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-bizreg2 <- felm(log(business_asset_sales+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-schoolreg <- felm(log(school_costs+1) ~ log(labor_income) | as.factor(hhid) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-mods <- list(aidreg, pubtransreg, ngoreg, remreg2, migreg, loanreg2)
-
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
-          add.lines = list(c("Fixed Effects", rep("Household", 6)),
-                           c("Cluster", rep("Ward", 6))))
-
-mods <- list(livereg1, livereg2, landreg1, landreg2, eqreg1, eqreg2, bizreg1, bizreg2, schoolreg)
-
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
-          add.lines = list(c("Fixed Effects", rep("Household", 9)),
-                           c("Cluster", rep("Ward", 9))))
-```
-### Progressivity - land value - VDC-YR FE
-
-```{r}
-cpubtransregvdc <- felm(log(pub_transfers + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-cinftransregvdc <- felm(log(inf_transfers + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-caidregvdc <- felm(log(quake_aid + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-cngoregvdc <- felm(log(NGO_transfers + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-cmigregvdc <- felm(log(migrants_past_year+1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-cremregvdc <- felm(log(remittance_income + 1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-cloanregvdc <- felm(log(loans_taken_past_year+1) ~ land_qtle | as.factor(vdc_yr) | 0 | strata,
-                    data = df, weights = df$wt_hh, na.action = na.omit)
-
-mods <- list(caidregvdc, cpubtransregvdc, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
-
-stargazer(mods, type = "text", style = "QJE", df = FALSE, omit.stat = c("adj.rsq", "ser"),
-          add.lines = list(c("Fixed Effects", rep("Village-Year", 8)),
-                           c("Cluster", rep("Ward", 8))))
-```
-Summarizing:
-Remittances, loans, migration are counter cyclical
-Productive assets are procyclical
-Within village aid is positively correlated with income/consumption - could be reverse causal
-Within village loans uncorrelated w income but strong correlation w consumption, remittances negative w income, positive w consumption
-Damage is most robust predictor of receiving aid
-
-Argument: 
-Wealthy suffer lower damages, but even conditional on damage,
-damages are a noisy measure of need - wealthy hhs are insured through remittances/loans
-Disasters are double whammy for poor - more damage + less insured
-
 
 ### sources of income
 ~ 100 nepali rupees = 1 dollar in 2016
@@ -281,7 +351,10 @@ df.inc$source <- factor(df.inc$source, levels = c("home_food_production", "agric
 
 g1 <- ggplot(df.inc) + geom_bar(aes(x = source, weight = fraction, fill = source)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "fraction of HHs with income", x = "")
+      labs(y = "fraction of HHs with income", x = "") +
+      scale_x_discrete(labels = c("Home Production", "Agriculture", "Livestock",
+                                  "Wages", "Business", "Rental", "Quake Aid",
+                                  "Remittances", "Govt Aid", "Informal Gifts", "NGO Aid"))
 
 df.inc <- df.hh %>% 
   mutate(home_food_productionwt = if_else(food_home_production > 0, 1, 0)*wt_hh,
@@ -313,11 +386,14 @@ df.inc <- df.hh %>%
   pivot_longer(cols = colnames(.), names_to = "source", values_to = "fraction")
 
 df.inc$source <- factor(df.inc$source, levels = c("home_food_production", "agriculture", "ag_costs", "landrent_paid", "livestock", "livestock_costs", 
-                                                  "wages", "business", "business_costs", "rental", "remittance", "quake_aid", "pub_aid", "inf_aid", "NGO_aid", "income"))
+                                                  "wages", "business", "business_costs", "rental", "quake_aid", "remittance", "pub_aid", "inf_aid", "NGO_aid", "income"))
 
 g2 <- ggplot(df.inc) + geom_bar(aes(x = source, weight = fraction, fill = source)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "Avg Income | source > 0", x = "")
+      labs(y = "Avg Income | source > 0", x = "") + scale_y_continuous(labels = scales::comma) +
+      scale_x_discrete(labels = c("Home Production", "Agriculture", "Ag Costs", "Land Rent Paid", "Livestock", "Livestock Costs",
+                                  "Wages", "Business", "Business Costs", "Rental", "Quake Aid",
+                                  "Remittances", "Govt Aid", "Informal Gifts", "NGO Aid", "Total Income"))
 
 plot_grid(g1, g2, nrow = 1, rel_widths = c(4/9, 5/9))
 ggsave(paste(rootdir, "/presentation_materials/income.png", sep = ""), width = 10, height = 7)
@@ -347,7 +423,9 @@ df.assets <- df.hh %>%
 
 g1 <- ggplot(df.assets) + geom_bar(aes(x = asset_type, weight = fraction, fill = asset_type)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "fraction of HHs with asset", x = "")
+      labs(y = "fraction of HHs with asset", x = "") +
+      scale_x_discrete(labels = c("Durables", "Ag Equipment", "Cash and Savings", "Housing", "Insurance", "Land",
+                                  "Livestock", "Savings Group"))
 
 df.assets <- df.hh %>% 
   mutate(home_valuewt = if_else(home_value > 0, 1, 0)*wt_hh,
@@ -370,7 +448,9 @@ df.assets <- df.hh %>%
 
 g2 <- ggplot(df.assets) + geom_bar(aes(x = asset_type, weight = fraction, fill = asset_type)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "Avg Value | asset_type > 0", x = "")
+      labs(y = "Avg Value | asset_type > 0", x = "") + scale_y_continuous(labels = scales::comma) +
+      scale_x_discrete(labels = c("Durables", "Ag Equipment", "Cash and Savings", "Housing", "Insurance", "Land",
+                                  "Livestock", "Savings Group"))
 
 plot_grid(g1, g2, nrow = 1, rel_widths = c(4/9, 5/9))
 ggsave(paste(rootdir, "/presentation_materials/assets.png", sep = ""), width = 10, height = 7)
@@ -389,8 +469,8 @@ df.investments <- df.hh %>%
          equip_sales = if_else(equip_sales > 0, 1, 0),
          business_investment = if_else(business_investment > 0, 1, 0),
          business_asset_sales = if_else(business_asset_sales > 0, 1, 0),
-         loans_taken_past_year = if_else(loans_taken_past_year > 0, 1, 0),
-         loans_made_past_year = if_else(loans_made_past_year > 0, 1, 0)) %>%
+         school_costs = if_else(school_costs > 0, 1, 0),
+         migration_costs = if_else(migration_costs > 0, 1, 0)) %>%
   summarize(land_purchased = weighted.mean(land_purchased, w = wt_hh, na.rm = TRUE),
             land_sales = weighted.mean(land_sales, w = wt_hh, na.rm = TRUE),
             livestock_purchases = weighted.mean(livestock_purchases, w = wt_hh, na.rm = TRUE),
@@ -399,13 +479,16 @@ df.investments <- df.hh %>%
             equip_sales = weighted.mean(equip_sales, w = wt_hh, na.rm = TRUE),
             business_investment = weighted.mean(business_investment, w = wt_hh, na.rm = TRUE),
             business_asset_sales = weighted.mean(business_asset_sales, w = wt_hh, na.rm = TRUE),
-            loans_taken_past_year = weighted.mean(loans_taken_past_year, w = wt_hh, na.rm = TRUE),
-            loans_made_past_year = weighted.mean(loans_made_past_year, w = wt_hh, na.rm = TRUE)) %>%
+            school_costs = weighted.mean(school_costs, w = wt_hh, na.rm = TRUE),
+            migration_costs = weighted.mean(migration_costs, w = wt_hh, na.rm = TRUE)) %>%
   pivot_longer(cols = colnames(.), names_to = "investment_type", values_to = "fraction")
 
 g1 <- ggplot(df.investments) + geom_bar(aes(x = investment_type, weight = fraction, fill = investment_type)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "fraction of HHs making investment", x = "")
+      labs(y = "fraction of HHs making investment", x = "") +
+      scale_x_discrete(labels = c("Business Asset Sales", "Business Investment", "Equipment Purchases", "Equipment Sales", 
+                                  "Land Purchases", "Land Sales", "Livestock Purchases", "Livestock Sales",
+                                  "School Costs", "Migration Costs"))
 
 df.investments <- df.hh %>% 
   mutate(land_purchasedwt = if_else(land_purchased > 0, 1, 0)*wt_hh,
@@ -416,8 +499,8 @@ df.investments <- df.hh %>%
          equip_saleswt = if_else(equip_sales > 0, 1, 0)*wt_hh,
          business_investmentwt = if_else(business_investment > 0, 1, 0)*wt_hh,
          business_asset_saleswt = if_else(business_asset_sales > 0, 1, 0)*wt_hh,
-         loans_taken_past_yearwt = if_else(loans_taken_past_year > 0, 1, 0)*wt_hh,
-         loans_made_past_yearwt = if_else(loans_made_past_year > 0, 1, 0)*wt_hh) %>%
+         school_costswt = if_else(school_costs > 0, 1, 0)*wt_hh,
+         migration_costswt = if_else(migration_costs > 0, 1, 0)*wt_hh) %>%
   summarize(land_purchased = weighted.mean(land_purchased, w = land_purchasedwt, na.rm = TRUE),
             land_sales = weighted.mean(land_sales, w = land_saleswt, na.rm = TRUE),
             livestock_purchases = weighted.mean(livestock_purchases, w = livestock_purchaseswt, na.rm = TRUE),
@@ -426,13 +509,16 @@ df.investments <- df.hh %>%
             equip_sales = weighted.mean(equip_sales, w = equip_saleswt, na.rm = TRUE),
             business_investment = weighted.mean(business_investment, w = business_investmentwt, na.rm = TRUE),
             business_asset_sales = weighted.mean(business_asset_sales, w = business_asset_saleswt, na.rm = TRUE),
-            loans_taken_past_year = weighted.mean(loans_taken_past_year, w = loans_taken_past_yearwt, na.rm = TRUE),
-            loans_made_past_year = weighted.mean(loans_made_past_year, w = loans_made_past_yearwt, na.rm = TRUE)) %>%
+            school_costs = weighted.mean(school_costs, w = school_costswt, na.rm = TRUE),
+            migration_costs = weighted.mean(migration_costs, w = migration_costswt, na.rm = TRUE)) %>%
   pivot_longer(cols = colnames(.), names_to = "investment_type", values_to = "fraction")
 
 g2 <- ggplot(df.investments) + geom_bar(aes(x = investment_type, weight = fraction, fill = investment_type)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "Avg Amount | investment > 0", x = "")
+      labs(y = "Avg Amount | investment > 0", x = "") + scale_y_continuous(labels = scales::comma) +
+      scale_x_discrete(labels = c("Business Asset Sales", "Business Investment", "Equipment Purchases", "Equipment Sales", 
+                                  "Land Purchases", "Land Sales", "Livestock Purchases", "Livestock Sales",
+                                  "School Costs", "Migration Costs"))
 
 plot_grid(g1, g2, nrow = 1, rel_widths = c(4/9, 5/9))
 ggsave(paste(rootdir, "/presentation_materials/investments.png", sep = ""), width = 10, height = 7)
@@ -458,68 +544,82 @@ df.consumption <- df.hh %>%
   pivot_longer(cols = colnames(.), names_to = "consumption_type", values_to = "average_spending")
 
 df.consumption$consumption_type <- factor(df.consumption$consumption_type, levels = c("food_market", "food_home_production", "food_inkind", "durables_consumption",
-                                                                                      "clothing_cleaning_home", "energy", "utilities", "rent", "transportation", "ceremonial_expenses",
-                                                                                      "taxes", "other"))
+                                                                                      "clothing_cleaning_home", "energy", "utilities", "rent", "transportation", 
+                                                                                      "ceremonial_expenses", "taxes", "other"))
 
 ggplot(df.consumption) + geom_bar(aes(x = consumption_type, weight = average_spending, fill = consumption_type)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "average_consumption", x = "")
+      labs(y = "HH Average Expenditures (NPR)", x = "") + scale_y_continuous(labels = scales::comma) +
+      scale_x_discrete(labels = c("Food Purchases", "Home Production", "Food Gifts", "Durables",
+                                  "Household Items", "Energy", "Other Utilities", "Rent",
+                                  "Transportation", "Ceremonial Expenses", "Taxes", "Other"))
 ggsave(paste(rootdir, "/presentation_materials/consumption.png", sep = ""), width = 10, height = 7)
 
 df.hh %>% mutate(food_share = (food_market + food_home_production)/consumption) %>% ggplot() +
   geom_point(aes(x = log(consumption), y = food_share))
 ```
 
-### Savings and Transfers
+### Savings
 
 ```{r}
 df.transfers <- df.hh %>% 
-  summarize(net_loans = weighted.mean(net_loans, w = wt_hh, na.rm = TRUE),
-            net_loan_payments = weighted.mean(net_loan_payments, w = wt_hh, na.rm = TRUE),
-            food_inkind = weighted.mean(food_inkind, w = wt_hh, na.rm = TRUE),
+  summarize(loans_taken_past_year = weighted.mean(loans_taken_past_year, w = wt_hh, na.rm = TRUE),
+            loans_made_past_year = weighted.mean(loans_made_past_year, w = wt_hh, na.rm = TRUE),
             financial_assets = weighted.mean(financial_assets, w = wt_hh, na.rm = TRUE),
             informal_transfers = weighted.mean(inf_transfers, w = wt_hh, na.rm = TRUE) - 
               weighted.mean(inf_transfers_made, w = wt_hh, na.rm = TRUE),
             migration_costs = weighted.mean(migration_costs, w = wt_hh, na.rm = TRUE),
-            remittance_income = weighted.mean(remittance_income, w = wt_hh, na.rm = TRUE)) %>%
+            remittance_income = weighted.mean(remittance_income, w = wt_hh, na.rm = TRUE),
+            insurance_assets = weighted.mean(insurance_assets, w = wt_hh, na.rm = TRUE),
+            savings_group = weighted.mean(savings_group, w = wt_hh, na.rm = TRUE),
+            jewelery = weighted.mean(jewelery, w = wt_hh, na.rm = TRUE)) %>%
   pivot_longer(cols = colnames(.), names_to = "forms_of_saving", values_to = "amount")
 
-df.transfers$forms_of_saving <- factor(df.transfers$forms_of_saving, levels = c("net_loans", "net_loan_payments", "informal_transfers", "food_inkind",
-                                                                                "ceremonial_expenses", "migration_costs", "remittance_income",
-                                                                                "financial_assets"))
+df.transfers$forms_of_saving <- factor(df.transfers$forms_of_saving, levels = c("loans_taken_past_year", "loans_made_past_year", "informal_transfers",
+                                                                                "migration_costs", "remittance_income", "financial_assets",
+                                                                                "insurance_assets", "savings_group", "jewelery"))
 
 g1 <- ggplot(df.transfers) + geom_bar(aes(x = forms_of_saving, weight = amount, fill = forms_of_saving)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "Average Amount", x = "")
+      labs(y = "Average Amount", x = "") +
+      scale_x_discrete(labels = c("Loans Taken", "Loans Made", "Informal Transfers",
+                                  "Migration Costs", "Remittance Income", "Financial Assets", "Insurance Assets",
+                                  "Savings Group Assets", "Jewelry"))
 g1
 
 df.transfers <- df.hh %>% 
-  summarize(loans_taken = weighted.mean(net_loans>0, w = wt_hh, na.rm = TRUE),
-            loans_made = weighted.mean(net_loans<0, w = wt_hh, na.rm = TRUE),
-            net_repayer = weighted.mean(net_loan_payments>0, w = wt_hh, na.rm = TRUE),
-            net_collector = weighted.mean(net_loan_payments<0, w = wt_hh, na.rm = TRUE),
-            food_inkind = weighted.mean(food_inkind>0, w = wt_hh, na.rm = TRUE),
+  summarize(loans_taken = weighted.mean(loans_taken_past_year>0, w = wt_hh, na.rm = TRUE),
+            loans_made = weighted.mean(loans_made_past_year>0, w = wt_hh, na.rm = TRUE),
             financial_assets = weighted.mean(financial_assets>0, w = wt_hh, na.rm = TRUE),
-            inf_transfer_rec = weighted.mean(inf_transfers - inf_transfers_made>0, w = wt_hh, na.rm = TRUE),
-            inf_transfer_made = weighted.mean(inf_transfers - inf_transfers_made<0, w = wt_hh, na.rm = TRUE),
+            inf_transfer_rec = weighted.mean(inf_transfers>0, w = wt_hh, na.rm = TRUE),
+            inf_transfer_made = weighted.mean(inf_transfers_made>0, w = wt_hh, na.rm = TRUE),
             migration_costs = weighted.mean(migration_costs>0, w = wt_hh, na.rm = TRUE),
-            remittance_income = weighted.mean(remittance_income>0, w = wt_hh, na.rm = TRUE)) %>%
+            remittance_income = weighted.mean(remittance_income>0, w = wt_hh, na.rm = TRUE),
+            insurance_assets = weighted.mean(insurance_assets>0, w = wt_hh, na.rm = TRUE),
+            savings_group = weighted.mean(savings_group>0, w = wt_hh, na.rm = TRUE),
+            jewelery = weighted.mean(jewelery>0, w = wt_hh, na.rm = TRUE)) %>%
   pivot_longer(cols = colnames(.), names_to = "forms_of_saving", values_to = "fraction_of_hhs")
 
-df.transfers$forms_of_saving <- factor(df.transfers$forms_of_saving, levels = c("loans_taken", "loans_made", "net_repayer", "net_collector",
-                                                                                "inf_transfer_rec", "inf_transfer_made", "food_inkind",
+df.transfers$forms_of_saving <- factor(df.transfers$forms_of_saving, levels = c("loans_taken", "loans_made",
+                                                                                "inf_transfer_rec", "inf_transfer_made", 
                                                                                 "migration_costs", "remittance_income",
-                                                                                "financial_assets"))
+                                                                                "financial_assets", "insurance_assets", "savings_group", "jewelery"))
 
 g2 <- ggplot(df.transfers) + geom_bar(aes(x = forms_of_saving, weight = fraction_of_hhs, fill = forms_of_saving)) +
       theme_light() + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + 
-      labs(y = "Fraction of HHs", x = "")
+      labs(y = "Fraction of HHs", x = "") + scale_y_continuous(labels = scales::comma) +
+      scale_x_discrete(labels = c("Loans Taken", "Loans Made", "Informal Transfers Received", "Informal Transfers Made",
+                                  "Migration Costs", "Remittance Income", "Financial Assets", "Insurance Assets",
+                                  "Savings Group Assets", "Jewelry"))
 g2
 cowplot::plot_grid(g2, g1)
 ggsave(paste(rootdir, "/presentation_materials/savingtransfers.png", sep = ""), width = 10, height = 7)
 
-ggplot(df.hh) +
-  geom_histogram(aes(x = imputed_bufferstock)) + theme_bw() + xlim(-1.5e6, 1.5e6)
+ggplot(df.hh, aes(x = log(liq_savings), y = log(tot_savings-liq_savings))) + 
+  geom_point(aes(color = shake_pga)) +
+  geom_smooth()
+
+summary(lm(tot_savings ~ liq_savings + gorkha_loss_ever, data = df.hh))
 ```
 
 ### experienced shocks
@@ -541,7 +641,10 @@ df.shocks <- df.hh %>%
 g1 <- ggplot(df.shocks) +
   geom_col(aes(x = shock_type, y = fraction_of_hh, group = as.factor(wave), fill = as.factor(wave)), position = "dodge") +
   scale_fill_viridis_d() +
-  theme_light() + labs(fill = "wave", x = "") + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
+  theme_light() + labs(fill = "wave", x = "") + theme(legend.position = "none", text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) +
+      scale_x_discrete(labels = c("Illness/Injury", "Job Loss or Default", "Livestock/Farm Shock", "Other Disaster",
+                                  "Price Shock", "Earthquake", "Earthquake Aid", "Riots",
+                                  "Violence/Theft"))
 
 df.shocks <- df.hh %>%
   group_by(wave) %>%
@@ -560,7 +663,10 @@ g2 <- ggplot(df.shocks) +
   geom_col(aes(x = shock_type, y = reported_losses, group = as.factor(wave), fill = as.factor(wave)), position = "dodge") +
   scale_fill_viridis_d() +
   theme_light() + labs(fill = "wave", y = "reported_losses | shock", x = "") + 
-  theme(text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
+  theme(text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) + scale_y_continuous(labels = scales::comma) +
+      scale_x_discrete(labels = c("Illness/Injury", "Job Loss or Default", "Livestock/Farm Shock", "Other Disaster",
+                                  "Price Shock", "Earthquake", "Earthquake Aid", "Riots",
+                                  "Violence/Theft"))
 
 plot_grid(g1, g2, nrow = 1, rel_widths = c(4/9, 5/9))
 ggsave(paste(rootdir, "/presentation_materials/shocks.png", sep = ""), width = 10, height = 7)
@@ -611,7 +717,6 @@ for (i in c(1:3)) {
 
 ```
 ### Coping strategies
-Cutting food more than non food suggests maybe some asset smoothing
 
 ```{r}
 df.coping <- df.hh %>% mutate(asset_sales = if_else(investments - asset_sales<0,1,0),
@@ -637,7 +742,10 @@ df.coping$var <- factor(df.coping$var, levels = c("dissaving", "loans", "asset_s
 ggplot(df.coping) +
   geom_col(aes(x = var, y = frac_hh, group = as.factor(wave), fill = as.factor(wave)), position = "dodge") +
   scale_fill_viridis_d() + theme_light() + labs(x = "", y = "Fraction of households", fill = "Wave") +
-  theme(text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1))
+  theme(text = element_text(size = 20), axis.text.x = element_text(angle = -80, hjust = 0, vjust = 1)) +
+      scale_x_discrete(labels = c("Dissaving", "Loans", "Sold Assets", "Received Remittances",
+                                  "Migration", "Cut Food", "Cut Non Food exp.", "School Interrupted",
+                                  "Children working", "Children working for wage"))
 
 ggsave(paste(rootdir, "/presentation_materials/coping.png", sep = ""), width = 10, height = 7)
 ```

@@ -4,8 +4,8 @@ robustses <- function(x) {
 }
 
 covmatmaker <- function(df, vars){
-  fulllist = c("wave2", "wave3", "shake_pga", "high_caste", "hhmembers", "gorkha_hh", 
-               "class5", "class10", "age_hh", "slope", "elevation", "aspect", "gorkha_loss_ever",
+  fulllist = c("wave2", "wave3", "shake_pga", "high_caste", "hhmembers",  
+               "class5", "class10", "age_hh", "elevation", "gorkha_loss_ever",
                "time_to_market", "time_to_health", "time_to_bank", "time_to_school")
   dfx <- df[,fulllist]
   covs <- model.matrix(~.+0, dfx)
@@ -15,38 +15,100 @@ covmatmaker <- function(df, vars){
   return(covs)
 }
 
-dfprep <- function(df, donut, b, dist.exclude, hpop = Inf){
-  df <- filter(df, abs(get(b))>donut, !is.na(hhmembers), !is.na(age_hh), !is.na(high_caste), !is.na(class5), !is.na(age_hh), !is.na(gorkha_hh), 
+dfprep <- function(df, v, donut, b, dist.exclude, hpop = Inf){
+  df <- filter(df, abs(get(b))>donut, !is.na(get(v)), !is.na(hhmembers), !is.na(age_hh), !is.na(high_caste), !is.na(class5), !is.na(age_hh),  
                !is.na(time_to_market), !is.na(time_to_health), !is.na(time_to_bank), !is.na(time_to_school))
-  if (!is.null(dist.exclude)) df <- filter(df, designation!=dist.exclude & abs(get(b))<hpop)
+  if (!is.null(dist.exclude)) df <- filter(df, !(designation %in% dist.exclude) & abs(get(b))<hpop)
   return(df)
 }
 
-vectorprep <- function(df, v, b, vce, fuzzy, ihs, weights){
+vectorprep <- function(df, v, b, fuzzy, ihs, weights){
   if (fuzzy!=FALSE & fuzzy != "inv") {f <- unlist(df[, fuzzy])} else if (fuzzy=="inv") {f <- 1 - df$reconstruction_aid_bin} else {f <- NULL}
   Y <- unlist(df[, v])
   X <- unlist(df[, b])
-  if (ihs==TRUE) Y = log(Y+1)
+  if (ihs==TRUE) {
+    if (sum(Y==0)>0) {
+      Y <- log(Y+1)
+    } else {
+      Y <- log(Y)
+      }
+  }
   if (weights==TRUE) w <- df$wt_hh else w <- NULL
   return(list(f, Y, X, w))
 }
 
 optbw <- function(v, b, df, fuzzy = FALSE, k = "triangular", weights = TRUE, donut = 0, 
                   vce = NULL, dist.exclude=NULL, vars = NULL, ihs = FALSE) {
-  df <- dfprep(df, donut, b, dist.exclude)
-  vs = vectorprep(df, v, b, vce, fuzzy, ihs, weights)
+  df <- dfprep(df, v, donut, b, dist.exclude)
+  vs = vectorprep(df, v, b, fuzzy, ihs, weights)
   f = vs[[1]]; Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
   covs <- covmatmaker(df, vars)
   bwsct <- rdbwselect(y = Y, x = X, c = 0, weights = w, fuzzy = f, covs = covs,
-                      kernel = k, vce = vce, silent = TRUE)
+                      kernel = k, vce = vce)
   bws <- data.frame(bwsct$bws)
   return(bws)
 }
 
+pdlvarselect <- function(v, maxiter = 10, tol = 1, df, dist.exclude = NULL, donut = 0, 
+                         k = "triangular", vce = NULL, ihs = FALSE, fuzzy = FALSE){
+  ### only works for dist_2_seg1pt at the moment and triangular kernel
+  i = 0
+  bandinit <- optbw(v, b = "dist_2_seg1pt", df = df, fuzzy = fuzzy, donut = donut, dist.exclude = dist.exclude, 
+                    k = k, vce = vce, ihs = ihs, vars = "all")
+  Y = unlist(df[, v])
+  if (ihs==TRUE) {
+    if (sum(Y==0)>0) {
+      df$Y = log(Y+1)
+      } else {df$Y = log(Y)}
+    } else {df$Y = Y}
+  df = mutate(df, distpos = if_else(dist_2_seg1pt >= 0, dist_2_seg1pt, 0))
+  hlast <- bandinit[1,1]
+  
+  fulllist = c("wave2", "wave3", "shake_pga", "high_caste", "hhmembers", 
+               "class5", "class10", "age_hh", "elevation", "gorkha_loss_ever",
+               "time_to_market", "time_to_health", "time_to_bank", "time_to_school")
+  
+  while (i < maxiter){
+    h0 = hlast[length(hlast)]
+    
+    df.lasso = filter(df, abs(dist_2_seg1pt)<h0) %>%
+      mutate(kwt = wt_hh*(1-abs(dist_2_seg1pt)/h0)) %>%
+      drop_na(fulllist)
+    
+    reg1 <- lm(Y ~ dist_2_seg1pt + distpos,
+               data = df.lasso, weights = kwt, subset = abs(dist_2_seg1pt)<h0)
+    
+    reg2 <- lm(as.formula(paste(fuzzy, "~ dist_2_seg1pt + distpos")),
+               data = df.lasso, weights = kwt, subset = abs(dist_2_seg1pt)<h0)
+    
+    reg3 <- lm(dist_14 ~ dist_2_seg1pt + distpos,
+               data = df.lasso, weights = kwt, subset = abs(dist_2_seg1pt)<h0)
+    
+    df.lasso$yresid <-reg1$residuals*sqrt(df.lasso$kwt)
+    df.lasso$xresid <-reg2$residuals*sqrt(df.lasso$kwt)
+    df.lasso$zresid <-reg3$residuals*sqrt(df.lasso$kwt)
+    
+    dfx <- df.lasso[,fulllist]
+    form = as.formula(paste("~.+0", sep = ""))
+    covmat <- model.matrix(form, dfx)*sqrt(df.lasso$kwt)
+    
+    pdl1 <- rlasso(y = df.lasso$yresid, x = covmat, post = FALSE, intercept = FALSE)
+    pdl2 <- rlasso(y = df.lasso$xresid, x = covmat, post = FALSE, intercept = FALSE)
+    pdl3 <- rlasso(y = df.lasso$zresid, x = covmat, post = FALSE, intercept = FALSE)
+    
+    vars <- colnames(pdl1$model)[pdl1$index | pdl2$index | pdl3$index]; vars <- vars[c(2:length(vars))]
+    bandinit <- optbw(v, b = "dist_2_seg1pt", df = df, fuzzy = fuzzy, dist.exclude = dist.exclude, 
+                      k = k, vce = vce, ihs = ihs, vars = vars)
+    h0 <- bandinit[1,1]
+    if (h0 %in% hlast) i = maxiter else i = i+1; hlast = c(hlast, h0)
+  }
+  return(vars)
+}
+
 regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, k = "triangular", weights = TRUE, donut = 0, 
                    vce = NULL, dist.exclude=NULL, vars = "none", ihs = FALSE, poly = 1){
-  df <- dfprep(df, donut, b, dist.exclude)
-  vs = vectorprep(df, v, b, vce, fuzzy, ihs, weights)
+  df <- dfprep(df, v, donut, b, dist.exclude)
+  vs = vectorprep(df, v, b, fuzzy, ihs, weights)
   f = vs[[1]]; Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
   covs <- covmatmaker(df, vars)
   out <- rdrobust(y = Y, x = X, c = 0, fuzzy = f, h = h, b = b0, weights = w, kernel = k,
@@ -54,27 +116,26 @@ regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, k = "triangular
   return(out)
 }
 
-plotvar <- function(v, b, df, h=NULL, ihs=FALSE, span = 1, k = "triangular", weights = TRUE, 
-                    vce = NULL, donut = 0, dist.exclude=NULL, vars = "none", p = 1, poly = TRUE, method = "lm",
-                    residualizer = FALSE, showbw = FALSE) {
-  df <- dfprep(df, donut, b, dist.exclude)
-  vs = vectorprep(df, v, b, vce = vce, fuzzy = FALSE, ihs, weights)
+plotvar <- function(v, b, df, h=NULL, ihs=FALSE, k = "triangular", weights = TRUE, 
+                    vce = NULL, donut = 0, dist.exclude=NULL, vars = "none", p = 1,
+                    residualizer = FALSE) {
+  df <- dfprep(df, v, donut, b, dist.exclude)
+  vs = vectorprep(df, v, b, fuzzy = FALSE, ihs, weights)
   Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
   if (residualizer) {
-    df$Y <- Y
-    resreg <- lm(Y ~ shake_pga + gorkha_loss_ever + slope + high_caste + time_to_market + time_to_health,
-                  data = df)
+    covs <- covmatmaker(df, vars)
+    resreg <- lm(Y ~ covs)
     Y <- resreg$residuals
   }
   r <- rdplot(y = Y, x = X, c = 0, weights = w, binselect = "esmv", kernel = k, 
-              p = p, title = NULL, x.label = b, y.label = v, hide = TRUE, span = span, 
-              method = method, h = h, poly = poly)
+              p = p, title = " ", x.label = b, y.label = v, hide = TRUE, h = h,
+              col.dots = "darkgrey", col.lines = "darkviolet")
   r <- r$rdplot
   return(r)
 }
 
 histfunc <- function(b, df, h=40, dist.exclude=NULL){
-  df <- dfprep(df, 0, b, dist.exclude)
+  df <- dfprep(df, b, 0, b, dist.exclude)
   X <- unlist(df[, b])
   W <- df$wt_hh
   freqdf <- aggregate(x = list(Freq = W), by = list(X = X), FUN = sum)
@@ -142,19 +203,14 @@ rdquant <- function(Y, x, fuzzy = NULL, grid = quantile(Y, seq(.1,.9,.1), na.rm 
   return(pdfdf)
 }
 
-
-qplot <- function(qvar, df, plot = TRUE, grid = NULL, vars = NULL, k = "triangular", h = NULL, b = NULL, 
-                  dist.exclude = "none", donut = 0, poly = 1, weights = TRUE, ihs = FALSE, vce = "hc1", fuzzy = FALSE){
-  ### only works for segment 13
-  df <- dfprep(df, donut, "dist_2_seg13", dist.exclude)
-  vs = vectorprep(df, qvar, "dist_2_seg13", vars, vce, fuzzy, ihs, weights)
+qplot <- function(qvar, bvar, df, plot = TRUE, grid = NULL, vars = "none", k = "triangular", h = NULL, b = NULL, 
+                  dist.exclude = NULL, donut = 0, poly = 1, weights = TRUE, ihs = FALSE, vce = NULL, fuzzy = FALSE){
+  df <- dfprep(df, qvar, donut, bvar, dist.exclude)
+  vs = vectorprep(df, qvar, bvar, fuzzy, ihs, weights)
   f = vs[[1]]; Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
-  if (vars=="opt") {
-    vopt <- pdlvarselect(v, maxiter = 10, tol = 1, df, dist.exclude, donut, k, vce, ihs)
-    covs <- covmatmaker("dist_2_seg13", df, vopt)
-  } else {covs <- covmatmaker("dist_2_seg13", df, vars)}
+  covs <- covmatmaker(df, vars)
   if (is.null(grid)) grid = quantile(Y, seq(.1,.9,.1), na.rm = TRUE)
-  qtab <- rdquant(Y = Y, x = X, c = 0, fuzzy = f, grid, weights = w, cluster = c, 
+  qtab <- rdquant(Y = Y, x = X, c = 0, fuzzy = f, grid, weights = w,  
                   vce = vce, covs = covs, kernel = k, h = h, b = b, p = poly)
   qtab = filter(unique(qtab), round(rcoefs,2) >=-.1 & round(rcoefs,2) <=1.1)
   
@@ -176,7 +232,7 @@ qplot <- function(qvar, df, plot = TRUE, grid = NULL, vars = NULL, k = "triangul
 earthmovers <- function(data, idx, cutpts){
   df = data[idx,]
   cutvars = paste("c", cutpts, sep = "")
-  rdcc = lapply(cutvars, regout, b = "dist_2_seg13", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
+  rdcc = lapply(cutvars, regout, b = "dist_2_seg1pt", df = df, h = h0, b0 = b0, k = "triangular", vce = "hc1", fuzzy = TRUE)
   dF = unlist(lapply(rdcc, function(x) x$coef[1,1]))
   intfun = approxfun(x = cutpts, y = dF)
   emd = integrate(intfun, min(cutpts), max(cutpts), stop.on.error = FALSE)
@@ -189,4 +245,5 @@ rearranger <- function(q, y) {
   r[r>1] <- 1
   return(as.vector(r))
 }
+
 
