@@ -10,8 +10,8 @@ library(mgcv)
 library(neuralnet)
 options('nloptr.show.inequality.warning'=FALSE)
 source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
-lbounds <- c(1.01, .8, 1.01, .01, .01, .01, .2, .4, .8)
-ranges <- c(9.99, .19, .19, .79, .59, .99, .79, .5, .19)
+lbounds <- c(1.01, .85, 1.01, .01, .01, .01, .7, .5, .9)
+ranges <- c(9.99, .14, .09, .79, .49, .99, .4, .4, .07)
 ubounds <- lbounds + ranges
 ui = rbind(c(0,0,0,-1,0,0,0,1,0),
            c(0,0,0,0,-1,0,0,-1,0),

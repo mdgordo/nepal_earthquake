@@ -50,11 +50,10 @@ Define vars
 ```{r, warning = FALSE}
 placebos <- c("shake_pga", "high_caste", "age_hh", "highest_ed", "hhmembers",
               "class5", "class10", "always_lived_house", "always_lived_dist", "slope", "NGO_transfers", "non_quake_aid")
-infravars <- c("time_to_school", "time_to_health", "time_to_market")
+infravars <- c("time_to_school", "time_to_health", "time_to_market", "time_to_bank")
 pricevars <- c("chicken_price", "rice_price", "lentil_price", "sugar_price", "mutton_price")
 aidvars <- c("aid_cumulative_bin", "aid_cumulative", "reconstruction_aid_bin", "reconstruction_aid_cumulative")
-mainvars <- c("consumption", "food_consumption", "home_investment", "total_income", "productive_assets",
-              "remittance_income", "loan_payments", "loans_taken_past_year", "migration_bin", "financial_assets")
+mainvars <- c("food_consumption", "home_investment", "remittance_income", "liq_savings", "tot_savings", "total_income", "migration_bin")
 secvars <- c("labor_income", "livestock_value", "business_investment", "cap_inputs", "school_costs", "health_costs",
              "work_aid_wages", "liq_savings", "tot_savings", "labor_supply", "days_ill")
 
@@ -95,17 +94,17 @@ plotlist <- lapply(aidvars, plotvar, b = bvar, df = df.hh, dist.exclude = dist.e
 plotlist
 
 plotvar(fvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Aid (1,000 NPR)") + theme(text = element_text(size = 20))
+  labs(x = "Distance to Border", y = "Received Aid") + theme(text = element_text(size = 20))
 ggsave(paste(rootdir, "/presentation_materials/aidRD1.png", sep = ""), width = 10, height = 7)
 
 plotvar(fvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0) + 
   geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
-  labs(x = "Distance to Border", y = "Aid (1,000 NPR)") + theme(text = element_text(size = 20))
+  labs(x = "Distance to Border", y = "Received Aid") + theme(text = element_text(size = 20))
 ggsave(paste(rootdir, "/presentation_materials/aidRD2.png", sep = ""), width = 10, height = 7)
 
 plotvar(fvar, b = bvar, df = df.hh, dist.exclude = dist.exclude, p = 1, h = h0, residualizer = TRUE, vars = ctrls1) + 
   geom_vline(aes(xintercept = -h0), color = "red") + geom_vline(aes(xintercept = h0), color = "red") + 
-  labs(x = "Distance to Border", y = "Residualized Aid (1,000 NPR)") + theme(text = element_text(size = 20))
+  labs(x = "Distance to Border", y = "Residualized Aid") + theme(text = element_text(size = 20))
 ggsave(paste(rootdir, "/presentation_materials/aidRD3.png", sep = ""), width = 10, height = 7)
 ```
 
@@ -140,7 +139,7 @@ plotvar("always_lived_dist", b = bvar, df = df.hh, dist.exclude = dist.exclude, 
   labs(x = "Distance to Border", y = "Always Lived in the District") + theme(text = element_text(size = 20))
 ggsave(paste(rootdir, "/presentation_materials/always.png", sep = ""), width = 10, height = 7)
 
-plotvar("pub_transfers", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
+plotvar("non_quake_aid", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
   labs(x = "Distance to Border", y = "Other Public Transfers") + theme(text = element_text(size = 20))
 ggsave(paste(rootdir, "/presentation_materials/pubtrans.png", sep = ""), width = 10, height = 7)
 
@@ -162,23 +161,28 @@ plotlist <- lapply(mainvars, plotvar, b = bvar, df = df.hh, dist.exclude = dist.
 plotlist
 
 plotvar("home_investment", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Home Investment (10,000 NPR)") + theme(text = element_text(size = 20))
+  labs(x = "Distance to Border", y = "Home Investment (000s NPR)") + theme(text = element_text(size = 20)) +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-3))
 ggsave(paste(rootdir, "/presentation_materials/home1.png", sep = ""), width = 10, height = 7)
 
 plotvar("remittance_income", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Remittance Income (10,000 NPR)") + theme(text = element_text(size = 20))
+  labs(x = "Distance to Border", y = "Home Investment (000s NPR)") + theme(text = element_text(size = 20)) +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-3))
 ggsave(paste(rootdir, "/presentation_materials/remit1.png", sep = ""), width = 10, height = 7)
 
 plotvar("food_consumption", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Food Consumption (10,000 NPR)") + theme(text = element_text(size = 20))
+  labs(x = "Distance to Border", y = "Home Investment (000s NPR)") + theme(text = element_text(size = 20)) +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-3))
 ggsave(paste(rootdir, "/presentation_materials/food1.png", sep = ""), width = 10, height = 7)
 
-plotvar("productive_assets", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Productive Assets (10,000 NPR)") + theme(text = element_text(size = 20))
+plotvar("tot_savings", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
+  labs(x = "Distance to Border", y = "Home Investment (000s NPR)") + theme(text = element_text(size = 20)) +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-3))
 ggsave(paste(rootdir, "/presentation_materials/assetsrd.png", sep = ""), width = 10, height = 7)
 
 plotvar("total_income", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Income (10,000 NPR)") + theme(text = element_text(size = 20))
+  labs(x = "Distance to Border", y = "Home Investment (000s NPR)") + theme(text = element_text(size = 20)) +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-3))
 ggsave(paste(rootdir, "/presentation_materials/incomerd.png", sep = ""), width = 10, height = 7)
 
 plotvar("migration_bin", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
@@ -221,13 +225,13 @@ rdstg17 <- lapply(aidvars[1:2], regout, b = bvar, df = df.hh, vars = "none",
 
 rdstg1 <- c(rdstg11, rdstg12, rdstg13, rdstg14, rdstg15, rdstg16, rdstg17)
 
-rdgazer(rdstg1[c(1:8)], dvlabs = rep(c("Received Aid", "Aid Amount"), 4), type = "latex", 
+rdgazer(rdstg1[c(1:8)], dvlabs = rep(c("Received Aid", "Aid Amount"), 4), type = "text", 
         xlines = list(c("Kernel", rep("triangular", 2),  rep("epanechnikov", 2), rep("triangular", 4)),
                       c("5 km Donut", rep("", 8)),
                       c("Controls", rep("Opt", 8)),
                       c("Wards", sapply(rdstg1, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))))
 
-rdgazer(rdstg1[c(9:14)],dvlabs = rep(c("Received Aid", "Aid Amount"), 3), type = "latex", 
+rdgazer(rdstg1[c(9:14)],dvlabs = rep(c("Received Aid", "Aid Amount"), 3), type = "text", 
         xlines = list(c("Kernel", rep("triangular", 6)),
                       c("5 km Donut", rep("X", 2), rep("", 4)),
                       c("Controls", rep("Opt", 2), rep("Alt", 2), rep("", 2)),
@@ -257,45 +261,45 @@ print("main")
 rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = c(ctrls1), 
                  dist.exclude = dist.exclude, k = k, vce = vce, ihs = FALSE)
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
 print("none")
 rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = "none", 
                  dist.exclude = dist.exclude, k = k, vce = vce, ihs = FALSE)
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
 print("logged")
 rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars =  c(ctrls1),
                  dist.exclude = dist.exclude, k = k, vce = vce, ihs = TRUE)
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
 print("logged none")
 rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars =  "none", 
                  dist.exclude = dist.exclude, k = k, vce = vce, ihs = TRUE)
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
 print("alt ctrls")
 rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = c(ctrls),
                  dist.exclude = dist.exclude, k = k, vce = vce, ihs = FALSE)
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
 print("alt kernals")
 rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = ctrls1, 
                  dist.exclude = dist.exclude, k = "uniform", vce = vce, ihs = FALSE)
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
 rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, vars = ctrls1,
                  dist.exclude = dist.exclude, k = "epanechnikov", vce = vce, ihs = FALSE)
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
 print("alt bws")
 rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, h = 30, b0 = 30, vars = ctrls1,
                  dist.exclude = dist.exclude, k = k, vce = vce, ihs = FALSE)
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
 rdmain <- lapply(mainvars, regout, b = bvar, df = df.hh, fuzzy = fvar, h = 80, b0 = 80, vars = ctrls1,
                  dist.exclude = dist.exclude, k = k, vce = vce, ihs = FALSE)
 rdgazer(rdmain, dvlabs = str_replace_all(mainvars, "_", " "), 
-        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "text")
+        xlines = list(c("Wards", sapply(rdmain, function(x) length(unique(x$X[abs(x$X)<x$bws[2,1]]))))), type = "latex")
 ```
 
 ```{r, warning=FALSE}

@@ -15,6 +15,7 @@ rootdir <- dirname(getwd())
 ```{r, message=FALSE, echo=FALSE, warning=FALSE}
 ### packages and data
 library(tidyverse)
+library(dumbells)
 library(parallel)
 library(nloptr)
 library(flatlandr)
@@ -30,7 +31,8 @@ source(paste(rootdir, "/code/VFIfunctions.R", sep = ""))
 source(paste(rootdir, "/code/rdhelpers.R", sep = ""))
 
 ### Read in final Value function
-theta = readRDS(paste(rootdir, "/data/model_output/theta.rds", sep = "")) ## theta0 and V0 are based on Kaboski/Townsend and Francisco
+theta = readRDS(paste(rootdir, "/data/model_output/theta.rds", sep = "")) 
+theta
 V = readRDS(paste(rootdir, "/data/model_output/V.rds", sep = ""))
 finalV = V[[length(V)]]
 xn = length(unique(finalV$x)); hn = length(unique(finalV$h))
@@ -50,7 +52,6 @@ df.hh <- readRDS(paste(rootdir, "/data/model_output/df.adj.rds", sep = "")) %>%
          damage_rel = quake_losses/E_Y) %>%
   drop_na(x_noaid, x_aid, lag_h)
 
-df.bord <- filter(df.hh, abs(dist_2_seg13) < b)
 g = readRDS(paste(rootdir, "/data/model_output/g.rds", sep = ""))
 summary(g)
 ```
@@ -125,84 +126,10 @@ ggplot(df.hh) +
 ```
 
 ```{r}
-### Quantile Reg moments
+### Aid Simulations
 policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "rollmean")
 policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "rollmean")
 
-cfacts <- mclapply(c(1:nrow(df.bord)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.bord, 
-                   mc.cores = detectCores())
-cfacts <- do.call(rbind, cfacts)*df.bord$E_Y
-colnames(cfacts) <- c("Consumption_noAid", "Consumption_Aid", "Investment_noAid", "Investment_Aid",
-                      "Borrowing_noAid", "Borrowing_Aid")
-
-pdfmaker <- function(var, ctpts){
-  xvar = as.vector(cfacts[,var])
-  pvec = sapply(ctpts, function(x) weighted.mean(xvar<x, df.bord$wt_hh, na.rm = TRUE))
-  return(pvec)
-}
-```
-
-
-```{r}
-
-foodRD <- readRDS(paste(rootdir, "/data/model_output/foodRD.rds", sep = ""))
-homeRD <- readRDS(paste(rootdir, "/data/model_output/homeRD.rds", sep = ""))
-loanRD <- readRDS(paste(rootdir, "/data/model_output/loanRD.rds", sep = ""))
-
-
-q = foodRD[[3]][1:10]
-simdat = data.frame(q = q,
-                    #true_aid = rearranger(q, foodRD[[1]][1:10]),
-                    #true_noaid = rearranger(q, foodRD[[2]][1:10]),
-                    sim_noaid = pdfmaker("Consumption_noAid", q),
-                    sim_aid = pdfmaker("Consumption_Aid", q)) %>%
-  pivot_longer(-q, names_to = "series", values_to = "pdf") %>%
-  mutate(aid = if_else(series %in% c("sim_aid", "true_aid"), "aid", "none"),
-         data = if_else(series %in% c("sim_aid", "sim_noaid"), "simulated", "actual"))
-
-psim1 = ggplot(simdat) +
-  geom_line(aes(x = q, y = pdf, color = aid, linetype = data)) +
-  theme_bw() + theme(text = element_text(size = 20), legend.position = "none") + 
-  scale_x_continuous(labels = function(l) {paste(l/1000, "K", sep = "")}) +
-  labs(x = "food consumption", y = "P(X<x)", fill = "data")
-
-q = homeRD[[3]]
-simdat = data.frame(q = q,
-                    #true_aid = rearranger(q, homeRD[[1]]),
-                    #true_noaid = rearranger(q, homeRD[[2]]),
-                    sim_noaid = pdfmaker("Investment_noAid", q),
-                    sim_aid = pdfmaker("Investment_Aid", q)) %>%
-  pivot_longer(-q, names_to = "series", values_to = "pdf") %>%
-  mutate(aid = if_else(series %in% c("sim_aid", "true_aid"), "aid", "none"),
-         data = if_else(series %in% c("sim_aid", "sim_noaid"), "simulated", "actual"))
-
-psim2 = ggplot(simdat) +
-  geom_line(aes(x = q, y = pdf, color = aid, linetype = data)) +
-  theme_bw() + theme(text = element_text(size = 20), legend.position = "none") + 
-  scale_x_continuous(labels = function(l) {paste(l/1000, "K", sep = "")}) +
-  labs(x = "home investment", y = "", fill = "data") + ylim(.01, 1.1)
-
-q = loanRD[[3]]
-simdat = data.frame(q = q,
-                    #true_aid = rearranger(q, loanRD[[1]]),
-                    #true_noaid = rearranger(q, loanRD[[2]]),
-                    sim_noaid = pdfmaker("Borrowing_noAid", q),
-                    sim_aid = pdfmaker("Borrowing_Aid", q)) %>%
-  pivot_longer(-q, names_to = "series", values_to = "pdf") %>%
-  mutate(aid = if_else(series %in% c("sim_aid", "true_aid"), "aid", "none"),
-         data = if_else(series %in% c("sim_aid", "sim_noaid"), "simulated", "actual"))
-
-psim3 <- ggplot(simdat) +
-  geom_line(aes(x = q, y = pdf, color = aid, linetype = data)) +
-  scale_x_continuous(labels = function(l) {paste(l/1000, "K", sep = "")}) +
-  theme_bw() + theme(text = element_text(size = 20)) + labs(x = "borrowing", y = "", fill = "data")
-
-
-cowplot::plot_grid(psim1, psim2, psim3, nrow = 1, rel_widths = c(1,1,1.5))
-ggsave(paste(rootdir, "/presentation_materials/simulations.png", sep = ""), width = 15, height = 7)
-```
-
-```{r}
 budgetconstraint = weighted.mean(df.hh$received_aid, df.hh$wt_hh)
 budgetconstraint
 
@@ -259,31 +186,20 @@ df.hh <- df.hh %>%
          investment_deltaL = Investment_AidL - Investment_noAid,
          borrowing_deltaL = Borrowing_AidL - Borrowing_noAid)
 
-### Effects of first Tranche
-
-df.hhL1 <- mutate(df.hh, x_aid = x_noaid + 50000/E_Y)
-cf3L <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hhL1, 
-                   mc.cores = detectCores())
-cf3L <- data.frame(do.call(rbind, cf3L)*df.hh$E_Y)
-colnames(cf3L) <- c("Consumption_noAid1", "Consumption_AidL1", "Investment_noAid1", "Investment_AidL1",
-                      "Borrowing_noAid1", "Borrowing_AidL1")
-
-df.hh <- cbind(df.hh, cf3L[,c("Consumption_AidL1", "Investment_AidL1", "Borrowing_AidL1")]) 
-df.hh <- df.hh %>%
-  mutate(consumption_deltaL1 = Consumption_AidL1 - Consumption_noAid,
-         investment_deltaL1 = Investment_AidL1 - Investment_noAid,
-         borrowing_deltaL1 = Borrowing_AidL1 - Borrowing_noAid)
-
 #### Model predictions to compare to RD - these are predictions of first tranche - 50K - for those that actually received aid
 ### are these
 
 weighted.mean(df.hh$consumption_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1])
+sqrt(weighted.var(df.hh$consumption_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]))
 weighted.mean(df.hh$investment_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1])
--1*weighted.mean(df.hh$borrowing_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]) ### Borrowing is actually lending
+sqrt(weighted.var(df.hh$investment_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]))
+-1*weighted.mean(df.hh$borrowing_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]) ### Borrowing is actually savings
+sqrt(weighted.var(df.hh$borrowing_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]))
 ```
 
 ```{r}
 ### Most things in first wave only
+df.hh <- filter(df.hh, wtp < 5e6)
 
 w1 = ggplot() +
   geom_histogram(aes(x = df.hh$wtp)) + theme_bw() + theme(text = element_text(size = 20)) + labs(x = "HH Surplus")
@@ -488,6 +404,12 @@ allocator <- function(tvector, uvector, avector = NULL){
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Housing"] = b$t0; df.wr$cil[df.wr$al=="Housing"] = b$normal[,2]; df.wr$cih[df.wr$al=="Housing"] = b$normal[,3]
   
+  qh <- wtd.quantile(df.w1$lag_h, budgetconstraint, weights = df.w1$wt_hh)
+  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$lag_h<qh),
+           weights = df.w1$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Housing"] = b$t0; df.wr$cil[df.wr$al=="Housing"] = b$normal[,2]; df.wr$cih[df.wr$al=="Housing"] = b$normal[,3]
+  
   ### Relative Damages
   qh <- wtd.quantile(df.w1$damage_rel, 1-budgetconstraint, weights = df.w1$wt_hh)
   b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$damage_rel>qh),
@@ -522,7 +444,7 @@ ggplot(df.als, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() +
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
 ggsave(paste(rootdir, "/presentation_materials/counterfactuals.png", sep = ""), width = 17, height = 7)
 
-ggplot(filter(df.als, al %in% c("Actual", "Damages", "Consumption", "Consumption rel.", "Universal")), 
+ggplot(filter(df.als, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal", "Optimal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -539,7 +461,7 @@ ggplot(df.alsU, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() +
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Utility Relative to Random")
 
-ggplot(filter(df.alsU, al %in% c("Actual", "Damages", "Consumption", "Consumption rel.", "Universal")), 
+ggplot(filter(df.alsU, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -557,7 +479,7 @@ ggplot(df.alsA, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() +
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Consumption Relative to Random")
 
-ggplot(filter(df.alsA, al %in% c("Actual", "Damages", "Consumption", "Consumption rel.", "Universal")), 
+ggplot(filter(df.alsA, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -574,7 +496,7 @@ ggplot(df.alsB, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() +
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Housing Investment Relative to Random")
 
-ggplot(filter(df.alsB, al %in% c("Actual", "Damages", "Consumption", "Consumption rel.", "Universal")), 
+ggplot(filter(df.alsB, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -594,7 +516,7 @@ ggplot(df.alsC, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() +
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
 ggsave(paste(rootdir, "/presentation_materials/counterfactuals_conditional.png", sep = ""), width = 17, height = 7)
 
-ggplot(filter(df.alsC, al %in% c("Actual", "Damages", "Consumption", "Consumption rel.", "Universal")), 
+ggplot(filter(df.alsC, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -614,7 +536,7 @@ pwtp = ggplot(filter(finalV, x<1, h<1, h>0, x>-lambda)) + geom_tile(aes(x = x, y
                                                                     width = max(diff(unique(finalV$x))),
                                                                     height =  max(diff(unique(finalV$h)))) + 
   labs(x = "Wealth", y = "Housing Stock", fill = "Tau", title = "Unconditional") +
-  scale_fill_viridis_c() + theme_bw() + theme(text = element_text(size = 20)) 
+  scale_fill_viridis_c(values = seq(0, 1, .1), limits = c(.3,.75)) + theme_bw() + theme(text = element_text(size = 20)) 
 pwtp
 
 finalV$tauC = mcmapply(conditionalizer, x = finalV$x, h = finalV$h, 
@@ -625,7 +547,7 @@ pwtpC = ggplot(filter(finalV, x<1, h<1, h>0, x>-lambda)) + geom_tile(aes(x = x, 
                                                                     width = max(diff(unique(finalV$x))),
                                                                     height =  max(diff(unique(finalV$h)))) + 
   labs(x = "Wealth", y = "Housing Stock", fill = "Tau", title = "Conditional") +
-  scale_fill_viridis_c() + theme_bw() + theme(text = element_text(size = 20)) 
+  scale_fill_viridis_c(values = seq(0, 1, .1), limits = c(.3,.75)) + theme_bw() + theme(text = element_text(size = 20)) 
 pwtpC
 cowplot::plot_grid(pwtp, pwtpC)
 ggsave(paste(rootdir, "/presentation_materials/wtpsurf.png", sep = ""), width = 12, height = 7)
