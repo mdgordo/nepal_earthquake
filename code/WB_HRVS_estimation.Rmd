@@ -166,22 +166,22 @@ plotvar("home_investment", b = bvar, df = df.hh, dist.exclude = dist.exclude, p 
 ggsave(paste(rootdir, "/presentation_materials/home1.png", sep = ""), width = 10, height = 7)
 
 plotvar("remittance_income", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Home Investment (000s NPR)") + theme(text = element_text(size = 20)) +
+  labs(x = "Distance to Border", y = "Remittance Income (000s NPR)") + theme(text = element_text(size = 20)) +
   scale_y_continuous(labels = scales::label_number(scale = 1e-3))
 ggsave(paste(rootdir, "/presentation_materials/remit1.png", sep = ""), width = 10, height = 7)
 
 plotvar("food_consumption", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Home Investment (000s NPR)") + theme(text = element_text(size = 20)) +
+  labs(x = "Distance to Border", y = "Food Consumption (000s NPR)") + theme(text = element_text(size = 20)) +
   scale_y_continuous(labels = scales::label_number(scale = 1e-3))
 ggsave(paste(rootdir, "/presentation_materials/food1.png", sep = ""), width = 10, height = 7)
 
 plotvar("tot_savings", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Home Investment (000s NPR)") + theme(text = element_text(size = 20)) +
+  labs(x = "Distance to Border", y = "Total Savings (000s NPR)") + theme(text = element_text(size = 20)) +
   scale_y_continuous(labels = scales::label_number(scale = 1e-3))
 ggsave(paste(rootdir, "/presentation_materials/assetsrd.png", sep = ""), width = 10, height = 7)
 
 plotvar("total_income", b = bvar, df = df.hh, dist.exclude = dist.exclude, p = "loess") + 
-  labs(x = "Distance to Border", y = "Home Investment (000s NPR)") + theme(text = element_text(size = 20)) +
+  labs(x = "Distance to Border", y = "Total Income (000s NPR)") + theme(text = element_text(size = 20)) +
   scale_y_continuous(labels = scales::label_number(scale = 1e-3))
 ggsave(paste(rootdir, "/presentation_materials/incomerd.png", sep = ""), width = 10, height = 7)
 
