@@ -4,8 +4,8 @@ robustses <- function(x) {
 }
 
 covmatmaker <- function(df, vars){
-  fulllist = c("wave2", "wave3", "shake_pga", "high_caste", "hhmembers",  
-               "class5", "class10", "age_hh", "elevation", "gorkha_loss_ever",
+  fulllist = c("wave2", "wave3", "seg2", "seg3", "shake_pga", "high_caste", "hhmembers",
+               "class5", "class10", "age_hh", "elevation", "gorkha_loss_ever", "distance_epicenter",
                "time_to_market", "time_to_health", "time_to_bank", "time_to_school")
   dfx <- df[,fulllist]
   covs <- model.matrix(~.+0, dfx)
@@ -53,6 +53,7 @@ pdlvarselect <- function(v, maxiter = 10, tol = 1, df, dist.exclude = NULL, donu
                          k = "triangular", vce = NULL, ihs = FALSE, fuzzy = FALSE){
   ### only works for dist_2_seg1pt at the moment and triangular kernel
   i = 0
+  if (is.null(fuzzy)) fuzzy <- FALSE
   bandinit <- optbw(v, b = "dist_2_seg1pt", df = df, fuzzy = fuzzy, donut = donut, dist.exclude = dist.exclude, 
                     k = k, vce = vce, ihs = ihs, vars = "all")
   Y = unlist(df[, v])
@@ -64,8 +65,8 @@ pdlvarselect <- function(v, maxiter = 10, tol = 1, df, dist.exclude = NULL, donu
   df = mutate(df, distpos = if_else(dist_2_seg1pt >= 0, dist_2_seg1pt, 0))
   hlast <- bandinit[1,1]
   
-  fulllist = c("wave2", "wave3", "shake_pga", "high_caste", "hhmembers", 
-               "class5", "class10", "age_hh", "elevation", "gorkha_loss_ever",
+  fulllist = c("wave2", "wave3", "shake_pga", "high_caste", "hhmembers",
+               "class5", "class10", "age_hh", "elevation", "gorkha_loss_ever", "distance_epicenter",
                "time_to_market", "time_to_health", "time_to_bank", "time_to_school")
   
   while (i < maxiter){
@@ -78,14 +79,14 @@ pdlvarselect <- function(v, maxiter = 10, tol = 1, df, dist.exclude = NULL, donu
     reg1 <- lm(Y ~ dist_2_seg1pt + distpos,
                data = df.lasso, weights = kwt, subset = abs(dist_2_seg1pt)<h0)
     
-    reg2 <- lm(as.formula(paste(fuzzy, "~ dist_2_seg1pt + distpos")),
-               data = df.lasso, weights = kwt, subset = abs(dist_2_seg1pt)<h0)
+    if (fuzzy!=FALSE) {reg2 <- lm(as.formula(paste(fuzzy, "~ dist_2_seg1pt + distpos")),
+               data = df.lasso, weights = kwt, subset = abs(dist_2_seg1pt)<h0)}
     
     reg3 <- lm(dist_14 ~ dist_2_seg1pt + distpos,
                data = df.lasso, weights = kwt, subset = abs(dist_2_seg1pt)<h0)
     
     df.lasso$yresid <-reg1$residuals*sqrt(df.lasso$kwt)
-    df.lasso$xresid <-reg2$residuals*sqrt(df.lasso$kwt)
+    if (fuzzy!=FALSE) {df.lasso$xresid <-reg2$residuals*sqrt(df.lasso$kwt)}
     df.lasso$zresid <-reg3$residuals*sqrt(df.lasso$kwt)
     
     dfx <- df.lasso[,fulllist]
@@ -93,12 +94,15 @@ pdlvarselect <- function(v, maxiter = 10, tol = 1, df, dist.exclude = NULL, donu
     covmat <- model.matrix(form, dfx)*sqrt(df.lasso$kwt)
     
     pdl1 <- rlasso(y = df.lasso$yresid, x = covmat, post = FALSE, intercept = FALSE)
-    pdl2 <- rlasso(y = df.lasso$xresid, x = covmat, post = FALSE, intercept = FALSE)
+    if (fuzzy!=FALSE) {pdl2 <- rlasso(y = df.lasso$xresid, x = covmat, post = FALSE, intercept = FALSE)
+    } else {
+      pdl2 <- pdl1}
     pdl3 <- rlasso(y = df.lasso$zresid, x = covmat, post = FALSE, intercept = FALSE)
     
-    vars <- colnames(pdl1$model)[pdl1$index | pdl2$index | pdl3$index]; vars <- vars[c(2:length(vars))]
+    vars <- colnames(pdl1$model)[pdl1$index | pdl2$index | pdl3$index]
+    if (is.null(vars)) {vars <- "none"}
     bandinit <- optbw(v, b = "dist_2_seg1pt", df = df, fuzzy = fuzzy, dist.exclude = dist.exclude, 
-                      k = k, vce = vce, ihs = ihs, vars = vars)
+                      weights = TRUE, k = k, vce = vce, ihs = ihs, vars = vars)
     h0 <- bandinit[1,1]
     if (h0 %in% hlast) i = maxiter else i = i+1; hlast = c(hlast, h0)
   }
@@ -110,6 +114,7 @@ regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, k = "triangular
   df <- dfprep(df, v, donut, b, dist.exclude)
   vs = vectorprep(df, v, b, fuzzy, ihs, weights)
   f = vs[[1]]; Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
+  if (vars=="opt") {vars <- pdlvarselect(v, df = df, dist.exclude = dist.exclude, k = k, vce = vce, fuzzy = f)}
   covs <- covmatmaker(df, vars)
   out <- rdrobust(y = Y, x = X, c = 0, fuzzy = f, h = h, b = b0, weights = w, kernel = k,
                   p = poly, vce = vce, covs = covs)

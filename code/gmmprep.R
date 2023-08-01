@@ -115,7 +115,8 @@ df.adj <- df.hh %>%
   select(hhid, wave, wt_hh, food_consumption_hat, home_value_hat, home_investment_hat, liq_savings, tot_savings, 
          credit, capital_income, credit_cost, credit_hat, liq_savings_hat, tot_savings_hat, total_income_hat, quake_aid, M_avg, max_interest, 
          cut_food, dissaving, E_remittance, remittance_loan, remittance_saved, years_ago_built,
-         dist_2_seg1pt, quake_losses, received_aid, wt_hh, gorkha_hh, NGO_transfers, designation) %>%
+         dist_2_seg1pt, quake_losses, received_aid, wt_hh, gorkha_hh, NGO_transfers, designation,
+         other_nat_disaster, livestock_farm_shock, riot, illness_injury_shock, price_shock) %>%
   mutate(E_Y = M_avg + E_remittance,
          liq_assets = liq_savings_hat/E_Y, 
          tot_assets = tot_savings_hat/E_Y,  ## end of period assets

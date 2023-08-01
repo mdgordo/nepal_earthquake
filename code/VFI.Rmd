@@ -37,7 +37,7 @@ V = readRDS(paste(rootdir, "/data/model_output/V.rds", sep = ""))
 finalV = V[[length(V)]]
 xn = length(unique(finalV$x)); hn = length(unique(finalV$h))
 
-gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
 lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
 gqpts = gaussHermiteData(13)
 
@@ -297,33 +297,40 @@ ggplot(df.cope2) +
   geom_col(aes(y = tau, x = cut_food, fill = cut_food)) + 
   labs(x = "WTP", y = "") + 
   theme_bw()
+
+### WTP by shock - first wave
+df.w1 = filter(df.hh, wave==1)
+weighted.mean(df.w1$wtp, df.w1$wt_hh, na.rm = TRUE); nrow(df.w1)
+weighted.mean(df.w1$wtp[df.w1$gorkha_hh==1], df.w1$wt_hh[df.w1$gorkha_hh==1], na.rm = TRUE); sum(df.w1$gorkha_hh==1)
+weighted.mean(df.w1$wtp[df.w1$other_nat_disaster==1], df.w1$wt_hh[df.w1$other_nat_disaster==1], na.rm = TRUE); sum(df.w1$other_nat_disaster==1)
+weighted.mean(df.w1$wtp[df.w1$riot==1], df.w1$wt_hh[df.w1$riot==1], na.rm = TRUE); sum(df.w1$riot==1)
+weighted.mean(df.w1$wtp[df.w1$price_shock==1], df.w1$wt_hh[df.w1$price_shock==1], na.rm = TRUE); sum(df.w1$price_shock==1)
+weighted.mean(df.w1$wtp[df.w1$illness_injury_shock==1], df.w1$wt_hh[df.w1$illness_injury_shock==1], na.rm = TRUE); sum(df.w1$illness_injury_shock==1)
+weighted.mean(df.w1$wtp[df.w1$livestock_farm_shock==1], df.w1$wt_hh[df.w1$livestock_farm_shock==1], na.rm = TRUE); sum(df.w1$livestock_farm_shock==1)
 ```
 
 ```{r}
-print("tau:"); weighted.mean(df.hh$tau, df.hh$wt_hh, na.rm = TRUE)
-a = weighted.mean(df.hh$wtp, df.hh$wt_hh, na.rm = TRUE)
+print("tau:"); weighted.mean(df.w1$tau, df.w1$wt_hh, na.rm = TRUE)
+a = weighted.mean(df.w1$wtp, df.w1$wt_hh, na.rm = TRUE)
 print("wtp:"); a
-print("tau conditional:"); weighted.mean(df.hh$tauC, df.hh$wt_hh, na.rm = TRUE)
-b = weighted.mean(df.hh$wtpC, df.hh$wt_hh, na.rm = TRUE)
+print("tau conditional:"); weighted.mean(df.w1$tauC, df.w1$wt_hh, na.rm = TRUE)
+b = weighted.mean(df.w1$wtpC, df.w1$wt_hh, na.rm = TRUE)
 print("wtp conditional:"); b
 print("decrease:"); (a-b)/a
 
-print("tau sd:"); sqrt(weighted.mean((df.hh$tau - weighted.mean(df.hh$tau, df.hh$wt_hh))^2, df.hh$wt_hh))
-print("wtp sd:"); sqrt(weighted.mean((df.hh$wtp - weighted.mean(df.hh$wtp, df.hh$wt_hh))^2, df.hh$wt_hh))
+print("tau sd:"); sqrt(weighted.mean((df.w1$tau - weighted.mean(df.w1$tau, df.w1$wt_hh))^2, df.w1$wt_hh))
+print("wtp sd:"); sqrt(weighted.mean((df.w1$wtp - weighted.mean(df.w1$wtp, df.w1$wt_hh))^2, df.w1$wt_hh))
 
-print("cor losses wtp:"); cor(df.hh$quake_losses, df.hh$wtp)
-print("cor losses home val:"); cor(df.hh$quake_losses[df.hh$wave==1], df.hh$lag_h[df.hh$wave==1])
-print("cor food (relative):"); cor(df.hh$food_consumption, df.hh$wtp)
-print("cor interest:"); cor(df.hh$max_interest[!is.na(df.hh$max_interest) & df.hh$wave==1], df.hh$tau[!is.na(df.hh$max_interest) & df.hh$wave==1])
+print("cor losses wtp:"); cor(df.w1$quake_losses, df.w1$wtp)
+print("cor losses home val:"); cor(df.w1$quake_losses[df.w1$wave==1], df.w1$lag_h[df.w1$wave==1])
+print("cor food (relative):"); cor(df.w1$food_consumption, df.w1$wtp)
+print("cor interest:"); cor(df.w1$max_interest[!is.na(df.w1$max_interest) & df.w1$wave==1], df.w1$tau[!is.na(df.w1$max_interest) & df.w1$wave==1])
 
-print("fraction with losses:"); weighted.mean(df.hh$quake_losses[df.hh$wave==1]>0, df.hh$wt_hh[df.hh$wave==1])
+print("fraction with losses:"); weighted.mean(df.w1$quake_losses[df.w1$wave==1]>0, df.w1$wt_hh[df.w1$wave==1])
 ```
 
 
 ```{r}
-### Restrict to first wave
-df.w1 = filter(df.hh, wave==1)
-
 allocator <- function(tvector, uvector, avector = NULL){
   df.w1$v <- tvector
   df.w1$u <- uvector

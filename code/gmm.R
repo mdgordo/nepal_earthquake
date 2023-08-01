@@ -10,15 +10,13 @@ library(mgcv)
 library(neuralnet)
 options('nloptr.show.inequality.warning'=FALSE)
 source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
-lbounds <- c(1.01, .85, 1.01, .01, .01, .01, .7, .5, .9)
-ranges <- c(9.99, .14, .09, .79, .49, .99, .4, .4, .07)
+lbounds <- c(1.01, .85, 1.01, .01, .01, .01, .8, .5, .9)
+ranges <- c(9.99, .14, .09, .99, .99, .99, .2, .4, .07)
 ubounds <- lbounds + ranges
-ui = rbind(c(0,0,0,-1,0,0,0,1,0),
-           c(0,0,0,0,-1,0,0,-1,0),
-           c(0,-1,-1,0,0,0,0,0,0),
+ui = rbind(c(0,-1,-1,0,0,0,0,0,0),
            diag(9),
            -1*diag(9))
-ci = c(0,-1,-2.03, lbounds, -1*ubounds) ## 2.03 approximates multiplicative constraint on BR < 1
+ci = c(-2.03, lbounds, -1*ubounds) ## 2.03 approximates multiplicative constraint on BR < 1
 
 ### load data
 df.adj <- readRDS(paste(getwd(), "/data/model_output/df.adj.rds", sep = ""))
@@ -31,7 +29,7 @@ xn = 50; hn = 50
 ### GMM 
 ## first coarse global
 globalwrap = function(t){
-  if (t[2]*t[3]>1 | t[4]>t[8] | t[5] > 1-t[8]) {
+  if (t[2]*t[3]>1) {
     return(99999)
   } else {
   momentmat = gmmmomentmatcher(t, df.adj)
@@ -43,7 +41,7 @@ globalwrap = function(t){
 
 g <- directL(fn = globalwrap,
              upper = ubounds, lower = lbounds,
-             control = list(maxeval = 250))
+             control = list(maxeval = 1000, xtol_rel = 1e-2))
 
 g
 t0 = g$par
@@ -51,14 +49,14 @@ t0 = g$par
 g <- gmm(g = gmmmomentmatcher, x = df.adj, t0 = t0, gradv = momentgrad,      
          type = "twoStep", optfct = "constrOptim",   
          ui = ui, ci = ci, 
-         control = list(maxit = 50, reltol = 2e-2))
+         control = list(maxit = 50, reltol = 1e-2))
 summary(g)
 
 saveRDS(g, paste(getwd(), "/data/model_output/g.rds", sep = ""))
 #g <- readRDS(paste(getwd(), "/data/model_output/g.rds", sep = ""))
 
 theta = g$coefficients
-gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
 lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
 saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
 

@@ -789,6 +789,7 @@ sum(df.femasum$amt[df.femasum$year>2009 & df.femasum$type=="repair"])/sum(df.fem
 sum(df.femasum$amt[df.femasum$year>2009 & df.femasum$type=="rental"])/sum(df.femasum$amt[df.femasum$year>2009])
 sum(df.femasum$amt[df.femasum$year>2009 & df.femasum$type=="replace"])/sum(df.femasum$amt[df.femasum$year>2009])
 sum(df.femasum$amt[df.femasum$year>2009 & df.femasum$type=="other"])/sum(df.femasum$amt[df.femasum$year>2009])
+sum(df.femasum$amt[df.femasum$year>2009 & df.femasum$type %in% c("repair", "rental", "replace")])
 ```
 
 

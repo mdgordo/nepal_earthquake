@@ -17,7 +17,7 @@ great.expectations <- function(sigma, gqpts){
 }
 
 create.statespace = function(ubm = c(5,5), theta, method = "log"){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
   if (method=="chebyshev") {
@@ -127,7 +127,7 @@ extrapolator <- function(w, x, h, xvals, hvals, Tw, var) {
 
 interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
   
-  cbar = theta[4]; hbar = theta[5]; lambda = theta[6]
+  cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8]); lambda = theta[6]
   if (var=="proj") Tw = w$proj else if (var=="efx") Tw = w$efx else if (var=="Tw") Tw = w$Tw else if (var %in% c("cfx", "aidcfx")) Tw = w$cfx else if (var %in% c("ifx", "aidifx")) Tw = w$ifx
   
   xvals = sort(unique(w$x)); hvals = sort(unique(w$h))
@@ -181,7 +181,7 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
 ### Function factory for generation household maximization problem (minimizes the negative - which is positive)
 
 hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]; 
   
   draws = exp(great.expectations(sigma, gqpts))
@@ -209,7 +209,7 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
 }
 
 firstguesser <- function(w, theta){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+  gamma = theta[1]; beta = theta[2]; R = theta[3];; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   guesswrap = function(rowidx){
     x = w$x[rowidx]; h = w$h[rowidx]
@@ -235,7 +235,7 @@ firstguesser <- function(w, theta){
 ### Bellman Operator
 
 bellman <- function(w, theta, shockpts = 13, m = 2000){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   gqpts = gaussHermiteData(shockpts)
   Valfunc = interpolater.creater(w, theta, method = "simplical")
@@ -277,7 +277,7 @@ bellman <- function(w, theta, shockpts = 13, m = 2000){
 
 ### VFI
 VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   w = vector(mode = "list", length = maxiter)
   w[[1]] = v0
@@ -319,7 +319,7 @@ gmmmomentmatcher <- function(theta, df) {
 }
 
 momentmatcher <- function(i, vfx, t0, data){
-  gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]; hbar = t0[5]
+  gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]*t0[8]; hbar = t0[5]*(1-t0[8])
   lambda = t0[6]; sigma = t0[7]; alpha = t0[8]; delta = t0[9]
   df = data[i,]; eybar = mean(data$E_Y); abar = mean(data$tot_savings); credbar = mean(data$credit); agebar = mean(data$years_ago_built)
   wt = sqrt(df$wt_hh/sum(data$wt_hh))
