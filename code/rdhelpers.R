@@ -3,13 +3,17 @@ robustses <- function(x) {
   sqrt(diag(vcovHC(x, cluster=~strata, type = "HC1")))
 }
 
+full_var_list <- c("wave2", "wave3", "shake_pga", "high_caste", "hhmembers", "highest_ed", "always_lived_house", "always_lived_dist", 
+                   "class5", "class10", "age_hh", "slope", "elevation", "gorkha_loss_ever", "distance_epicenter",
+                   "time_to_market", "time_to_health", "time_to_bank", "time_to_school")
+
 covmatmaker <- function(df, vars){
-  fulllist = c("wave2", "wave3", "seg2", "seg3", "shake_pga", "high_caste", "hhmembers",
-               "class5", "class10", "age_hh", "elevation", "gorkha_loss_ever", "distance_epicenter",
-               "time_to_market", "time_to_health", "time_to_bank", "time_to_school")
+  fulllist = full_var_list
   dfx <- df[,fulllist]
   covs <- model.matrix(~.+0, dfx)
-  if (vars=="none") {covs = NULL} else if (vars == "all") {covs <- covs} else {
+  if (length(vars)==1) {
+    if (vars=="none") {covs = NULL} else if (vars == "all") {covs <- covs} else {covs = covs[,colnames(covs) %in% vars]}
+  } else {
     covs = covs[,colnames(covs) %in% vars]
   }
   return(covs)
@@ -65,9 +69,7 @@ pdlvarselect <- function(v, maxiter = 10, tol = 1, df, dist.exclude = NULL, donu
   df = mutate(df, distpos = if_else(dist_2_seg1pt >= 0, dist_2_seg1pt, 0))
   hlast <- bandinit[1,1]
   
-  fulllist = c("wave2", "wave3", "shake_pga", "high_caste", "hhmembers",
-               "class5", "class10", "age_hh", "elevation", "gorkha_loss_ever", "distance_epicenter",
-               "time_to_market", "time_to_health", "time_to_bank", "time_to_school")
+  fulllist = full_var_list
   
   while (i < maxiter){
     h0 = hlast[length(hlast)]
@@ -114,7 +116,7 @@ regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, k = "triangular
   df <- dfprep(df, v, donut, b, dist.exclude)
   vs = vectorprep(df, v, b, fuzzy, ihs, weights)
   f = vs[[1]]; Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
-  if (vars=="opt") {vars <- pdlvarselect(v, df = df, dist.exclude = dist.exclude, k = k, vce = vce, fuzzy = f)}
+  if (length(vars)==1) {if (vars=="opt") {vars <- pdlvarselect(v, df = df, dist.exclude = dist.exclude, k = k, vce = vce, fuzzy = fuzzy)}}
   covs <- covmatmaker(df, vars)
   out <- rdrobust(y = Y, x = X, c = 0, fuzzy = f, h = h, b = b0, weights = w, kernel = k,
                   p = poly, vce = vce, covs = covs)

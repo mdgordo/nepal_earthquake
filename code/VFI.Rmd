@@ -37,7 +37,7 @@ V = readRDS(paste(rootdir, "/data/model_output/V.rds", sep = ""))
 finalV = V[[length(V)]]
 xn = length(unique(finalV$x)); hn = length(unique(finalV$h))
 
-gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
+gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
 lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
 gqpts = gaussHermiteData(13)
 
@@ -64,11 +64,11 @@ satisficer(V, sigma)
 
 ```{r}
 iterplotter(V, hidx = finalV$h[40], var = "Tw")
-iterplotter(V, hidx = finalV$h[1], var = "cfx", ifilt = c(3:7))
+iterplotter(V, hidx = finalV$h[1], var = "cfx")
 iterplotter(V, hidx = finalV$h[1], var = "ifx")
-iterplotter(V, hidx = finalV$h[25], var = "cfx", ifilt = c(3:7))
+iterplotter(V, hidx = finalV$h[25], var = "cfx")
 iterplotter(V, hidx = finalV$h[25], var = "ifx")
-iterplotter(V, xidx = finalV$x[1600], var = "cfx", ifilt = c(3:7))
+iterplotter(V, xidx = finalV$x[1600], var = "cfx")
 iterplotter(V, xidx = finalV$x[1600], var = "ifx")
 ```
 
@@ -96,7 +96,15 @@ pifx = threedplotter(V, "ifx", d3 = FALSE, ubm = 5, ubh = 5, lbm = -lambda, lbh 
   geom_contour(aes(x = x, y = h, z = proj), breaks = seq(.25, 2.25, .5), color = "grey") + 
   theme_bw()
 cowplot::plot_grid(pcfx, pifx)
-ggsave(paste(rootdir, "/presentation_materials/policyfx.png", sep = ""), width = 16, height = 7)
+#ggsave(paste(rootdir, "/presentation_materials/policyfx.png", sep = ""), width = 16, height = 7)
+psfx = threedplotter(V, "savings", d3 = FALSE, ubm = 5, ubh = 5, lbm = -lambda, lbh = 0, 
+                     method = "rollmean", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) +
+  labs(x = "Wealth", y = "Housing Stock", fill = "Savings") +
+  geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
+  geom_contour(aes(x = x, y = h, z = proj), breaks = seq(.25, 2.25, .5), color = "grey") + 
+  theme_bw()
+psfx
+#ggsave(paste(rootdir, "/presentation_materials/policyfx_savings.png", sep = ""), width = 16, height = 7)
 ```
 
 ```{r}
@@ -141,27 +149,29 @@ df.hh$wtp <- df.hh$tau * df.hh$E_Y/(1-beta)
 
 df.hh$tauL <- mcmapply(wtpeliciter, x = df.hh$x_noaid, h = df.hh$lag_h, 
                       y = df.hh$E_Y, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
-                      mc.cores = detectCores()-2, mc.preschedule = FALSE)
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
 df.hh$wtpL <- df.hh$tauL * df.hh$E_Y/(1-beta)
 
 df.hh$tauC <- mcmapply(conditionalizer, x = df.hh$x_noaid, h = df.hh$lag_h, 
                       y = df.hh$E_Y, aidamt = 300000, vfx = list(finalV), theta = list(theta),
-                      mc.cores = detectCores()-2, mc.preschedule = FALSE)
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
 df.hh$wtpC <- df.hh$tauC * df.hh$E_Y/(1-beta)
 
 df.hh$tauCL <- mcmapply(conditionalizer, x = df.hh$x_noaid, h = df.hh$lag_h, 
                       y = df.hh$E_Y, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
-                      mc.cores = detectCores()-2, mc.preschedule = FALSE)
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
 df.hh$wtpCL <- df.hh$tauCL * df.hh$E_Y/(1-beta)
 
 df.hh$utils <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
-                        y = df.hh$E_Y, aidamt = 300000, vfx = list(finalV), theta = list(theta))
+                        y = df.hh$E_Y, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
 df.hh$utilL <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
-                        y = df.hh$E_Y, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta))
+                        y = df.hh$E_Y, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
 
 ### consumption and investment
-cf2 <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hh, 
-                   mc.cores = detectCores())
+cf2 <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hh,
+                mc.cores = detectCores()-2)
 cf2 <- data.frame(do.call(rbind, cf2)*df.hh$E_Y)
 colnames(cf2) <- c("Consumption_noAid", "Consumption_Aid", "Investment_noAid", "Investment_Aid",
                       "Borrowing_noAid", "Borrowing_Aid")
@@ -174,8 +184,8 @@ df.hh <- df.hh %>%
 ### Effects of Universal Aid
 
 df.hhL <- mutate(df.hh, x_aid = x_noaid + 300000*budgetconstraint/E_Y)
-cf2L <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hhL, 
-                   mc.cores = detectCores())
+cf2L <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hhL,
+                 mc.cores = detectCores()-2)
 cf2L <- data.frame(do.call(rbind, cf2L)*df.hh$E_Y)
 colnames(cf2L) <- c("Consumption_noAid", "Consumption_AidL", "Investment_noAid", "Investment_AidL",
                       "Borrowing_noAid", "Borrowing_AidL")
@@ -536,7 +546,7 @@ ggsave(paste(rootdir, "/presentation_materials/counterfactuals_conditional_prez.
 ```{r}
 ### Plot WTP surface
 finalV$tau = mcmapply(wtpeliciter, x = finalV$x, h = finalV$h, 
-                      y = 150000, aidamt = 300000, vfx = list(finalV), theta = list(theta), 
+                      y = 150000, aidamt = 300000, vfx = list(finalV), theta = list(theta),
                       mc.cores = detectCores()-2, mc.preschedule = FALSE)
 
 pwtp = ggplot(filter(finalV, x<1, h<1, h>0, x>-lambda)) + geom_tile(aes(x = x, y = h, fill = tau), 
@@ -547,7 +557,7 @@ pwtp = ggplot(filter(finalV, x<1, h<1, h>0, x>-lambda)) + geom_tile(aes(x = x, y
 pwtp
 
 finalV$tauC = mcmapply(conditionalizer, x = finalV$x, h = finalV$h, 
-                      y = 150000, aidamt = 300000, vfx = list(finalV), theta = list(theta), 
+                      y = 150000, aidamt = 300000, vfx = list(finalV), theta = list(theta),
                       mc.cores = detectCores()-2, mc.preschedule = FALSE)
 
 pwtpC = ggplot(filter(finalV, x<1, h<1, h>0, x>-lambda)) + geom_tile(aes(x = x, y = h, fill = tauC), 

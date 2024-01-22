@@ -26,4 +26,6 @@
 *.html
 presentation_materials/
 code/inactive/
+code/windows/
+data/rainfall/
 .DS_Store

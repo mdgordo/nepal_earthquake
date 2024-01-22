@@ -1,6 +1,7 @@
 euclid <- function(a, b) {sqrt(sum((a - b)^2))}
 
 ihs <- function(x){log(x + sqrt(x ^ 2 + 1))}
+ihsinv <- function(x){(exp(x) - exp(-x))/2}
 
 ### utility function
 u <- function(c, h, i, theta) {
@@ -16,22 +17,22 @@ great.expectations <- function(sigma, gqpts){
   return(mu)
 }
 
-create.statespace = function(ubm = c(5,5), theta, method = "log"){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
+create.statespace = function(ubm = c(5,5), theta, method = "equal"){
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
   if (method=="chebyshev") {
-    x = chebnodes(xn, lb = -lambda, ub = ubm[1])
-    h = chebnodes(hn, lb = 0, ub = ubm[2])
+    x = chebnodes(xn, lb = -lambda + .01, ub = ubm[1])
+    h = chebnodes(hn, lb = 0.01, ub = ubm[2])
   } else if (method=="log") { 
-    x =  exp(seq(0, log(ubm[1] + lambda +1), length.out = hn)) - (lambda+1)
-    h =  exp(seq(0, log(ubm[2]+1), length.out = hn))-1
+    x =  exp(seq(0.01, log(ubm[1] + lambda + 1), length.out = hn)) - (lambda+1)
+    h =  exp(seq(0.01, log(ubm[2]+1), length.out = hn))-1
   } else if (method=="uneven") {
-    x = seq(-lambda, ubm[1], length.out = xn)
-    h = unique(c(seq(0, ubm[2]/2, length.out = round(2*hn/3,0)), seq(ubm[2]/2, ubm[2], length.out = round(1*hn/3,0)+1)))
+    x = seq(-lambda + .01, ubm[1], length.out = xn)
+    h = unique(c(seq(.01, ubm[2]/2, length.out = round(2*hn/3,0)), seq(ubm[2]/2, ubm[2], length.out = round(1*hn/3,0)+1)))
   } else {
-    x = seq(-lambda, ubm[1], length.out = xn)
-    h = seq(0, ubm[2], length.out = hn)
+    x = seq(-lambda + .01, ubm[1], length.out = xn)
+    h = seq(.01, ubm[2], length.out = hn)
   }
   css = crossing(x,h)
   return(css)
@@ -127,9 +128,12 @@ extrapolator <- function(w, x, h, xvals, hvals, Tw, var) {
 
 interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
   
-  cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8]); lambda = theta[6]
-  if (var=="proj") Tw = w$proj else if (var=="efx") Tw = w$efx else if (var=="Tw") Tw = w$Tw else if (var %in% c("cfx", "aidcfx")) Tw = w$cfx else if (var %in% c("ifx", "aidifx")) Tw = w$ifx
-  
+  cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9]); lambda = theta[6]
+  if (var %in% c("aidcfx", "aidifx")) {
+    Tw = if (var == "aidcfx") w$cfx else w$ifx
+  } else {
+    Tw = w[[var]]
+  }
   xvals = sort(unique(w$x)); hvals = sort(unique(w$h))
   xmax = max(xvals); hmax = max(hvals); Tmax = max(Tw)
   xmin = min(xvals); hmin = min(hvals); Tmin = min(Tw)
@@ -181,12 +185,12 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
 ### Function factory for generation household maximization problem (minimizes the negative - which is positive)
 
 hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]; 
   
   draws = exp(great.expectations(sigma, gqpts))
   wts = gqpts$w/sqrt(pi)
-  penalty = -1*u(cbar/2, hbar/2, 0, theta)
+  penalty = -1*u(cbar/2, hbar/2, 0, theta) - beta*Valfunc(-lambda*R, hbar/2)
   
   hhprob = function(ci, default = FALSE){
     c = ci[1]; i = ci[2]
@@ -194,13 +198,16 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
       if (default) {
         payoff = u(cbar, max(h, hbar), 0, theta)
         htplus1 = delta*max(hbar, h)
-        xtplus1 = -lambda*R
+        xtplus1 = -lambda #
+        EV = Valfunc(xtplus1, htplus1) #
+        #xtplus1 = -lambda*R
       } else if (c+i > x+lambda+1e-9) {return((c+i+1)*penalty)} else { ### built in constraint 
         payoff = u(c, h, i, theta)
         htplus1 = delta*(h+i)
         xtplus1 = R*(x - c - i)
+        EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1)) #
       }
-      EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
+      #EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
       r = payoff + beta*EV
       return(-r)
     }
@@ -209,19 +216,17 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
 }
 
 firstguesser <- function(w, theta){
-  gamma = theta[1]; beta = theta[2]; R = theta[3];; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+  hsteady = (1-alpha)*delta/(1-delta)
   guesswrap = function(rowidx){
     x = w$x[rowidx]; h = w$h[rowidx]
-    optc = alpha*(x+h+lambda); opti = x + lambda - optc ### derived from FOCs to flow
-    if (opti<0) {optc = x+lambda; opti = 0}  ## investment constraint
-    u = u(optc, h, opti, theta)
-    udef = u(cbar, max(h, hbar), 0, theta)
-    umu = u(x+lambda, h , 0, theta)
-    if (udef > max(u, umu)) {return(c(cbar, 0, udef, -lambda, 1))} else if (umu > u) {
-      return(c(x+lambda, 0, umu, -lambda, 0))} else {
-      return(c(optc, opti, u, -lambda, 0)) 
+    if (h > hsteady) {i = 0; c = x + lambda} else{
+      i = min((1-alpha)*(x+lambda), hsteady - h)
+      c = x + lambda - i
     }
+    u = u(c, h, i, theta)
+    return(c(c, i, u, -lambda, 0))
   }
   Tw = mclapply(c(1:nrow(w)), guesswrap, mc.cores = detectCores())
   wnext = cbind(w[,c("x", "h")], data.frame("Tw" = unlist(lapply(Tw, function(x) x[3])),
@@ -234,8 +239,8 @@ firstguesser <- function(w, theta){
 
 ### Bellman Operator
 
-bellman <- function(w, theta, shockpts = 13, m = 2000){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
+bellman <- function(w, theta, shockpts = 30, m = 2000){
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   gqpts = gaussHermiteData(shockpts)
   Valfunc = interpolater.creater(w, theta, method = "simplical")
@@ -253,8 +258,7 @@ bellman <- function(w, theta, shockpts = 13, m = 2000){
                     lower = c(0,0), upper = c(x+lambda, x+lambda), 
                     control = list(ftol_rel = 1e-6, ftol_abs = 0, xtol_rel = 0, maxeval = m))
       if (x + lambda - sum(sol$par) < 1e-9) { ### double check solutions near boundary - tend to get stuck in local minima
-        c0 = alpha*(x+h+lambda); i0 = x+lambda-c0
-        if (i0<0) {c0 = x+lambda; i0 = 0}
+        c0 = min(w$cfx[rowidx], x + lambda); i0 = w$ifx[rowidx]
         sol2 = cobyla(fn = hhprob, x0 = c(c0, i0),
                       lower = c(0,0), upper = c(x+lambda, x+lambda), 
                       control = list(ftol_rel = 1e-6, ftol_abs = 0, xtol_rel = 0, maxeval = m))
@@ -275,18 +279,48 @@ bellman <- function(w, theta, shockpts = 13, m = 2000){
   return(wnext)
 }
 
+### Howard Policy Iteration
+howard <- function(w, theta, shockpts = 30){
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
+  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+  gqpts = gaussHermiteData(shockpts)
+  Valfunc = interpolater.creater(w, theta, method = "simplical")
+  
+  accelerator = function(rowidx){
+      x = w$x[rowidx]; h = w$h[rowidx]
+      cfx = w$cfx[rowidx]; ifx = w$ifx[rowidx]; def = w$def[rowidx]==1
+      hhprob = hhprob_funkfact(x, h, Valfunc, theta, gqpts)
+      v1 = -1*hhprob(c(cfx, ifx), default = def)
+      vdef = -1*hhprob(c(cfx, ifx), default = TRUE)
+      return(max(v1, vdef))
+    }
+  Twh = mclapply(1:nrow(w), accelerator, mc.cores = detectCores())
+  return(unlist(Twh))
+}
+
 ### VFI
-VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])
+VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 5){
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   w = vector(mode = "list", length = maxiter)
   w[[1]] = v0
-  tol1 = FALSE; i = 2; d = 1; s = 13
+  tol1 = FALSE; i = 2; d = 1; s = 30
   while (i<=maxiter & d > tol) {
-    w[[i]] = bellman(w = w[[i-1]], theta, shockpts = s)
+    wnext = bellman(w = w[[i-1]], theta, shockpts = s)
+    ## howard
+    k = vector(mode = "list", length = howardk+1)
+    k[[1]] = wnext
+    for (j in c(1:howardk)) {
+      wnext$Tw = howard(wnext, theta, shockpts = s)
+      k[[j+1]] = wnext
+    }
+    ### MQP error bounds
+    b = beta/(1-beta)*mean(k[[howardk+1]]$Tw - k[[howardk]]$Tw)
+    wnext$Tw = wnext$Tw + b
+    w[[i]] = wnext
+    ### check tol
     d = mean((w[[i]]$cfx - w[[i-1]]$cfx)^2)
     print(d)
-    ## check tol
     i = i+1
     print(i)
   }
@@ -309,34 +343,47 @@ gmmmomentmatcher <- function(theta, df) {
   finalV <- V[[length(V)]]
   policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "rollmean")
   policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "rollmean")
+  policydef <- interpolater.creater(finalV, theta, var = "def", method = "rollmean")
   
   ### data
-  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx), t0 = theta, 
+  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx, policydef), t0 = theta, 
                         data = df, mc.cores = detectCores())
   momentmat <- do.call(rbind, momentmat)
-  print(sum(colSums(momentmat)^2))
+  print(sum(colMeans(momentmat)^2))
   return(momentmat)
 }
 
-momentmatcher <- function(i, vfx, t0, data){
-  gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]*t0[8]; hbar = t0[5]*(1-t0[8])
+momentmatcher <- function(i, vfx, t0, data, savings_measure = "liquid"){
+  gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]*t0[8]; hbar = t0[5]*(1-t0[8])*t0[9]/(1-t0[9])
   lambda = t0[6]; sigma = t0[7]; alpha = t0[8]; delta = t0[9]
-  df = data[i,]; eybar = mean(data$E_Y); abar = mean(data$tot_savings); credbar = mean(data$credit); agebar = mean(data$years_ago_built)
+  df = data[i,]
   wt = sqrt(df$wt_hh/sum(data$wt_hh))
-  x = df$tot_assets + df$food_consumption + df$home_investment - (R-1)*df$debts
-  e1  = vfx[[1]](x, df$lag_h) - df$food_consumption
-  e2  = vfx[[2]](x, df$lag_h) - df$home_investment
-  e3 = (1/(1-delta) - df$years_ago_built)/agebar
-  e4 = ((R-1)*df$tot_savings - df$capital_income)/abar
-  e5 = ((R-1)*df$credit - df$credit_cost)/credbar
-  e6 = log(df$total_income)^2 - sigma^2
-  e7 = e1*ihs(x)
-  e8 = e1*log(df$E_Y)/log(eybar)
-  e9 = e1*log(df$lag_h+1)
-  e10 = e2*ihs(x)
-  e11 = e2*log(df$E_Y)/log(eybar)
-  e12 = e2*log(df$lag_h+1)
-  return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12)*wt)
+  if (savings_measure=="liquid"){
+    s1 = df$liq_assets
+    s2 = df$liq_savings
+  } else {
+    s1 = df$tot_assets
+    s2 = df$tot_savings
+  }
+  x = s1 + df$food_consumption + df$home_investment - (R-1)*df$debts
+  ## consumption and investment
+  e1  = (vfx[[1]](x, df$lag_h) - df$food_consumption)/mean(data$food_consumption)
+  e2  = (vfx[[2]](x, df$lag_h) - df$home_investment)/mean(data$home_investment)
+  e3  = (vfx[[3]](x, df$lag_h) - df$default)/mean(data$default)
+  ###savings and variance of income
+  e4 = ((R-1)*s2 - df$capital_income)/mean(data$capital_income)
+  e5 = ((R-1)*df$credit - df$credit_cost)/mean(data$credit_cost)
+  e6 = (sigma^2*(1 + sigma^2/4) - log(df$total_income)^2)/mean(log(data$total_income)^2)
+  ### depreciation
+  e7 = df$years_ago_built_resid*(df$home_value_resid - (delta-1)*df$years_ago_built_resid)
+  ### interactions
+  e8 = e1*ihs(x)/(mean(data$food_consumption)*mean(ihs(data$tot_assets + data$food_consumption + data$home_investment - (R-1)*data$debts)))
+  e9 = e1*log(df$E_Y)/(mean(data$food_consumption)*mean(log(data$E_Y)))
+  e10 = e1*log(df$lag_h+1)/(mean(data$food_consumption)*mean(log(data$lag_h+1)))
+  e11 = e2*ihs(x)/(mean(data$home_investment)*mean(ihs(data$tot_assets + data$food_consumption + data$home_investment - (R-1)*data$debts)))
+  e12 = e2*log(df$E_Y)/(mean(data$home_investment)*mean(log(data$E_Y)))
+  e13 = e2*log(df$lag_h+1)/(mean(data$home_investment)*mean(log(data$lag_h+1)))
+  return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)*wt)
 }
 
 partialderivs <- function(idx, tol, v0, theta){
@@ -356,23 +403,25 @@ momentgrad <- function(theta, df, tol = .01){
   finalV <- V[[length(V)]]
   policycfx0 <- interpolater.creater(finalV, theta, var = "cfx", method = "rollmean")
   policyifx0 <- interpolater.creater(finalV, theta, var = "ifx", method = "rollmean")
-  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx0, policyifx0), t0 = theta, 
+  policydef0 <- interpolater.creater(finalV, theta, var = "def", method = "rollmean")
+  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx0, policyifx0, policydef0), t0 = theta, 
                         data = df, mc.cores = detectCores())
   momentmat <- do.call(rbind, momentmat)
   moments0 = colMeans(momentmat)
   
   ### derivative approximations
-  partiallist <- lapply(c(1:9), partialderivs, tol = tol, v0 = finalV, theta = theta)
+  partiallist <- lapply(c(1:length(theta)), partialderivs, tol = tol, v0 = finalV, theta = theta)
   
-  ddp = matrix(NA, ncol = 9, nrow = 12)
+  ddp = matrix(NA, ncol = length(theta), nrow = length(moments0))
   
   ### data
-  for (i in c(1:9)){
+  for (i in c(1:length(theta))){
     vprime <- partiallist[[i]][[length(partiallist[[i]])]]
     tprime = theta; tprime[i] = theta[i] + tol
     policycfxp <- interpolater.creater(vprime, tprime, var = "cfx", method = "rollmean")
     policyifxp <- interpolater.creater(vprime, tprime, var = "ifx", method = "rollmean")
-    momentmatp <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfxp, policyifxp), t0 = tprime, 
+    policydefp <- interpolater.creater(vprime, tprime, var = "def", method = "rollmean")
+    momentmatp <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfxp, policyifxp, policydefp), t0 = tprime, 
                           data = df, mc.cores = detectCores())
     momentmatp <- do.call(rbind, momentmatp)
     momentsp <- colMeans(momentmatp)
@@ -503,6 +552,8 @@ threedplotter = function(w, theta, fillvar, iter = length(w), method = "simplica
   } else if (fillvar=="cfx") {
     threed = ggplot(df.test) + geom_tile(aes(x = x, y = h, fill = proj)) + scale_fill_viridis_c()
   } else if (fillvar=="ifx") {
+    threed = ggplot(df.test) + geom_tile(aes(x = x, y = h, fill = proj)) + scale_fill_viridis_c()
+  } else if (fillvar=="savings") {
     threed = ggplot(df.test) + geom_tile(aes(x = x, y = h, fill = proj)) + scale_fill_viridis_c()
   } else {threed = ggplot(df.test) + geom_tile(aes(x = x, y = h, fill = efx)) + scale_fill_viridis_c()}
   
