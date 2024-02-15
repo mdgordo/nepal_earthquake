@@ -36,11 +36,11 @@ df <- filter(df.hh, n_waves==3) %>%
          quake_aid = quake_aid/1000,
          NGO_transfers = NGO_transfers/1000,
          remittance_income = remittance_income/1000,
-         loans_taken_past_year = loans_taken_past_year/1000,
+         new_loans_taken = new_loans_taken/1000,
          lag_remitt = lag_remitt/1000,
-         lag_loan = lag_loan/1000,
+         lag_loans = lag_loans/1000,
          lag_remitt_dum = if_else(lag_remitt > 0, 1,0),
-         lag_loan_dum = if_else(lag_loan > 0, 1,0),
+         lag_loan_dum = if_else(lag_loans > 0, 1,0),
          livestock_purchases = livestock_purchases/1000,
          livestock_sales = livestock_sales/1000,
          land_purchased = land_purchased/1000,
@@ -192,7 +192,7 @@ migreg <- feols(migrants_past_year ~ log(total_income) | as.factor(hhid),
 remreg2 <- feols(remittance_income ~ log(total_income) | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-loanreg2 <- feols(loans_taken_past_year ~ log(total_income) | as.factor(hhid),
+loanreg2 <- feols(new_loans_taken ~ log(total_income) | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
 infreg <- feols(net_informal ~ log(total_income) | as.factor(hhid),
@@ -212,37 +212,37 @@ print(etable(mods))
 remreg2 <- feols(remittance_income ~ log(total_income) + lag_remitt | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-loanreg2 <- feols(loans_taken_past_year ~ log(total_income) + lag_loan | as.factor(hhid),
+loanreg2 <- feols(new_loans_taken ~ log(total_income) + lag_loans | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
 remreg2pois <- fepois(remittance_income ~ log(total_income) + lag_remitt | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-loanreg2pois <- fepois(loans_taken_past_year ~ log(total_income) + lag_loan | as.factor(hhid),
+loanreg2pois <- fepois(new_loans_taken ~ log(total_income) + lag_loans | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
 remreg2d <- feols(remittance_income ~ log(total_income) + lag_remitt_dum | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-loanreg2d <- feols(loans_taken_past_year ~ log(total_income) + lag_loan_dum | as.factor(hhid),
+loanreg2d <- feols(new_loans_taken ~ log(total_income) + lag_loan_dum | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
 remreg2dpois <- fepois(remittance_income ~ log(total_income) + lag_remitt_dum | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-loanreg2dpois <- fepois(loans_taken_past_year ~ log(total_income) + lag_loan_dum | as.factor(hhid),
+loanreg2dpois <- fepois(new_loans_taken ~ log(total_income) + lag_loan_dum | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
 remreg2p <- feols(remittance_income > 0 ~ log(total_income) + lag_remitt | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-loanreg2p <- feols(loans_taken_past_year > 0 ~ log(total_income) + lag_loan | as.factor(hhid),
+loanreg2p <- feols(new_loans_taken > 0 ~ log(total_income) + lag_loans | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
 remreg2pd <- feols(remittance_income > 0 ~ log(total_income) + lag_remitt_dum | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-loanreg2pd <- feols(loans_taken_past_year > 0 ~ log(total_income) + lag_loan_dum | as.factor(hhid),
+loanreg2pd <- feols(new_loans_taken > 0 ~ log(total_income) + lag_loan_dum | as.factor(hhid),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
 remreg2iv <- feols(remittance_income ~ log(total_income) | as.factor(hhid) |
@@ -251,8 +251,8 @@ remreg2iv <- feols(remittance_income ~ log(total_income) | as.factor(hhid) |
                             lag_rainfall_month_4 + lag_rainfall_month_5 + lag_rainfall_month_6,
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-loanreg2iv <- feols(loans_taken_past_year ~ log(total_income) | as.factor(hhid) |
-                     lag_loan ~ lag_rainfall_month_7 + lag_rainfall_month_8 + lag_rainfall_month_9 + lag_rainfall_month_10 +
+loanreg2iv <- feols(new_loans_taken ~ log(total_income) | as.factor(hhid) |
+                     lag_loans ~ lag_rainfall_month_7 + lag_rainfall_month_8 + lag_rainfall_month_9 + lag_rainfall_month_10 +
                             lag_rainfall_month_11 + lag_rainfall_month_12 + lag_rainfall_month_1 + lag_rainfall_month_2 + lag_rainfall_month_3 +
                             lag_rainfall_month_4 + lag_rainfall_month_5 + lag_rainfall_month_6,
                     data = df, weights = df$wt_hh, vcov = ~strata)
@@ -296,7 +296,7 @@ remreg2 <- feols(remittance_income ~ 1 | as.factor(hhid) |
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6,
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-loanreg2 <- feols(loans_taken_past_year ~ 1 | as.factor(hhid)| 
+loanreg2 <- feols(new_loans_taken ~ 1 | as.factor(hhid)| 
                        log(total_income) ~ rainfall_month_7 + rainfall_month_8 + rainfall_month_9 + rainfall_month_10 + 
                             rainfall_month_11 + rainfall_month_12 + rainfall_month_1 + rainfall_month_2 + rainfall_month_3 + 
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6,
@@ -451,7 +451,7 @@ cmigregvdc <- feols(migrants_past_year ~ as.factor(land_med) | as.factor(vdc_yr)
 cremregvdc <- feols(remittance_income ~ as.factor(land_med) | as.factor(vdc_yr),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
-cloanregvdc <- feols(loans_taken_past_year ~ as.factor(land_med) | as.factor(vdc_yr),
+cloanregvdc <- feols(new_loans_taken ~ as.factor(land_med) | as.factor(vdc_yr),
                     data = df, weights = df$wt_hh, vcov = ~strata)
 
 mods <- list(caidregvdc, cpubtransregvdc, cpubtransregvdc2, cngoregvdc, cremregvdc, cmigregvdc, cloanregvdc)
@@ -505,15 +505,17 @@ weighted.mean(df$gorkha_loss_ever[df$wave==1 & df$gorkha_loss_ever>0], df$wt_hh[
 #### Summary Stats
 
 ```{r}
-dfsum <- df.hh[,c("consumption", "food_consumption", "total_income", "productive_assets",
-              "home_value", "home_investment", "liq_savings", "tot_savings", "livestock_value",
-              "loans_taken_past_year", "loans_made_past_year", "remittance_income",
-              "currentlyliving", "n_migrants", "skipped_meal", "aid_cumulative", "received_aid", 
+dfsum <- df.hh[,c("consumption", "food_consumption", "total_income", "productive_assets", "investments", "school_costs",
+              "home_value", "home_investment", "years_ago_built", 
+              "currentlyliving", "n_migrants", "femalehh", "cash_savings", "remittance_income", 
+              "new_loans_taken", "loans_made_past_year", "implied_default", 
+              "skipped_meal", "aid_total", "received_aid", 
               "NGO_transfers", "pub_transfers", "inf_transfers", "gorkha_loss_ever")]
 
 xtabwts <- sumstats.wtd(dfsum, df.hh$wt_hh, d = 0, labs = c("Consumption", "Food Consumption", "Income", "Productive Assets", 
-                              "Home Value", "Home Investment", "Liquid Savings", "Total Savings", "Livestock Value", "Loans Taken Past Year",
-                              "Loans Made Past Year", "Remittance Income", "Household Members", "Connected Migrants", 
+                              "Investments", "School Costs", "Home Value", "Home Investment", "Age of House", 
+                              "Household Members", "Connected Migrants", "Female Headed(%)", "Cash Savings",
+                              "Remittance Income",  "Loans Taken Past Year", "Loans Made Past Year", "Default(%)",
                               "Skipped Meal(%)", "Earthquake Aid", "Earthquake Aid(%)", "NGO Aid", 
                               "Public Transfers", "Informal Transfers", "Earthquake Losses"))
 print(xtabwts, include.rownames = FALSE)
@@ -675,7 +677,7 @@ df.inc <- df.hh %>%
             pub_aid = weighted.mean(pub_transfers, w = pubwt, na.rm = TRUE),
             inf_aid = weighted.mean(inf_transfers, w = infwt, na.rm = TRUE),
             NGO_aid = weighted.mean(NGO_transfers, w = ngowt, na.rm = TRUE),
-            income = weighted.mean(income, w = wt_hh, na.rm = TRUE)) %>%
+            income = weighted.mean(total_income, w = wt_hh, na.rm = TRUE)) %>%
   pivot_longer(cols = colnames(.), names_to = "source", values_to = "fraction")
 
 df.inc$source <- factor(df.inc$source, levels = c("home_food_production", "agriculture", "ag_costs", "landrent_paid", "livestock", "livestock_costs", 
@@ -886,7 +888,7 @@ df.hh %>% mutate(food_share = (food_market + food_home_production)/consumption) 
 
 ```{r}
 df.transfers <- df.hh %>% 
-  summarize(loans_taken_past_year = weighted.mean(loans_taken_past_year, w = wt_hh, na.rm = TRUE),
+  summarize(new_loans_taken = weighted.mean(new_loans_taken, w = wt_hh, na.rm = TRUE),
             loans_made_past_year = weighted.mean(loans_made_past_year, w = wt_hh, na.rm = TRUE),
             financial_assets = weighted.mean(financial_assets, w = wt_hh, na.rm = TRUE),
             informal_transfers = weighted.mean(inf_transfers, w = wt_hh, na.rm = TRUE) - 
@@ -911,7 +913,7 @@ g1 <- ggplot(df.transfers) + geom_bar(aes(x = forms_of_saving, weight = amount, 
 g1
 
 df.transfers <- df.hh %>% 
-  summarize(loans_taken = weighted.mean(loans_taken_past_year>0, w = wt_hh, na.rm = TRUE),
+  summarize(loans_taken = weighted.mean(new_loans_taken>0, w = wt_hh, na.rm = TRUE),
             loans_made = weighted.mean(loans_made_past_year>0, w = wt_hh, na.rm = TRUE),
             financial_assets = weighted.mean(financial_assets>0, w = wt_hh, na.rm = TRUE),
             inf_transfer_rec = weighted.mean(inf_transfers>0, w = wt_hh, na.rm = TRUE),
@@ -938,11 +940,6 @@ g2
 cowplot::plot_grid(g2, g1)
 ggsave(paste(rootdir, "/presentation_materials/savingtransfers.png", sep = ""), width = 10, height = 7)
 
-ggplot(df.hh, aes(x = log(liq_savings), y = log(tot_savings-liq_savings))) + 
-  geom_point(aes(color = shake_pga)) +
-  geom_smooth()
-
-summary(lm(tot_savings ~ liq_savings + gorkha_loss_ever, data = df.hh))
 ```
 
 ### experienced shocks
@@ -999,12 +996,12 @@ ggsave(paste(rootdir, "/presentation_materials/shocks.png", sep = ""), width = 1
 
 ```{r, message = FALSE, warning = FALSE, echo = FALSE}
 df.migr <- df.hh %>%
-  group_by(tot_hhmembers) %>%
+  group_by(hhmembers) %>% 
   summarize(migrants = mean(n_migrants, na.rm = TRUE),
             n = n())
 
-ggplot(filter(df.migr, tot_hhmembers < 15)) +
-  geom_col(aes(x = tot_hhmembers, y = migrants, fill = tot_hhmembers)) +
+ggplot(filter(df.migr, hhmembers < 15)) +
+  geom_col(aes(x = hhmembers, y = migrants, fill = hhmembers)) +
   scale_fill_viridis_c() + theme_light() + theme(legend.position = "none")
 
 
@@ -1042,9 +1039,10 @@ for (i in c(1:3)) {
 ### Coping strategies
 
 ```{r}
+
 df.coping <- df.hh %>% mutate(asset_sales = if_else(investments - asset_sales<0,1,0),
                               migrate = if_else(migrants_past_year>0,1,0),
-                              loans = if_else(loans_taken_past_year>0,1,0),
+                              loans = if_else(new_loans_taken>0,1,0),
                               remittances = if_else(remittance_income>0,1,0)) %>%
   group_by(wave) %>%
   summarize(cut_food = mean(cut_food, na.rm = TRUE),

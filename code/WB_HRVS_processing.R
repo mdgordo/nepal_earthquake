@@ -745,77 +745,72 @@ for (i in c(1:3)) {
       df.hh$migration_costs[df.hh$hhid %in% finddks(df.hrvs_11, c("s11q08b"))] <- 0 ### 15 NAs
       rm(df.remittance_income, df.hrvs_11)
       
-      df.hrvs_12a <- read.dta13("Section_12a.dta") %>% filter(s12q05<300)
+      df.hrvs_12a <- read.dta13("Section_12a.dta") %>% filter(s12q05<=36 & s12q08 <= 36) %>%
+        mutate(s12q08 = if_else(is.na(s12q08), 36, s12q08))
       df.credit1 <- df.hrvs_12a %>%
-        mutate(new_loan = if_else(s12q05 < 13, 1, 0),
-              amount_owed = s12q06*(1 + s12q09/100)^ceiling(s12q05/12) - (s12q11/ceiling(s12q05/12))*((1 + s12q09/100)^ceiling(s12q05/12) - 1)/(s12q09/100),
-              interest_paid = if_else(amount_owed > s12q06, s12q11, amount_owed + s12q11 - s12q06),
-              interest_paid = if_else(amount_owed < 0, s12q11 - s12q06, interest_paid),
-              interest_paid_past_year = interest_paid/ceiling(s12q05/12),
-              amount_owed = if_else(amount_owed < 0, 0, amount_owed),  ### 39 negative values
-              implied_default = if_else(s12q05 > s12q08 + 6 & amount_owed > 0, 1, 0)) %>%  
+        mutate(new_loans_taken = if_else(s12q05 < 13, s12q06, 0),
+               loans_taken_1yr = if_else(s12q08 < 13, s12q06, 0),
+               loans_taken_2yr = if_else(s12q08 > 12 & s12q08 < 25, s12q06, 0),
+               loans_taken_3yr = if_else(s12q08 > 24, s12q06, 0),
+               annuity = if_else(s12q08==0, s12q06, if_else(s12q09==0, s12q06/ceiling(s12q08/12),
+                                 s12q06 * s12q09/100 * (1 + s12q09/100)^ceiling(s12q08/12) / ((1 + s12q09/100)^ceiling(s12q08/12) - 1))),
+               implied_default = if_else(s12q05 > s12q08 + 12 & annuity*ceiling(s12q08/12) > s12q11, 1, 0), 
+               loan_payments_ann = if_else(s12q05==0, s12q11, s12q11/ceiling(s12q05/12))) %>%  
               group_by(hhid) %>%
-              summarize(loans_taken_past_year = sum(loans_taken, na.rm = TRUE),
-                        loans_total = sum(s12q06, na.rm = TRUE),
-                        amount_owed = sum(amount_owed, na.rm = TRUE),
-                        loan_payments = sum(s12q11, na.rm = TRUE),  ### payments are not necessarily last 12 months
-                        interest_paid = sum(interest_paid, na.rm = TRUE),
-                        interest_paid_past_year = sum(interest_paid_past_year, na.rm = TRUE),
+              summarize(new_loans_taken = sum(new_loans_taken, na.rm = TRUE),
+                        loans_taken_1yr = sum(loans_taken_1yr, na.rm = TRUE),
+                        loans_taken_2yr = sum(loans_taken_2yr, na.rm = TRUE),
+                        loans_taken_3yr = sum(loans_taken_3yr, na.rm = TRUE),
+                        annuities = sum(annuity, na.rm = TRUE),
+                        loan_payments_ann = sum(loan_payments_ann, na.rm = TRUE), 
                         implied_default = max(implied_default, na.rm = TRUE),
                         avg_interest = weighted.mean(s12q09, s12q06, na.rm = TRUE),
-                        avg_interest_past_year = weighted.mean(s12q09, loans_taken, na.rm = TRUE),
                         max_interest = max(s12q09, na.rm = TRUE))                  
       df.hh <- merge(df.hh, df.credit1, by = "hhid", all = TRUE)
-      df.hh <- mutate(df.hh, loans_taken_past_year = if_else(is.na(loans_taken_past_year),0,loans_taken_past_year),
-                      loans_total = if_else(is.na(loans_total),0,loans_total),
-                      loan_payments = if_else(is.na(loan_payments),0,loan_payments),
-                      interest_paid = if_else(is.na(interest_paid),0,interest_paid),
-                      interest_paid_past_year = if_else(is.na(interest_paid_past_year),0,interest_paid_past_year),
-                      amount_owed = if_else(is.na(amount_owed),0,amount_owed),
-                      max_interest = if_else(is.infinite(max_interest),as.numeric(NA),max_interest),
-                      prev_loans_taken = loans_total - loans_taken_past_year)
-      df.hh$loans_taken_past_year[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06"))] <- NA
-      df.hh$loans_total[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06"))] <- NA
-      df.hh$amount_owed[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06"))] <- NA
-      df.hh$interest_paid[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q11"))] <- NA
-      df.hh$interest_paid_past_year[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q11"))] <- NA
-      df.hh$avg_interest[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA
-      df.hh$avg_interest_past_year[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA
+      df.hh <- mutate(df.hh, new_loans_taken = if_else(is.na(new_loans_taken),0,new_loans_taken),
+                      loans_taken_1yr = if_else(is.na(loans_taken_1yr),0,loans_taken_1yr),
+                      loans_taken_2yr = if_else(is.na(loans_taken_2yr),0,loans_taken_2yr),
+                      loans_taken_3yr = if_else(is.na(loans_taken_3yr),0,loans_taken_3yr),
+                      annuities = if_else(is.na(annuities),0,annuities),
+                      loan_payments_ann = if_else(is.na(loan_payments_ann),0,loan_payments_ann),
+                      implied_default = if_else(is.na(implied_default),0,implied_default),
+                      max_interest = if_else(is.infinite(max_interest),as.numeric(NA),max_interest))
+      df.hh$new_loans_taken[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q05", "s12q06", "s12q11"))] <- NA
+      df.hh$loans_taken_1yr[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06", "s12q08"))] <- NA
+      df.hh$loans_taken_2yr[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06", "s12q08"))] <- NA
+      df.hh$loans_taken_3yr[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06", "s12q08"))] <- NA
+      df.hh$loan_payments_ann[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q05", "s12q11"))] <- NA
+      df.hh$annuities[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q05", "s12q06", "s12q08", "s12q09", "s12q11"))] <- NA
+      df.hh$implied_default[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q05", "s12q06", "s12q08", "s12q09", "s12q11"))] <- NA
+      df.hh$avg_interest[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06", "s12q09"))] <- NA
       df.hh$max_interest[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA
       rm(df.credit1, df.hrvs_12a)
       
-      df.hrvs_12b <- read.dta13("Section_12b.dta") %>% filter(s12q16 < 300) ## 25 year filter
+      df.hrvs_12b <- read.dta13("Section_12b.dta") %>% filter(s12q16 <= 36 & s12q18 <= 36) ## 3 year filter
       df.credit2 <- mutate(df.hrvs_12b, loans_made = if_else(s12q16 < 13, s12q17, 0),
-                           amount_outstanding = s12q17*(1 + s12q19/100)^ceiling(s12q16/12) - s12q21/ceiling(s12q16/12)*((1 + s12q19/100)^ceiling(s12q16/12) - 1)/(s12q19/100), ### assumes payments have been spread over preceeding period
-                           interest_received = if_else(amount_outstanding > s12q17, s12q21, amount_outstanding + s12q21 - s12q17),
-                           interest_received = if_else(amount_outstanding < 0, s12q21 - s12q17, interest_received),
-                           interest_received_past_year = interest_received/ceiling(s12q16/12),
-                           amount_outstanding = if_else(amount_outstanding < 0, 0, amount_outstanding)) %>% ## 2 negatives
+                           loans_made_1yr = if_else(s12q18 < 13, s12q17, 0),
+                           loans_made_2yr = if_else(s12q18 > 12 & s12q18 < 25, s12q17, 0),
+                           loans_made_3yr = if_else(s12q18 > 24, s12q17, 0),
+                           loan_payments_recd_ann = s12q21/ceiling(s12q16/12)) %>%
               group_by(hhid) %>%
               summarize(loans_made_past_year = sum(loans_made, na.rm = TRUE),
-                        loans_made_total = sum(s12q17, na.rm = TRUE),
-                        amount_outstanding = sum(amount_outstanding, na.rm = TRUE),
-                        loan_payments_received = sum(s12q21, na.rm = TRUE),
-                        interest_received = sum(interest_received, na.rm = TRUE),
-                        interest_received_past_year = sum(interest_received_past_year, na.rm = TRUE),
-                        avg_interest_charged = weighted.mean(s12q19, s12q17, na.rm = TRUE),
-                        avg_interest_charged_past_year = weighted.mean(s12q19, loans_made, na.rm = TRUE))        
+                        loans_made_1yr = sum(loans_made_1yr, na.rm = TRUE),
+                        loans_made_2yr = sum(loans_made_2yr, na.rm = TRUE),
+                        loans_made_3yr = sum(loans_made_3yr, na.rm = TRUE),
+                        loan_payments_recd_ann = sum(loan_payments_recd_ann, na.rm = TRUE), 
+                        avg_interest_charged = weighted.mean(s12q19, s12q17, na.rm = TRUE))        
       df.hh <- merge(df.hh, df.credit2, by = "hhid", all = TRUE)
       df.hh <- mutate(df.hh, loans_made_past_year = if_else(is.na(loans_made_past_year),0,loans_made_past_year),
-                      loans_made_total = if_else(is.na(loans_made_total),0,loans_made_total),
-                      loan_payments_received = if_else(is.na(loan_payments_received),0,loan_payments_received),
-                      interest_received = if_else(is.na(interest_received),0,interest_received),
-                      interest_received_past_year = if_else(is.na(interest_received_past_year),0,interest_received_past_year),
-                      amount_outstanding = if_else(is.na(amount_outstanding),0,amount_outstanding), 
-                      prev_loans_made = loans_made_total - loans_made_past_year)
-      df.hh$loans_made_past_year[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17"))] <- NA
-      df.hh$loans_made_total[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17"))] <- NA
-      df.hh$amount_outstanding[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17"))] <- NA
-      df.hh$interest_received[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17"))] <- NA
-      df.hh$interest_received_past_year[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17"))] <- NA
-      df.hh$loan_payments_received[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q21"))] <- NA
-      df.hh$avg_interest_charged[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q19"))] <- NA
-      df.hh$avg_interest_charged_past_year[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q19"))] <- NA
+                      loans_made_1yr = if_else(is.na(loans_made_1yr),0,loans_made_1yr),
+                      loans_made_2yr = if_else(is.na(loans_made_2yr),0,loans_made_2yr),
+                      loans_made_3yr = if_else(is.na(loans_made_3yr),0,loans_made_3yr),
+                      loan_payments_recd_ann = if_else(is.na(loan_payments_recd_ann),0,loan_payments_recd_ann))
+      df.hh$loans_made_past_year[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q16", "s12q17"))] <- NA
+      df.hh$loans_made_1yr[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17", "s12q18"))] <- NA
+      df.hh$loans_made_2yr[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17", "s12q18"))] <- NA
+      df.hh$loans_made_3yr[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17", "s12q18"))] <- NA
+      df.hh$loan_payments_recd_ann[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q16", "s12q21"))] <- NA
+      df.hh$avg_interest_charged[df.hh$hhid %in% finddks(df.hrvs_12b, c("s12q17", "s12q19"))] <- NA
       rm(df.credit2, df.hrvs_12b)
       
       df.hrvs_12c <- read.dta13("Section_12c.dta")
@@ -839,7 +834,7 @@ for (i in c(1:3)) {
       df.hh$financial_assets[df.hh$hhid %in% finddks(df.hrvs_12c, c("s12q23"))] <- NA
       df.hh$savings_group[df.hh$hhid %in% finddks(df.hrvs_12c, c("s12q23"))] <- NA
       df.hh$insurance_assets[df.hh$hhid %in% finddks(df.hrvs_12c, c("s12q23"))] <- NA
-      df.hh$cap_gains[df.hh$hhid %in% finddks(df.hrvs_12c, c("s12q24"))] <- NA
+      df.hh$cap_gains[df.hh$hhid %in% finddks(df.hrvs_12c, c("s12q24"))] <- 0 ## imputing a lot of zeros
       rm(df.assets, df.hrvs_12c)
       
       #note pensions are also counted in section 14 - I use that number as it has higher response rate
@@ -1024,11 +1019,10 @@ for (i in c(1:3)) {
       }
       
       ######## merge survey and ward dataframes ############# 
-      df.hh <- mutate(df.hh, capital_income = if_else(is.na(cap_gains),0,cap_gains) + if_else(is.na(interest_received_past_year),0,interest_received_past_year),
-                      labor_income = annual_wages + work_aid_wages + wet_ag_sales + dry_ag_sales + food_home_production*52 + 
+      df.hh <- mutate(df.hh, labor_income = annual_wages + work_aid_wages + wet_ag_sales + dry_ag_sales + food_home_production*52 + 
                         business_revenues + livestock_income,
                       passive_income = if_else(is.na(equip_rental_income),0,equip_rental_income) + if_else(is.na(landrents),0,landrents) +
-                        if_else(is.na(non_quake_aid),0,non_quake_aid) + if_else(is.na(public_asst_inkind),0,public_asst_inkind) + if_else(is.na(rent_earned),0,rent_earned), ## 56 NAs imputed as 0
+                        if_else(is.na(non_quake_aid),0,non_quake_aid) + if_else(is.na(public_asst_inkind),0,public_asst_inkind) + if_else(is.na(rent_earned),0,rent_earned), 
                       total_income = labor_income + passive_income, 
                       labor_supply = wage_labor_days + self_emp_days + work_aid_days,
                       wage_rate = labor_income/labor_supply*(365-days_ill),
@@ -1039,7 +1033,6 @@ for (i in c(1:3)) {
                           clothing_cleaning_home + entertainment_other + other_expenses + craft_consumption,
                       food_consumption = food_home_production*52 + food_market*52 + food_inkind*52,
                       cap_inputs = business_expenses + ag_costs + landrent_paid_cash + livestock_costs + landrent_paid_inkind,
-                      human_cap_inputs = school_costs + health_costs,
                       productive_assets = landvalue + equip_stock + livestock_value,
                       investments = land_purchased + business_investment + livestock_purchases + equip_purchases,
                       asset_sales = land_sales + business_asset_sales + livestock_sales + equip_sales,
@@ -1048,12 +1041,9 @@ for (i in c(1:3)) {
                       inf_transfers_made = gifts_given_cash + gifts_given_inkind,
                       NGO_transfers = NGO_cash + NGO_inkind,
                       land_price = landvalue/plot_area,
-                      liq_savings = amount_outstanding + financial_assets + savings_group + 
-                        insurance_assets + inf_transfers_made,
-                      tot_savings = liq_savings + if_else(is.na(investments),0,investments) + if_else(is.na(school_costs),0,school_costs) + 
+                      cash_savings = financial_assets + savings_group + insurance_assets,
+                      tot_savings = if_else(is.na(investments),0,investments) + if_else(is.na(school_costs),0,school_costs) + 
                         if_else(is.na(cap_inputs),0,cap_inputs) + if_else(is.na(jewelery),0,jewelery),
-                      credit = if_else(is.na(amount_owed), 0, amount_owed), ## 3 nas
-                      credit_cost = if_else(is.na(interest_paid_past_year),0,interest_paid_past_year), ## 34 nas
                       market_shocks = riot_losses + price_shock_losses,
                       natural_shocks = livestock_farm_losses + other_nat_disaster_losses,
                       idiosyncratic_shocks = illness_injury_losses + violence_losses + job_default_losses,
@@ -1094,8 +1084,12 @@ df.hh <- df.hh %>% mutate(quake_aid_bin = if_else(quake_aid > 0, 1, 0),
   group_by(hhid) %>%
   mutate(quake_aid_lag = if_else(is.na(lag(quake_aid_bin, order_by = wave)), 0, lag(quake_aid_bin, order_by = wave)),
          lag_income = lag(total_income, order_by = wave),
+         lag_housing = lag(home_value, order_by = wave),
          lag_remitt = lag(remittance_income, order_by = wave),
-         lag_loan = lag(loans_taken_past_year, order_by = wave),
+         lag_cash = lag(cash_savings, order_by = wave),
+         lag_tot_savings = lag(tot_savings, order_by = wave),
+         lag_loans = lag(new_loans_taken, order_by = wave),
+         lag_loans_made = lag(loans_made_past_year, order_by = wave),
          lag_rainfall_month_7 = lag(rainfall_month_7, order_by = wave),
          lag_rainfall_month_8 = lag(rainfall_month_8, order_by = wave),
          lag_rainfall_month_9 = lag(rainfall_month_9, order_by = wave),
@@ -1129,8 +1123,8 @@ df.aid <- df.hh %>% arrange(wave) %>%
           var_log_income = var(log(total_income+1), na.rm = TRUE),
           avg_log_income = mean(log(total_income+1), na.rm = TRUE),
           gorkha_loss_ever = sum(gorkha_loss_amt),
-          avg_remit = mean(remittance_income, na.rm = TRUE), 
-          total_loans_taken = sum(loans_taken_past_year),
+          avg_log_remit = mean(log(1+remittance_income), na.rm = TRUE), 
+          total_loans_taken = sum(new_loans_taken),
           n_waves = n())
 
 df.hh <- select(df.hh, -c(prev_migrants, migrant_male, migrant_educated, migrant_earnings, 

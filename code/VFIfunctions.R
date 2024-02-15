@@ -3,6 +3,10 @@ euclid <- function(a, b) {sqrt(sum((a - b)^2))}
 ihs <- function(x){log(x + sqrt(x ^ 2 + 1))}
 ihsinv <- function(x){(exp(x) - exp(-x))/2}
 
+annuitycalc <- function(R, T){
+  R^T * (R-1)/(R^T - 1)
+}
+
 ### utility function
 u <- function(c, h, i, theta) {
   alpha = theta[8]; gamma = theta[1]
@@ -17,7 +21,7 @@ great.expectations <- function(sigma, gqpts){
   return(mu)
 }
 
-create.statespace = function(ubm = c(5,5), theta, method = "equal"){
+create.statespace = function(ubm = c(10,10), theta, method = "equal"){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
@@ -299,7 +303,7 @@ howard <- function(w, theta, shockpts = 30){
 }
 
 ### VFI
-VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 5){
+VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 3){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   w = vector(mode = "list", length = maxiter)
@@ -334,7 +338,7 @@ gmmmomentmatcher <- function(theta, df) {
   saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
   
   ### initial guess
-  statespace = create.statespace(ubm = c(5,5), theta, method = "equal")
+  statespace = create.statespace(ubm = c(10,10), theta, method = "equal")
   v0 = firstguesser(statespace, theta)
   
   ### VFI
@@ -358,32 +362,27 @@ momentmatcher <- function(i, vfx, t0, data, savings_measure = "liquid"){
   lambda = t0[6]; sigma = t0[7]; alpha = t0[8]; delta = t0[9]
   df = data[i,]
   wt = sqrt(df$wt_hh/sum(data$wt_hh))
-  if (savings_measure=="liquid"){
-    s1 = df$liq_assets
-    s2 = df$liq_savings
-  } else {
-    s1 = df$tot_assets
-    s2 = df$tot_savings
-  }
-  x = s1 + df$food_consumption + df$home_investment - (R-1)*df$debts
+  x = if_else(savings_measure=="liquid", df$liquidity, df$liquidity_plus)
   ## consumption and investment
   e1  = (vfx[[1]](x, df$lag_h) - df$food_consumption)/mean(data$food_consumption)
   e2  = (vfx[[2]](x, df$lag_h) - df$home_investment)/mean(data$home_investment)
   e3  = (vfx[[3]](x, df$lag_h) - df$default)/mean(data$default)
   ###savings and variance of income
-  e4 = ((R-1)*s2 - df$capital_income)/mean(data$capital_income)
-  e5 = ((R-1)*df$credit - df$credit_cost)/mean(data$credit_cost)
-  e6 = (sigma^2*(1 + sigma^2/4) - log(df$total_income)^2)/mean(log(data$total_income)^2)
+  e4 = ((R-1)*df$cash_savings - df$cap_gains)/mean(data$cap_gains)
+  e5 = (df$loans_made_1yr*annuitycalc(R, 1) + df$loans_made_2yr*annuitycalc(R, 2) + df$loans_made_3yr*annuitycalc(R, 3) - df$loan_payments_recd_ann)/mean(df$loan_payments_recd_ann)
+  e6 = (df$loans_taken_1yr*annuitycalc(R, 1) + df$loans_taken_2yr*annuitycalc(R, 2) + df$loans_taken_3yr*annuitycalc(R, 3) - df$annuities)/mean(df$annuities)
   ### depreciation
   e7 = df$years_ago_built_resid*(df$home_value_resid - (delta-1)*df$years_ago_built_resid)
   ### interactions
-  e8 = e1*ihs(x)/(mean(data$food_consumption)*mean(ihs(data$tot_assets + data$food_consumption + data$home_investment - (R-1)*data$debts)))
+  e8 = e1*ihs(x)/(mean(data$food_consumption)*mean(ihs(data$liquidity)))
   e9 = e1*log(df$E_Y)/(mean(data$food_consumption)*mean(log(data$E_Y)))
   e10 = e1*log(df$lag_h+1)/(mean(data$food_consumption)*mean(log(data$lag_h+1)))
-  e11 = e2*ihs(x)/(mean(data$home_investment)*mean(ihs(data$tot_assets + data$food_consumption + data$home_investment - (R-1)*data$debts)))
+  e11 = e2*ihs(x)/(mean(data$home_investment)*mean(ihs(data$liquidity)))
   e12 = e2*log(df$E_Y)/(mean(data$home_investment)*mean(log(data$E_Y)))
   e13 = e2*log(df$lag_h+1)/(mean(data$home_investment)*mean(log(data$lag_h+1)))
-  return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13)*wt)
+  ### variance of income
+  e14 = (sigma^2*(1 + sigma^2/4) - log(df$total_income)^2)/mean(log(data$total_income)^2)
+  return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)*wt)
 }
 
 partialderivs <- function(idx, tol, v0, theta){
@@ -397,7 +396,7 @@ momentgrad <- function(theta, df, tol = .01){
   print(theta)
   
   ### initial value and policy functions
-  statespace = create.statespace(ubm = c(5,5), theta, method = "equal")
+  statespace = create.statespace(ubm = c(10,10), theta, method = "equal")
   v0 = firstguesser(statespace, theta)
   V = VFI(v0, theta)
   finalV <- V[[length(V)]]
