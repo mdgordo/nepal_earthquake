@@ -7,8 +7,8 @@ First run the WB_HRVS_processing.R script to create full_panel.csv.
 
 WB_HRVS_descriptive.Rmd generates the descriptive statistics, summary stats, and Townsend regressions. eq_survey_analysis.Rmd generates the correlates of earthquake damages discussed in the paper, with tables in the appendix.
 
-WB_HRVS_estimation_pooled.Rmd generates the regression discontinuity results. rdhelpers.R contains functions called in this script.
+WB_HRVS_estimation_pooled.Rmd generates the regression discontinuity results. rdhelpers.R and rdrobustr.r contain functions called in this script. eq_survey_analysis.r generates the tables in the appendix showing the determinants of earthquake damages.
 
-gmmprep.R prepares the raw data for the structural calibration. gmm.R calibrates the model. VFIfunctions.R contains helper functions used by both of these scripts. 
+gmmprep.r adjusts the raw data for lifecycle and household composition to prepare it for the structural estimation step. gmm.r uses GMM to calibrate the structural model. VFIfunctions.R contains helper functions used by these scripts.
 
 VFI.Rmd uses the final calibrated value function to perform counterfactuals and compare model simulations to the RD results.
