@@ -42,7 +42,7 @@ globalwrap = function(t){
 
 g <- directL(fn = globalwrap,
              upper = ubounds, lower = lbounds,
-             control = list(maxeval = 1000, xtol_rel = 1e-2))
+             control = list(maxeval = 500, xtol_rel = 1e-2))
 
 g
 t0 = g$par
@@ -50,7 +50,7 @@ t0 = g$par
 g <- gmm(g = gmmmomentmatcher, x = df.adj, t0 = t0, gradv = momentgrad,      
          type = "twoStep", optfct = "constrOptim",   
          ui = ui, ci = ci, 
-         control = list(maxit = 50, reltol = 1e-2))
+         control = list(maxit = 100, reltol = 1e-2))
 summary(g)
 
 saveRDS(g, paste(getwd(), "/data/model_output/g.rds", sep = ""))
@@ -62,7 +62,7 @@ lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
 saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
 
 ### Final Value function
-statespace = create.statespace(ubm = c(10,10), theta, method = "equal")
+statespace = create.statespace(ubm = c(5,5), theta, method = "equal")
 v0 = firstguesser(statespace, theta)
 V = VFI(v0, theta)
 saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))

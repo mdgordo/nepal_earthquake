@@ -21,7 +21,7 @@ great.expectations <- function(sigma, gqpts){
   return(mu)
 }
 
-create.statespace = function(ubm = c(10,10), theta, method = "equal"){
+create.statespace = function(ubm = c(5,5), theta, method = "equal"){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   
@@ -303,7 +303,7 @@ howard <- function(w, theta, shockpts = 30){
 }
 
 ### VFI
-VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 3){
+VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 3, mqp = FALSE){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
   lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
   w = vector(mode = "list", length = maxiter)
@@ -318,9 +318,11 @@ VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 3){
       wnext$Tw = howard(wnext, theta, shockpts = s)
       k[[j+1]] = wnext
     }
-    ### MQP error bounds
-    b = beta/(1-beta)*mean(k[[howardk+1]]$Tw - k[[howardk]]$Tw)
-    wnext$Tw = wnext$Tw + b
+    if (mqp) {
+      ### MQP error bounds
+      b = beta/(1-beta)*mean(k[[howardk+1]]$Tw - k[[howardk]]$Tw)
+      wnext$Tw = wnext$Tw + b
+    }
     w[[i]] = wnext
     ### check tol
     d = mean((w[[i]]$cfx - w[[i-1]]$cfx)^2)
@@ -338,7 +340,7 @@ gmmmomentmatcher <- function(theta, df) {
   saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
   
   ### initial guess
-  statespace = create.statespace(ubm = c(10,10), theta, method = "equal")
+  statespace = create.statespace(ubm = c(5,5), theta, method = "equal")
   v0 = firstguesser(statespace, theta)
   
   ### VFI
@@ -366,19 +368,19 @@ momentmatcher <- function(i, vfx, t0, data, savings_measure = "liquid"){
   ## consumption and investment
   e1  = (vfx[[1]](x, df$lag_h) - df$food_consumption)/mean(data$food_consumption)
   e2  = (vfx[[2]](x, df$lag_h) - df$home_investment)/mean(data$home_investment)
-  e3  = (vfx[[3]](x, df$lag_h) - df$default)/mean(data$default)
+  e3  = (vfx[[3]](x, df$lag_h) - df$default_hat)/mean(data$default_hat)
   ###savings and variance of income
   e4 = ((R-1)*df$cash_savings - df$cap_gains)/mean(data$cap_gains)
-  e5 = (df$loans_made_1yr*annuitycalc(R, 1) + df$loans_made_2yr*annuitycalc(R, 2) + df$loans_made_3yr*annuitycalc(R, 3) - df$loan_payments_recd_ann)/mean(df$loan_payments_recd_ann)
-  e6 = (df$loans_taken_1yr*annuitycalc(R, 1) + df$loans_taken_2yr*annuitycalc(R, 2) + df$loans_taken_3yr*annuitycalc(R, 3) - df$annuities)/mean(df$annuities)
+  e5 = (df$loans_made_1yr*annuitycalc(R, 1) + df$loans_made_2yr*annuitycalc(R, 2) + df$loans_made_3yr*annuitycalc(R, 3) - df$loan_payments_recd_ann)/mean(data$loan_payments_recd_ann)
+  e6 = (df$loans_taken_1yr*annuitycalc(R, 1) + df$loans_taken_2yr*annuitycalc(R, 2) + df$loans_taken_3yr*annuitycalc(R, 3) - df$annuities)/mean(data$annuities)
   ### depreciation
   e7 = df$years_ago_built_resid*(df$home_value_resid - (delta-1)*df$years_ago_built_resid)
   ### interactions
   e8 = e1*ihs(x)/(mean(data$food_consumption)*mean(ihs(data$liquidity)))
-  e9 = e1*log(df$E_Y)/(mean(data$food_consumption)*mean(log(data$E_Y)))
+  e9 = e1*log(df$M_avg)/(mean(data$food_consumption)*mean(log(data$M_avg)))
   e10 = e1*log(df$lag_h+1)/(mean(data$food_consumption)*mean(log(data$lag_h+1)))
   e11 = e2*ihs(x)/(mean(data$home_investment)*mean(ihs(data$liquidity)))
-  e12 = e2*log(df$E_Y)/(mean(data$home_investment)*mean(log(data$E_Y)))
+  e12 = e2*log(df$M_avg)/(mean(data$home_investment)*mean(log(data$M_avg)))
   e13 = e2*log(df$lag_h+1)/(mean(data$home_investment)*mean(log(data$lag_h+1)))
   ### variance of income
   e14 = (sigma^2*(1 + sigma^2/4) - log(df$total_income)^2)/mean(log(data$total_income)^2)
@@ -396,7 +398,7 @@ momentgrad <- function(theta, df, tol = .01){
   print(theta)
   
   ### initial value and policy functions
-  statespace = create.statespace(ubm = c(10,10), theta, method = "equal")
+  statespace = create.statespace(ubm = c(5,5), theta, method = "equal")
   v0 = firstguesser(statespace, theta)
   V = VFI(v0, theta)
   finalV <- V[[length(V)]]
