@@ -9,7 +9,7 @@ annuitycalc <- function(R, T){
 
 ### utility function
 u <- function(c, h, i, theta) {
-  alpha = theta[8]; gamma = theta[1]
+  alpha = theta[9]; gamma = theta[1]
   cd = c^alpha * (h + i)^(1-alpha)
   crra = cd^(1-gamma)/(1-gamma)
   return(crra)
@@ -22,20 +22,20 @@ great.expectations <- function(sigma, gqpts){
 }
 
 create.statespace = function(ubm = c(5,5), theta, method = "equal"){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   
   if (method=="chebyshev") {
-    x = chebnodes(xn, lb = -lambda + .01, ub = ubm[1])
+    x = c(-lambda + .01, chebnodes(xn, lb = -lambda + cbar, ub = ubm[1]))
     h = chebnodes(hn, lb = 0.01, ub = ubm[2])
   } else if (method=="log") { 
     x =  exp(seq(0.01, log(ubm[1] + lambda + 1), length.out = hn)) - (lambda+1)
     h =  exp(seq(0.01, log(ubm[2]+1), length.out = hn))-1
   } else if (method=="uneven") {
-    x = seq(-lambda + .01, ubm[1], length.out = xn)
+    x = c(-lambda + .01, seq(-lambda + cbar, ubm[1], length.out = xn))
     h = unique(c(seq(.01, ubm[2]/2, length.out = round(2*hn/3,0)), seq(ubm[2]/2, ubm[2], length.out = round(1*hn/3,0)+1)))
   } else {
-    x = seq(-lambda + .01, ubm[1], length.out = xn)
+    x = c(-lambda + .01, seq(-lambda + cbar, ubm[1], length.out = xn))
     h = seq(.01, ubm[2], length.out = hn)
   }
   css = crossing(x,h)
@@ -132,7 +132,7 @@ extrapolator <- function(w, x, h, xvals, hvals, Tw, var) {
 
 interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
   
-  cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9]); lambda = theta[6]
+  cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10]); lambda = theta[6]
   if (var %in% c("aidcfx", "aidifx")) {
     Tw = if (var == "aidcfx") w$cfx else w$ifx
   } else {
@@ -164,7 +164,7 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
     if (x > xmax+1e-9 | h > hmax+1e-9) {
       r = extrapolator(w, x, h, xvals, hvals, Tw, var)
       return(r)
-    } else if (x <= cbar-lambda | method=="simplical") {  ### default zone always simplical
+    } else if (method=="simplical") { 
       r = simplr(x0 = x, y0 = h, x = w$x, y = w$h, xvals = xvals, yvals = hvals, 
                  vfx = Tw, method = "simplical")
     } else if (method=="chebyshev") {
@@ -189,8 +189,8 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
 ### Function factory for generation household maximization problem (minimizes the negative - which is positive)
 
 hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]; 
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10] 
   
   draws = exp(great.expectations(sigma, gqpts))
   wts = gqpts$w/sqrt(pi)
@@ -202,16 +202,13 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
       if (default) {
         payoff = u(cbar, max(h, hbar), 0, theta)
         htplus1 = delta*max(hbar, h)
-        xtplus1 = -lambda #
-        EV = Valfunc(xtplus1, htplus1) #
-        #xtplus1 = -lambda*R
+        xtplus1 = -lambda*R
       } else if (c+i > x+lambda+1e-9) {return((c+i+1)*penalty)} else { ### built in constraint 
         payoff = u(c, h, i, theta)
         htplus1 = delta*(h+i)
         xtplus1 = R*(x - c - i)
-        EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1)) #
       }
-      #EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
+      EV = sum(wts*mapply(Valfunc, x = xtplus1 + draws, h = htplus1))
       r = payoff + beta*EV
       return(-r)
     }
@@ -220,12 +217,12 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
 }
 
 firstguesser <- function(w, theta){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   hsteady = (1-alpha)*delta/(1-delta)
   guesswrap = function(rowidx){
     x = w$x[rowidx]; h = w$h[rowidx]
-    if (h > hsteady) {i = 0; c = x + lambda} else{
+    if (h > hsteady) {i = 0; c = x + lambda} else {
       i = min((1-alpha)*(x+lambda), hsteady - h)
       c = x + lambda - i
     }
@@ -244,8 +241,8 @@ firstguesser <- function(w, theta){
 ### Bellman Operator
 
 bellman <- function(w, theta, shockpts = 30, m = 2000){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   gqpts = gaussHermiteData(shockpts)
   Valfunc = interpolater.creater(w, theta, method = "simplical")
   optwrap = function(rowidx){
@@ -285,8 +282,8 @@ bellman <- function(w, theta, shockpts = 30, m = 2000){
 
 ### Howard Policy Iteration
 howard <- function(w, theta, shockpts = 30){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   gqpts = gaussHermiteData(shockpts)
   Valfunc = interpolater.creater(w, theta, method = "simplical")
   
@@ -304,19 +301,21 @@ howard <- function(w, theta, shockpts = 30){
 
 ### VFI
 VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 3, mqp = FALSE){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
-  lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   w = vector(mode = "list", length = maxiter)
   w[[1]] = v0
   tol1 = FALSE; i = 2; d = 1; s = 30
   while (i<=maxiter & d > tol) {
     wnext = bellman(w = w[[i-1]], theta, shockpts = s)
     ## howard
-    k = vector(mode = "list", length = howardk+1)
-    k[[1]] = wnext
-    for (j in c(1:howardk)) {
-      wnext$Tw = howard(wnext, theta, shockpts = s)
-      k[[j+1]] = wnext
+    if (howardk>0) {
+      k = vector(mode = "list", length = howardk+1)
+      k[[1]] = wnext
+      for (j in c(1:howardk)) {
+        wnext$Tw = howard(wnext, theta, shockpts = s)
+        k[[j+1]] = wnext
+      }      
     }
     if (mqp) {
       ### MQP error bounds
@@ -352,39 +351,56 @@ gmmmomentmatcher <- function(theta, df) {
   policydef <- interpolater.creater(finalV, theta, var = "def", method = "rollmean")
   
   ### data
-  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx, policyifx, policydef), t0 = theta, 
-                        data = df, mc.cores = detectCores())
-  momentmat <- do.call(rbind, momentmat)
+  momentmat <- momentmatcher(vfx = list(policycfx, policyifx, policydef), t0 = theta, data = df)
   print(sum(colMeans(momentmat)^2))
   return(momentmat)
 }
 
-momentmatcher <- function(i, vfx, t0, data, savings_measure = "liquid"){
-  gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]*t0[8]; hbar = t0[5]*(1-t0[8])*t0[9]/(1-t0[9])
-  lambda = t0[6]; sigma = t0[7]; alpha = t0[8]; delta = t0[9]
-  df = data[i,]
-  wt = sqrt(df$wt_hh/sum(data$wt_hh))
-  x = if_else(savings_measure=="liquid", df$liquidity, df$liquidity_plus)
+momentmatcher <- function(vfx, t0, data, savings_measure = "liquid"){
+  gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]*t0[9]; hbar = t0[5]*(1-t0[9])*t0[10]/(1-t0[10])
+  lambda = t0[6]; sigma = t0[7]; sigmame = t0[8]; alpha = t0[9]; delta = t0[10]
+  
+  meshocks <- exp(rnorm(nrow(data), 0, sigmame))
+  data$M_avg <- data$M_avg*meshocks
+  
+  data <- mutate(data, liquidity = liquidity_hat/M_avg,
+                 liquidity_plus = liquidity_plus_hat/M_avg,  
+                 food_consumption = food_consumption_hat/M_avg,
+                 home_value = home_value_hat/M_avg,
+                 home_investment = home_investment_hat/M_avg,
+                 quake_aid = quake_aid/M_avg,
+                 total_income = total_income_hat/M_avg) %>%
+    group_by(hhid) %>%
+    mutate(lag_h = lag(home_value, order_by = wave))
+  data <- data[complete.cases(data),]
+  
+  wt = sqrt(data$wt_hh/sum(data$wt_hh))
+  x = if (savings_measure=="liquid") {data$liquidity} else {data$liquidity_plus}
+  cfx <- mcmapply(vfx[[1]], x, data$lag_h, mc.cores = detectCores())
+  ifx <- mcmapply(vfx[[2]], x, data$lag_h, mc.cores = detectCores())
+  dfx <- mcmapply(vfx[[3]], x, data$lag_h, mc.cores = detectCores())
+  
   ## consumption and investment
-  e1  = (vfx[[1]](x, df$lag_h) - df$food_consumption)/mean(data$food_consumption)
-  e2  = (vfx[[2]](x, df$lag_h) - df$home_investment)/mean(data$home_investment)
-  e3  = (vfx[[3]](x, df$lag_h) - df$default_hat)/mean(data$default_hat)
+  e1 = (cfx - data$food_consumption)/mean(data$food_consumption)
+  e2 = (ifx - data$home_investment)/mean(data$home_investment)
+  e3 = (dfx - data$default_hat)/mean(data$default_hat)
   ###savings and variance of income
-  e4 = ((R-1)*df$cash_savings - df$cap_gains)/mean(data$cap_gains)
-  e5 = (df$loans_made_1yr*annuitycalc(R, 1) + df$loans_made_2yr*annuitycalc(R, 2) + df$loans_made_3yr*annuitycalc(R, 3) - df$loan_payments_recd_ann)/mean(data$loan_payments_recd_ann)
-  e6 = (df$loans_taken_1yr*annuitycalc(R, 1) + df$loans_taken_2yr*annuitycalc(R, 2) + df$loans_taken_3yr*annuitycalc(R, 3) - df$annuities)/mean(data$annuities)
+  e4 = ((R-1)*data$cash_savings - data$cap_gains)/mean(data$cap_gains)
+  e5 = (data$loans_made_1yr*annuitycalc(R, 1) + data$loans_made_2yr*annuitycalc(R, 2) + data$loans_made_3yr*annuitycalc(R, 3) - data$loan_payments_recd_ann)/mean(data$loan_payments_recd_ann)
+  e6 = (data$loans_taken_1yr*annuitycalc(R, 1) + data$loans_taken_2yr*annuitycalc(R, 2) + data$loans_taken_3yr*annuitycalc(R, 3) - data$annuities)/mean(data$annuities)
   ### depreciation
-  e7 = df$years_ago_built_resid*(df$home_value_resid - (delta-1)*df$years_ago_built_resid)
+  e7 = data$years_ago_built_resid*(data$home_value_resid - (delta-1)*data$years_ago_built_resid)
   ### interactions
   e8 = e1*ihs(x)/(mean(data$food_consumption)*mean(ihs(data$liquidity)))
-  e9 = e1*log(df$M_avg)/(mean(data$food_consumption)*mean(log(data$M_avg)))
-  e10 = e1*log(df$lag_h+1)/(mean(data$food_consumption)*mean(log(data$lag_h+1)))
+  e9 = e1*log(data$M_avg)/(mean(data$food_consumption)*mean(log(data$M_avg)))
+  e10 = e1*log(data$lag_h+1)/(mean(data$food_consumption)*mean(log(data$lag_h+1)))
   e11 = e2*ihs(x)/(mean(data$home_investment)*mean(ihs(data$liquidity)))
-  e12 = e2*log(df$M_avg)/(mean(data$home_investment)*mean(log(data$M_avg)))
-  e13 = e2*log(df$lag_h+1)/(mean(data$home_investment)*mean(log(data$lag_h+1)))
-  ### variance of income
-  e14 = (sigma^2*(1 + sigma^2/4) - log(df$total_income)^2)/mean(log(data$total_income)^2)
-  return(c(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14)*wt)
+  e12 = e2*log(data$M_avg)/(mean(data$home_investment)*mean(log(data$M_avg)))
+  e13 = e2*log(data$lag_h+1)/(mean(data$home_investment)*mean(log(data$lag_h+1)))
+  ### variance of income and measurement error
+  e14 = (log(data$total_income) + sigma^2/2)/mean(log(data$total_income))
+  e15 = (log(data$total_income)^2 - sigma^4/4 - sigma^2 - sigmame^2)/mean(log(data$total_income)^2)
+  return(cbind(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e14, e15)*wt)
 }
 
 partialderivs <- function(idx, tol, v0, theta){
@@ -394,7 +410,7 @@ partialderivs <- function(idx, tol, v0, theta){
   return(Vp1)
 }
 
-momentgrad <- function(theta, df, tol = .01){
+momentgrad <- function(theta, df, tol = .025){
   print(theta)
   
   ### initial value and policy functions
@@ -405,9 +421,7 @@ momentgrad <- function(theta, df, tol = .01){
   policycfx0 <- interpolater.creater(finalV, theta, var = "cfx", method = "rollmean")
   policyifx0 <- interpolater.creater(finalV, theta, var = "ifx", method = "rollmean")
   policydef0 <- interpolater.creater(finalV, theta, var = "def", method = "rollmean")
-  momentmat <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfx0, policyifx0, policydef0), t0 = theta, 
-                        data = df, mc.cores = detectCores())
-  momentmat <- do.call(rbind, momentmat)
+  momentmat <- momentmatcher(vfx = list(policycfx0, policyifx0, policydef0), t0 = theta, data = df)
   moments0 = colMeans(momentmat)
   
   ### derivative approximations
@@ -422,9 +436,7 @@ momentgrad <- function(theta, df, tol = .01){
     policycfxp <- interpolater.creater(vprime, tprime, var = "cfx", method = "rollmean")
     policyifxp <- interpolater.creater(vprime, tprime, var = "ifx", method = "rollmean")
     policydefp <- interpolater.creater(vprime, tprime, var = "def", method = "rollmean")
-    momentmatp <- mclapply(c(1:nrow(df)), momentmatcher, vfx = list(policycfxp, policyifxp, policydefp), t0 = tprime, 
-                          data = df, mc.cores = detectCores())
-    momentmatp <- do.call(rbind, momentmatp)
+    momentmatp <- momentmatcher(vfx = list(policycfxp, policyifxp, policydefp), t0 = tprime, data = df)
     momentsp <- colMeans(momentmatp)
     ddp[,i] <- (momentsp - moments0)/tol
   }

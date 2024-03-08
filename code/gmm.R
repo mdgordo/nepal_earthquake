@@ -12,17 +12,16 @@ library(parallel)
 options('nloptr.show.inequality.warning'=FALSE)
 source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
 
-lbounds <- c(1.01, .85, 1, .01, .01, .01, .01, .2, .85)
-ranges <- c(9.99, .14, .1, .99, .99, 1.99, 1.99, .7, .14)
+lbounds <- c(1.01, .85, 1, .01, .01, .01, .01, .01, .2, .9)
+ranges <- c(9.99, .14, .1, .99, .99, 1.99, 1, 1, .7, .9)
 ubounds <- lbounds + ranges
-ui = rbind(c(0,-1,-1,0,0,0,0,0,0),
-           diag(9),
-           -1*diag(9))
+ui = rbind(c(0,-1,-1,0,0,0,0,0,0,0),
+           diag(10),
+           -1*diag(10))
 ci = c(-2.03, lbounds, -1*ubounds) ## 2.03 approximates multiplicative constraint on BR < 1
 
 ### load data
 df.adj <- readRDS(paste(getwd(), "/data/model_output/df.adj.rds", sep = ""))
-df.adj <- df.adj[complete.cases(df.adj),]
 
 ### Grid size
 xn = 40; hn = 40
@@ -58,7 +57,7 @@ saveRDS(g, paste(getwd(), "/data/model_output/g.rds", sep = ""))
 
 theta = g$coefficients
 gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
-lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
 saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
 
 ### Final Value function

@@ -745,7 +745,7 @@ for (i in c(1:3)) {
       df.hh$migration_costs[df.hh$hhid %in% finddks(df.hrvs_11, c("s11q08b"))] <- 0 ### 15 NAs
       rm(df.remittance_income, df.hrvs_11)
       
-      df.hrvs_12a <- read.dta13("Section_12a.dta") %>% filter(s12q05<=36 & s12q08 <= 36) %>%
+      df.hrvs_12a <- read.dta13("Section_12a.dta") %>% filter(s12q05<=36 & s12q08 <= 36 & (s12q07_5 + s12q07_6 + s12q07_7 + s12q07_8 + s12q07_9)==0) %>%
         mutate(s12q08 = if_else(is.na(s12q08), 36, s12q08))
       df.credit1 <- df.hrvs_12a %>%
         mutate(new_loans_taken = if_else(s12q05 < 13, s12q06, 0),
@@ -754,7 +754,8 @@ for (i in c(1:3)) {
                loans_taken_3yr = if_else(s12q08 > 24, s12q06, 0),
                annuity = if_else(s12q08==0, s12q06, if_else(s12q09==0, s12q06/ceiling(s12q08/12),
                                  s12q06 * s12q09/100 * (1 + s12q09/100)^ceiling(s12q08/12) / ((1 + s12q09/100)^ceiling(s12q08/12) - 1))),
-               implied_default = if_else(s12q05 > s12q08 + 12 & annuity*ceiling(s12q08/12) > s12q11, 1, 0), 
+               amount_owed = if_else(s12q05 < 13, annuity*s12q05/12, annuity),
+               implied_default = if_else(s12q05 > s12q08 + 3 & annuity*ceiling(s12q08/12) > s12q11, 1, 0), 
                loan_payments_ann = if_else(s12q05==0, s12q11, s12q11/ceiling(s12q05/12))) %>%  
               group_by(hhid) %>%
               summarize(new_loans_taken = sum(new_loans_taken, na.rm = TRUE),
@@ -762,16 +763,18 @@ for (i in c(1:3)) {
                         loans_taken_2yr = sum(loans_taken_2yr, na.rm = TRUE),
                         loans_taken_3yr = sum(loans_taken_3yr, na.rm = TRUE),
                         annuities = sum(annuity, na.rm = TRUE),
+                        amount_owed = sum(amount_owed, na.rm = TRUE),
                         loan_payments_ann = sum(loan_payments_ann, na.rm = TRUE), 
                         implied_default = max(implied_default, na.rm = TRUE),
                         avg_interest = weighted.mean(s12q09, s12q06, na.rm = TRUE),
-                        max_interest = max(s12q09, na.rm = TRUE))                  
+                        max_interest = max(s12q09, na.rm = TRUE))
       df.hh <- merge(df.hh, df.credit1, by = "hhid", all = TRUE)
       df.hh <- mutate(df.hh, new_loans_taken = if_else(is.na(new_loans_taken),0,new_loans_taken),
                       loans_taken_1yr = if_else(is.na(loans_taken_1yr),0,loans_taken_1yr),
                       loans_taken_2yr = if_else(is.na(loans_taken_2yr),0,loans_taken_2yr),
                       loans_taken_3yr = if_else(is.na(loans_taken_3yr),0,loans_taken_3yr),
                       annuities = if_else(is.na(annuities),0,annuities),
+                      amount_owed = if_else(is.na(amount_owed),0,amount_owed),
                       loan_payments_ann = if_else(is.na(loan_payments_ann),0,loan_payments_ann),
                       implied_default = if_else(is.na(implied_default),0,implied_default),
                       max_interest = if_else(is.infinite(max_interest),as.numeric(NA),max_interest))
@@ -781,6 +784,7 @@ for (i in c(1:3)) {
       df.hh$loans_taken_3yr[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06", "s12q08"))] <- NA
       df.hh$loan_payments_ann[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q05", "s12q11"))] <- NA
       df.hh$annuities[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q05", "s12q06", "s12q08", "s12q09", "s12q11"))] <- NA
+      df.hh$amount_owed[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q05", "s12q06", "s12q08", "s12q09", "s12q11"))] <- NA
       df.hh$implied_default[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q05", "s12q06", "s12q08", "s12q09", "s12q11"))] <- NA
       df.hh$avg_interest[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q06", "s12q09"))] <- NA
       df.hh$max_interest[df.hh$hhid %in% finddks(df.hrvs_12a, c("s12q09"))] <- NA

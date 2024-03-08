@@ -52,6 +52,10 @@ df.hh$M_avg <- exp(predict(increg, newdata = data.frame("age_hh" = avghhdat$age_
                                                      "eth_id" = df.hh$eth_id,
                                                      "vdc_id" = df.hh$vdc_id)))
 df.hh$total_income_hat <- exp(log(df.hh$M_avg) + increg$residuals)
+
+smearfactor <- mean(exp(increg$residuals))
+df.hh$M_avg <- df.hh$M_avg*smearfactor
+
 incratio <- mean(df.hh$total_income)/mean(df.hh$total_income_hat)
 df.hh$total_income_hat <- df.hh$total_income_hat*incratio
 
@@ -131,7 +135,7 @@ summary(lm(home_value_resid ~ years_ago_built_resid + 0, data = filter(df.hh, wa
 ### Savings and Credit
 ## will still need these vars separately and raw for credit moments
 df.hh$liquidity <- df.hh$cash_savings + df.hh$cap_gains + df.hh$loan_payments_recd_ann + df.hh$remittance_income + df.hh$new_loans_taken + 
-  df.hh$inf_transfers + df.hh$total_income + df.hh$quake_aid - df.hh$annuities
+  df.hh$inf_transfers + df.hh$total_income + df.hh$quake_aid - df.hh$amount_owed
 df.hh$liquidity_w_investments <- df.hh$tot_savings + df.hh$liquidity
 
 hist(df.hh$liquidity[abs(df.hh$liquidity)<2e6], breaks = 100)
@@ -184,25 +188,32 @@ df.adj <- df.hh %>%
          quake_aid, max_interest, cut_food, dissaving, dist_2_seg1pt, quake_losses, 
          received_aid, wt_hh, gorkha_hh, NGO_transfers, designation, 
          other_nat_disaster, livestock_farm_shock, riot, illness_injury_shock, price_shock) %>%
+  mutate(max_interest = if_else(is.na(max_interest), 0, max_interest))
+
+saveRDS(df.adj, paste(getwd(), "/data/model_output/df.adj.rds", sep = ""))
+write_csv(df.adj, paste(getwd(), "/data/model_output/df_adj.csv", sep = ""))
+
+sigmame <- .1
+meshocks <- exp(rnorm(nrow(df.adj), 0, sigmame))
+df.adj$M_avg <- df.adj$M_avg * meshocks
+
+df.adj <- df.adj %>%
   mutate(liquidity = liquidity_hat/M_avg,
          liquidity_plus = liquidity_plus_hat/M_avg,  
          food_consumption = food_consumption_hat/M_avg,
          home_value = home_value_hat/M_avg,
          home_investment = home_investment_hat/M_avg,
          quake_aid = quake_aid/M_avg,
-         total_income = total_income_hat/M_avg,
-         max_interest = if_else(is.na(max_interest), 0, max_interest)) %>%
+         total_income = total_income_hat/M_avg) %>%
   group_by(hhid) %>%
   mutate(lag_h = lag(home_value, order_by = wave))
-saveRDS(df.adj, paste(getwd(), "/data/model_output/df.adj.rds", sep = ""))
-write_csv(df.adj, paste(getwd(), "/data/model_output/df_adj.csv", sep = ""))
 
 ### Sanity checks
 lapply(df.adj, function(x) sum(is.na(x)))
 df.adj <- df.adj[complete.cases(df.adj),]
 
 ## U shape b/c dividing by low income results in higher liq values
-ggplot(df.adj, aes(y = log(M_avg), x = ihs(liquidity))) + geom_point(aes(color = log(food_consumption), alpha = .3)) + 
+ggplot(df.adj, aes(x = log(M_avg), y = ihs(liquidity))) + geom_point(aes(color = log(food_consumption), alpha = .3)) + 
   scale_color_viridis_c() + geom_smooth(method = "lm")
 ggplot(df.adj, aes(y = log(M_avg), x = ihs(liquidity_plus))) + geom_point(aes(color = log(food_consumption), alpha = .3)) + 
   scale_color_viridis_c() + geom_smooth(method = "lm")
@@ -222,8 +233,12 @@ ggplot(df.adj) +
 
 ggplot(df.adj) + 
   geom_point(aes(x = ihs(liquidity), y = ihs(lag_h), color = default_hat), alpha = .3)
+mean(df.adj$food_consumption[df.adj$default_hat>.5]); mean(df.adj$food_consumption[df.adj$default_hat<.5])
+mean(df.adj$home_investment[df.adj$default_hat>.5]); mean(df.adj$home_investment[df.adj$default_hat<.5])
+mean(df.adj$liquidity[df.adj$default_hat>.5]); mean(df.adj$liquidity[df.adj$default_hat<.5])
+mean(df.adj$lag_h[df.adj$default_hat>.5]); mean(df.adj$lag_h[df.adj$default_hat<.5])
 
-ggplot(df.adj, aes(x = ihs(liquidity), y = log(food_consumption))) + 
+ggplot(df.adj, aes(x = ihs(liquidity), y = food_consumption)) +
   geom_point() + geom_smooth()
 
 ggplot(df.adj, aes(x = ihs(liquidity), y = ihs(home_investment))) + 
@@ -241,22 +256,24 @@ summary(lm(default_hat ~ ihs(liquidity) + log(lag_h) + ihs(liquidity):log(lag_h)
 
 deltmin <- function(theta) {
   df <- df.adj
-  delta = theta[1]; R = theta[2]; sigma = theta[3]
+  delta = theta[1]; R = theta[2]; sigma = theta[3]; sigmame = theta[4]
   e1 = df$years_ago_built_resid*(df$home_value_resid - (delta-1)*df$years_ago_built_resid)*df$wt_hh/mean(df.hh$wt_hh)
   e2 = ((R-1)*df$cash_savings - df$cap_gains)/mean(df$cap_gains)*df$wt_hh/mean(df.hh$wt_hh) 
   e3 = (df$loans_made_1yr*annuitycalc(R, 1) + df$loans_made_2yr*annuitycalc(R, 2) + df$loans_made_3yr*annuitycalc(R, 3) - df$loan_payments_recd_ann)/mean(df$loan_payments_recd_ann)*df$wt_hh/mean(df.hh$wt_hh)
   e4 = (df$loans_taken_1yr*annuitycalc(R, 1) + df$loans_taken_2yr*annuitycalc(R, 2) + df$loans_taken_3yr*annuitycalc(R, 3) - df$annuities)/mean(df$annuities)*df$wt_hh/mean(df.hh$wt_hh)
-  e5 = (sigma^2 * (1 + sigma^2/4) - log(df$total_income)^2)*df$wt_hh/mean(df.hh$wt_hh)
-  e = cbind(e1, e2, e3, e4, e5)
+  e5 = (log(df$total_income) + sigma^2/2)*df$wt_hh/mean(df.hh$wt_hh)
+  e6 = (log(df$total_income)^2 - sigma^2 - sigmame^2 - sigma^4/4)*df$wt_hh/mean(df.hh$wt_hh)
+  e = cbind(e1, e2, e3, e4, e5, e6)
   return(sum(colMeans(e)^2))
 }
 
-sol <- constrOptim(theta = c(.5, .5, .5), f = deltmin, grad = NULL,
-            ui = rbind(diag(3), -1*diag(3)),
-            ci = c(rep(0, 3), rep(-5, 3)), 
-            control = list(reltol = 3e-2, maxit = 66))
+### note this can't really identify sigmame because me shocks are not added within the function
+sol <- constrOptim(theta = c(.5, .5, .5, .5), f = deltmin, grad = NULL,
+            ui = rbind(diag(4), -1*diag(4)),
+            ci = c(rep(0, 4), rep(-5, 4)), 
+            control = list(reltol = 3e-2, maxit = 100))
 sol
 sol <- directL(fn = deltmin,
-              lower = c(0,0,0), upper = c(5,5,5), 
-              control = list(maxeval = 150))
+              lower = c(0,0,0,0), upper = c(5,5,5,5), 
+              control = list(maxeval = 1000))
 sol

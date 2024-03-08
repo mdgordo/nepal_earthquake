@@ -44,13 +44,14 @@ gqpts = gaussHermiteData(13)
 ### Read in Data
 b <- readRDS(paste(rootdir, "/data/model_output/optbw.rds", sep = ""))
 df.hh <- readRDS(paste(rootdir, "/data/model_output/df.adj.rds", sep = "")) %>%
-  mutate(imputed_bufferstock = liq_assets + food_consumption + home_investment - (R-1)*debts,
-         x_noaid = imputed_bufferstock - quake_aid,
-         x_aid = x_noaid + 300000/E_Y,
-         lag_h = if_else(is.na(lag_h), home_value/delta - home_investment, lag_h)) %>%  ### this gives post earthquake housing/could estimate pre quake w/losses
-  mutate(lag_h = if_else(lag_h<0, 0, lag_h),
-         damage_rel = quake_losses/E_Y) %>%
-  drop_na(x_noaid, x_aid, lag_h)
+  # mutate(imputed_bufferstock = liq_assets + food_consumption + home_investment - (R-1)*debts,
+  #        x_noaid = imputed_bufferstock - quake_aid,
+  #        x_aid = x_noaid + 300000/E_Y,
+  #        lag_h = if_else(is.na(lag_h), home_value/delta - home_investment, lag_h)) %>%  ### this gives post earthquake housing/could estimate pre quake w/losses
+  # mutate(lag_h = if_else(lag_h<0, 0, lag_h),
+  #        damage_rel = quake_losses/E_Y) %>%
+  # drop_na(x_noaid, x_aid, lag_h)
+  drop_na(lag_h)
 
 g = readRDS(paste(rootdir, "/data/model_output/g.rds", sep = ""))
 summary(g)
@@ -73,26 +74,26 @@ iterplotter(V, xidx = finalV$x[1600], var = "ifx")
 ```
 
 ```{r}
-qdat = data.frame("qx" = quantile(df.hh$imputed_bufferstock, seq(.1, .9, .1)), 
-                  "qh" = quantile(df.hh$lag_h, seq(.1, .9, .1)))
-qdat$qx[qdat$qx < -lambda] <- -lambda
-qdat$qh[qdat$qh>5] <- 5
+# qdat = data.frame("qx" = quantile(df.hh$imputed_bufferstock, seq(.1, .9, .1)), 
+#                   "qh" = quantile(df.hh$lag_h, seq(.1, .9, .1)))
+# qdat$qx[qdat$qx < -lambda] <- -lambda
+# qdat$qh[qdat$qh>5] <- 5
 #library(rayshader)
 threedplotter(V, "Tw", ubm = 5, ubh = 5, lbm = -lambda, lbh = 0, d3 = FALSE, theta = theta, method = "simplical") +
   geom_contour(aes(x = x, y = h, z = -1*log(-proj)), color = "grey") + 
-  geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
+  #geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
   theme_bw() + theme(text = element_text(size = 17)) +
   labs(x = "Wealth", y = "Housing Stock", fill = "Value Function")
 pcfx = threedplotter(V, "cfx", d3 = FALSE, ubm =5, ubh = 5, lbm = -lambda, lbh = 0,
                      method = "rollmean", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) +
   labs(x = "Wealth", y = "Housing Stock", fill = "Consumption") +
-  geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
+  #geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
   geom_contour(aes(x = x, y = h, z = proj), color = "grey") + 
   theme_bw()
 pifx = threedplotter(V, "ifx", d3 = FALSE, ubm = 5, ubh = 5, lbm = -lambda, lbh = 0, 
                      method = "rollmean", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) +
   labs(x = "Wealth", y = "Housing Stock", fill = "Housing Investment") +
-  geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
+  #geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
   geom_contour(aes(x = x, y = h, z = proj), breaks = seq(.25, 2.25, .5), color = "grey") + 
   theme_bw()
 cowplot::plot_grid(pcfx, pifx)
@@ -100,7 +101,7 @@ cowplot::plot_grid(pcfx, pifx)
 psfx = threedplotter(V, "savings", d3 = FALSE, ubm = 5, ubh = 5, lbm = -lambda, lbh = 0, 
                      method = "rollmean", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) +
   labs(x = "Wealth", y = "Housing Stock", fill = "Savings") +
-  geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
+  #geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
   geom_contour(aes(x = x, y = h, z = proj), breaks = seq(.25, 2.25, .5), color = "grey") + 
   theme_bw()
 psfx
