@@ -21,11 +21,11 @@ df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), gu
 
 ### purge hh heterogeneity and life cycle
 
-avghhdat = data.frame("age_hh" = mean(df.hh$age_hh),
-                      "hhmembers" = mean(df.hh$hhmembers),
-                      "under18" = mean(df.hh$under18),
-                      "over65" = mean(df.hh$over65),
-                      "highest_ed" = mean(df.hh$highest_ed),
+avghhdat = data.frame("age_hh" = weighted.mean(df.hh$age_hh, df.hh$wt_hh),
+                      "hhmembers" = weighted.mean(df.hh$hhmembers, df.hh$wt_hh),
+                      "under18" = weighted.mean(df.hh$under18, df.hh$wt_hh),
+                      "over65" = weighted.mean(df.hh$over65, df.hh$wt_hh),
+                      "highest_ed" = weighted.mean(df.hh$highest_ed, df.hh$wt_hh),
                       "wave" = 2)
 
 ## Expected income regression 
@@ -53,10 +53,10 @@ df.hh$M_avg <- exp(predict(increg, newdata = data.frame("age_hh" = avghhdat$age_
                                                      "vdc_id" = df.hh$vdc_id)))
 df.hh$total_income_hat <- exp(log(df.hh$M_avg) + increg$residuals)
 
-smearfactor <- mean(exp(increg$residuals))
+smearfactor <- weighted.mean(exp(increg$residuals), df.hh$wt_hh)
 df.hh$M_avg <- df.hh$M_avg*smearfactor
 
-incratio <- mean(df.hh$total_income)/mean(df.hh$total_income_hat)
+incratio <- weighted.mean(df.hh$total_income, df.hh$wt_hh)/weighted.mean(df.hh$total_income_hat, df.hh$wt_hh)
 df.hh$total_income_hat <- df.hh$total_income_hat*incratio
 
 # ## checks
@@ -79,7 +79,7 @@ foodreg <- lm(log(food_consumption+1) ~ poly(age_hh, 2) + poly(hhmembers, 2) + u
                 poly(highest_ed, 2) + as.factor(wave), 
               data = df.hh, weights = wt_hh)
 df.hh$food_consumption_hat <- exp(predict(foodreg, newdata = avghhdat) + foodreg$residuals)
-foodratio <- mean(df.hh$food_consumption)/mean(df.hh$food_consumption_hat)
+foodratio <- weighted.mean(df.hh$food_consumption, df.hh$wt_hh)/weighted.mean(df.hh$food_consumption_hat, df.hh$wt_hh)
 df.hh$food_consumption_hat <- df.hh$food_consumption_hat*foodratio
 
 summary(foodreg)
@@ -94,7 +94,7 @@ homereg <- lm(log(home_value+1) ~ poly(age_hh, 2) + poly(hhmembers, 2) + under18
                 poly(highest_ed, 2) + as.factor(wave), 
               data = df.hh, weights = wt_hh)
 df.hh$home_value_hat <- exp(predict(homereg, newdata = avghhdat) + homereg$residuals)
-homeratio <- mean(df.hh$home_value)/mean(df.hh$home_value_hat)
+homeratio <- weighted.mean(df.hh$home_value, df.hh$wt_hh)/weighted.mean(df.hh$home_value_hat, df.hh$wt_hh)
 df.hh$home_value_hat <- df.hh$home_value_hat*homeratio
 
 summary(homereg)
@@ -109,7 +109,7 @@ defreg <- lm(implied_default ~ poly(age_hh, 2) + poly(hhmembers, 2) + under18 + 
                poly(highest_ed, 2) + as.factor(wave), 
              data = df.hh, weights = wt_hh)
 df.hh$default_hat <- predict(defreg, newdata = avghhdat) + defreg$residuals
-defratio <- mean(df.hh$implied_default)/mean(df.hh$default_hat)
+defratio <- weighted.mean(df.hh$implied_default, df.hh$wt_hh)/weighted.mean(df.hh$default_hat, df.hh$wt_hh)
 df.hh$default_hat <- df.hh$default_hat*defratio
 
 summary(defreg)
@@ -131,50 +131,52 @@ df.hh$years_ago_built_resid <- agefwl$residuals
 
 summary(lm(home_value_resid ~ years_ago_built_resid + 0, data = filter(df.hh, wave!=1), weights = wt_hh))
 
-
-### Savings and Credit
-## will still need these vars separately and raw for credit moments
-df.hh$liquidity <- df.hh$cash_savings + df.hh$cap_gains + df.hh$loan_payments_recd_ann + df.hh$remittance_income + df.hh$new_loans_taken + 
+### Liquidity
+df.hh$liquidity <- df.hh$lag_cash + df.hh$cap_gains + df.hh$loan_payments_recd_ann + df.hh$remittance_income + df.hh$new_loans_taken + 
   df.hh$inf_transfers + df.hh$total_income + df.hh$quake_aid - df.hh$amount_owed
 df.hh$liquidity_w_investments <- df.hh$tot_savings + df.hh$liquidity
 
 hist(df.hh$liquidity[abs(df.hh$liquidity)<2e6], breaks = 100)
 hist(df.hh$liquidity_w_investments[abs(df.hh$liquidity_w_investments)<5e6], breaks = 100)
-quantile(df.hh$liquidity)
-sum(df.hh$liquidity<0)
-quantile(df.hh$liquidity_w_investments)
-sum(df.hh$liquidity_w_investments<0)
+quantile(df.hh$liquidity, na.rm = TRUE)
+sum(df.hh$liquidity<0, na.rm = TRUE)
+quantile(df.hh$liquidity_w_investments, na.rm = TRUE)
+sum(df.hh$liquidity_w_investments<0, na.rm = TRUE)
+sum(is.na(df.hh$liquidity) & df.hh$wave!=1) ## new hhs
 
 liqreg <- lm(liquidity ~ poly(age_hh, 2) + poly(hhmembers, 2) + under18 + over65 +
                poly(highest_ed, 2) + as.factor(wave), 
              data = df.hh, weights = wt_hh)
 
-df.hh$liquidity_hat <- predict(liqreg, newdata = avghhdat) + liqreg$residuals
-liqratio <- mean(df.hh$liquidity)/mean(df.hh$liquidity_hat)
+df.hh$liquidity_hat <- NA
+df.hh$liquidity_hat[!is.na(df.hh$liquidity)] <- predict(liqreg, newdata = avghhdat) + liqreg$residuals
+liqratio <- weighted.mean(df.hh$liquidity, df.hh$wt_hh, na.rm = TRUE)/weighted.mean(df.hh$liquidity_hat, df.hh$wt_hh, na.rm = TRUE)
 df.hh$liquidity_hat <- df.hh$liquidity_hat*liqratio
 
 summary(liqreg)
-ggplot(df.hh) + ## 1 outlier
+ggplot(filter(df.hh, !is.na(liquidity))) + ## 1 outlier
   geom_point(aes(x = liquidity, y = liqreg$fitted.values, color = gorkha_hh)) + 
   geom_abline(slope = 1, intercept = 0) + xlim(-1e5, 5e6)
-ggplot(df.hh) +
+ggplot(filter(df.hh, !is.na(liquidity))) +
   geom_point(aes(x = liquidity, y = liquidity_hat, color = gorkha_hh)) + 
   geom_abline(slope = 1, intercept = 0) + xlim(-1e5, 1e7) + ylim(-1e5, 1e7)
 
 savereg <- lm(liquidity_w_investments ~ poly(age_hh, 2) + poly(hhmembers, 2) + under18 + over65 +
                 poly(highest_ed, 2) + as.factor(wave), 
               data = df.hh, weights = wt_hh)
-df.hh$liquidity_plus_hat <- predict(savereg, newdata = avghhdat) + savereg$residuals
-savratio <- mean(df.hh$liquidity_w_investments)/mean(df.hh$liquidity_plus_hat)
+
+df.hh$liquidity_plus_hat <- NA
+df.hh$liquidity_plus_hat[!is.na(df.hh$liquidity_w_investments)] <- predict(savereg, newdata = avghhdat) + savereg$residuals
+savratio <- weighted.mean(df.hh$liquidity_w_investments, df.hh$wt_hh, na.rm = TRUE)/weighted.mean(df.hh$liquidity_plus_hat, df.hh$wt_hh, na.rm = TRUE)
 df.hh$liquidity_plus_hat <- df.hh$liquidity_plus_hat*savratio
 
 summary(savereg)
-ggplot(df.hh) +
+ggplot(filter(df.hh, !is.na(liquidity_w_investments))) +
   geom_point(aes(x = liquidity_w_investments, y = savereg$fitted.values, color = gorkha_hh)) + 
-  geom_abline(slope = 1, intercept = 0) + xlim(-1e5, 1e7)
-ggplot(df.hh) +
+  geom_abline(slope = 1, intercept = 0) + xlim(-1e6, 5e7)
+ggplot(filter(df.hh, !is.na(liquidity_w_investments))) +
   geom_point(aes(x = liquidity_w_investments, y = liquidity_plus_hat, color = gorkha_hh)) + 
-  geom_abline(slope = 1, intercept = 0)
+  geom_abline(slope = 1, intercept = 0) + xlim(-1e6, 3e7)
 
 #### Investment variables adjusted based on ratio of adjusted realized income to actual realized income
 df.hh$home_investment_hat <- df.hh$home_investment * df.hh$total_income_hat/(df.hh$total_income+1)
@@ -184,17 +186,16 @@ df.adj <- df.hh %>%
   select(hhid, wave, wt_hh, food_consumption_hat, home_value_hat, home_investment_hat, 
          liquidity_plus_hat, liquidity_hat, default_hat, total_income_hat, M_avg, remittance_income,
          years_ago_built_resid, home_value_resid, cash_savings, cap_gains, loan_payments_recd_ann,
-         annuities, loans_made_1yr, loans_made_2yr, loans_made_3yr, loans_taken_1yr, loans_taken_2yr, loans_taken_3yr, 
-         quake_aid, max_interest, cut_food, dissaving, dist_2_seg1pt, quake_losses, 
-         received_aid, wt_hh, gorkha_hh, NGO_transfers, designation, 
+         amount_owed, loans_made_1yr, loans_made_2yr, loans_made_3yr, loans_taken_1yr, loans_taken_2yr, loans_taken_3yr, 
+         quake_aid, max_interest, cut_food, dissaving, dist_2_seg1pt1, dist_2_seg1, quake_losses, gorkha_loss_ever,
+         received_aid, wt_hh, gorkha_hh, riot_hh, received_ngo_aid, designation, 
          other_nat_disaster, livestock_farm_shock, riot, illness_injury_shock, price_shock) %>%
   mutate(max_interest = if_else(is.na(max_interest), 0, max_interest))
 
 saveRDS(df.adj, paste(getwd(), "/data/model_output/df.adj.rds", sep = ""))
-write_csv(df.adj, paste(getwd(), "/data/model_output/df_adj.csv", sep = ""))
 
-sigmame <- .1
-meshocks <- exp(rnorm(nrow(df.adj), 0, sigmame))
+sigmame <- .7
+meshocks <- exp(rnorm(nrow(df.adj), -sigmame^2/2, sigmame))
 df.adj$M_avg <- df.adj$M_avg * meshocks
 
 df.adj <- df.adj %>%
@@ -221,7 +222,7 @@ ggplot(df.adj, aes(y = log(M_avg), x = ihs(liquidity_plus))) + geom_point(aes(co
 ### liq savings vs tot savings w/assets
 ggplot(df.hh, aes(x = ihs(liquidity), y = ihs(liquidity_w_investments))) + 
   geom_point(alpha = .3, aes(color = gorkha_hh))
-cor(df.hh$liquidity, df.hh$liquidity_w_investments, method = "spearman")
+cor(df.hh$liquidity[!is.na(df.hh$liquidity)], df.hh$liquidity_w_investments[!is.na(df.hh$liquidity)], method = "spearman")
 
 ggplot(df.adj) + 
   geom_point(aes(x = ihs(liquidity), y = ihs(lag_h), color = log(food_consumption)), alpha = .3) +
@@ -260,9 +261,9 @@ deltmin <- function(theta) {
   e1 = df$years_ago_built_resid*(df$home_value_resid - (delta-1)*df$years_ago_built_resid)*df$wt_hh/mean(df.hh$wt_hh)
   e2 = ((R-1)*df$cash_savings - df$cap_gains)/mean(df$cap_gains)*df$wt_hh/mean(df.hh$wt_hh) 
   e3 = (df$loans_made_1yr*annuitycalc(R, 1) + df$loans_made_2yr*annuitycalc(R, 2) + df$loans_made_3yr*annuitycalc(R, 3) - df$loan_payments_recd_ann)/mean(df$loan_payments_recd_ann)*df$wt_hh/mean(df.hh$wt_hh)
-  e4 = (df$loans_taken_1yr*annuitycalc(R, 1) + df$loans_taken_2yr*annuitycalc(R, 2) + df$loans_taken_3yr*annuitycalc(R, 3) - df$annuities)/mean(df$annuities)*df$wt_hh/mean(df.hh$wt_hh)
-  e5 = (log(df$total_income) + sigma^2/2)*df$wt_hh/mean(df.hh$wt_hh)
-  e6 = (log(df$total_income)^2 - sigma^2 - sigmame^2 - sigma^4/4)*df$wt_hh/mean(df.hh$wt_hh)
+  e4 = (df$loans_taken_1yr*annuitycalc(R, 1) + df$loans_taken_2yr*annuitycalc(R, 2) + df$loans_taken_3yr*annuitycalc(R, 3) - df$amount_owed)/mean(df$amount_owed)*df$wt_hh/mean(df.hh$wt_hh)
+  e5 = (log(df$total_income) + sigma^2/2 + sigmame^2/2)*df$wt_hh/mean(df.hh$wt_hh)
+  e6 = (log(df$total_income)^2 - (sigma^2/2 + sigmame^2/2)^2 - sigma^2 - sigmame^2)*df$wt_hh/mean(df.hh$wt_hh)
   e = cbind(e1, e2, e3, e4, e5, e6)
   return(sum(colMeans(e)^2))
 }
@@ -270,10 +271,9 @@ deltmin <- function(theta) {
 ### note this can't really identify sigmame because me shocks are not added within the function
 sol <- constrOptim(theta = c(.5, .5, .5, .5), f = deltmin, grad = NULL,
             ui = rbind(diag(4), -1*diag(4)),
-            ci = c(rep(0, 4), rep(-5, 4)), 
-            control = list(reltol = 3e-2, maxit = 100))
+            ci = c(rep(0, 4), rep(-5, 4)))
 sol
 sol <- directL(fn = deltmin,
               lower = c(0,0,0,0), upper = c(5,5,5,5), 
-              control = list(maxeval = 1000))
+              control = list(maxeval = 2000))
 sol

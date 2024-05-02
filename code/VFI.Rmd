@@ -23,38 +23,46 @@ library(Rearrangement)
 library(fastGHQuad)
 library(rdrobust)
 library(Hmisc, exclude = "summarize")
-library(neuralnet)
-library(mgcv)
+library(modelsummary)
 library(boot)
 options('nloptr.show.inequality.warning'=FALSE)
 source(paste(rootdir, "/code/VFIfunctions.R", sep = ""))
 source(paste(rootdir, "/code/rdhelpers.R", sep = ""))
 
 ### Read in final Value function
-theta = readRDS(paste(rootdir, "/data/model_output/theta.rds", sep = "")) 
+theta = readRDS(paste(rootdir, "/data/model_output/theta.rds", sep = ""))
 theta
 V = readRDS(paste(rootdir, "/data/model_output/V.rds", sep = ""))
 finalV = V[[length(V)]]
 xn = length(unique(finalV$x)); hn = length(unique(finalV$h))
 
-gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[8]; hbar = theta[5]*(1-theta[8])*theta[9]/(1-theta[9])
-lambda = theta[6]; sigma = theta[7]; alpha = theta[8]; delta = theta[9]
+gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
 gqpts = gaussHermiteData(13)
 
 ### Read in Data
-b <- readRDS(paste(rootdir, "/data/model_output/optbw.rds", sep = ""))
-df.hh <- readRDS(paste(rootdir, "/data/model_output/df.adj.rds", sep = "")) %>%
-  # mutate(imputed_bufferstock = liq_assets + food_consumption + home_investment - (R-1)*debts,
-  #        x_noaid = imputed_bufferstock - quake_aid,
-  #        x_aid = x_noaid + 300000/E_Y,
-  #        lag_h = if_else(is.na(lag_h), home_value/delta - home_investment, lag_h)) %>%  ### this gives post earthquake housing/could estimate pre quake w/losses
-  # mutate(lag_h = if_else(lag_h<0, 0, lag_h),
-  #        damage_rel = quake_losses/E_Y) %>%
-  # drop_na(x_noaid, x_aid, lag_h)
-  drop_na(lag_h)
+df.hh <- readRDS(paste(rootdir, "/data/model_output/df.adj.rds", sep = "")) 
+
+set.seed(1646); meshocks <- exp(rnorm(nrow(df.hh), 0, sigmame))
+df.hh$M_avg <- df.hh$M_avg*meshocks
+df.hh <- mutate(df.hh, liquidity = liquidity_hat/M_avg,
+             liquidity_plus = liquidity_plus_hat/M_avg,  
+             food_consumption = food_consumption_hat/M_avg,
+             home_value = home_value_hat/M_avg,
+             home_investment = home_investment_hat/M_avg,
+             quake_aid = quake_aid/M_avg,
+             total_income = total_income_hat/M_avg,
+             x_noaid = liquidity - quake_aid,
+             x_aid = x_noaid + 300000/M_avg,
+             damage_rel = gorkha_loss_ever/M_avg) %>%
+  group_by(hhid) %>%
+  mutate(lag_h = lag(home_value, order_by = wave)) %>%
+  filter(wave==2 & designation != "none" & !is.na(lag_h))
 
 g = readRDS(paste(rootdir, "/data/model_output/g.rds", sep = ""))
 summary(g)
+
+b1 <- readRDS(paste(rootdir, "/data/model_output/optbw.rds", sep = ""))
 ```
 
 ```{r}
@@ -64,7 +72,7 @@ satisficer(V, sigma)
 ```
 
 ```{r}
-iterplotter(V, hidx = finalV$h[40], var = "Tw")
+iterplotter(V, hidx = finalV$h[40], var = "Tw", ifilt = c(4:length(V)))
 iterplotter(V, hidx = finalV$h[1], var = "cfx")
 iterplotter(V, hidx = finalV$h[1], var = "ifx")
 iterplotter(V, hidx = finalV$h[25], var = "cfx")
@@ -74,38 +82,39 @@ iterplotter(V, xidx = finalV$x[1600], var = "ifx")
 ```
 
 ```{r}
-# qdat = data.frame("qx" = quantile(df.hh$imputed_bufferstock, seq(.1, .9, .1)), 
-#                   "qh" = quantile(df.hh$lag_h, seq(.1, .9, .1)))
-# qdat$qx[qdat$qx < -lambda] <- -lambda
-# qdat$qh[qdat$qh>5] <- 5
+qdat = data.frame("qx" = quantile(df.hh$liquidity, seq(.1, .9, .1), na.rm = TRUE),
+                  "qh" = quantile(df.hh$lag_h, seq(.1, .9, .1), na.rm = TRUE))
+qdat$qx[qdat$qx < -lambda] <- -lambda
+qdat$qx[qdat$qx>5] <- 5
+qdat$qh[qdat$qh>5] <- 5
 #library(rayshader)
 threedplotter(V, "Tw", ubm = 5, ubh = 5, lbm = -lambda, lbh = 0, d3 = FALSE, theta = theta, method = "simplical") +
   geom_contour(aes(x = x, y = h, z = -1*log(-proj)), color = "grey") + 
-  #geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
+  geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
   theme_bw() + theme(text = element_text(size = 17)) +
   labs(x = "Wealth", y = "Housing Stock", fill = "Value Function")
 pcfx = threedplotter(V, "cfx", d3 = FALSE, ubm =5, ubh = 5, lbm = -lambda, lbh = 0,
                      method = "rollmean", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) +
   labs(x = "Wealth", y = "Housing Stock", fill = "Consumption") +
-  #geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
+  geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
   geom_contour(aes(x = x, y = h, z = proj), color = "grey") + 
   theme_bw()
 pifx = threedplotter(V, "ifx", d3 = FALSE, ubm = 5, ubh = 5, lbm = -lambda, lbh = 0, 
                      method = "rollmean", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) +
   labs(x = "Wealth", y = "Housing Stock", fill = "Housing Investment") +
-  #geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
+  geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
   geom_contour(aes(x = x, y = h, z = proj), breaks = seq(.25, 2.25, .5), color = "grey") + 
   theme_bw()
 cowplot::plot_grid(pcfx, pifx)
-#ggsave(paste(rootdir, "/presentation_materials/policyfx.png", sep = ""), width = 16, height = 7)
+ggsave(paste(rootdir, "/presentation_materials/policyfx.png", sep = ""), width = 16, height = 7)
 psfx = threedplotter(V, "savings", d3 = FALSE, ubm = 5, ubh = 5, lbm = -lambda, lbh = 0, 
                      method = "rollmean", theta = theta) + theme_bw() + theme(text = element_text(size = 17)) +
   labs(x = "Wealth", y = "Housing Stock", fill = "Savings") +
-  #geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
-  geom_contour(aes(x = x, y = h, z = proj), breaks = seq(.25, 2.25, .5), color = "grey") + 
+  geom_rug(data = qdat, aes(x = qx, y = qh), inherit.aes = FALSE, color = "red") + 
+  geom_contour(aes(x = x, y = h, z = proj), breaks = seq(.25, 3.25, .5), color = "grey") + 
   theme_bw()
 psfx
-#ggsave(paste(rootdir, "/presentation_materials/policyfx_savings.png", sep = ""), width = 16, height = 7)
+ggsave(paste(rootdir, "/presentation_materials/policyfx_savings.png", sep = ""), width = 16, height = 7)
 ```
 
 ```{r}
@@ -124,14 +133,14 @@ ggsave(paste(rootdir, "/presentation_materials/policysurf.png", sep = ""), width
 ```
 
 ```{r}
-ggplot(filter(df.hh, wave==1)) +
-  geom_point(aes(x = log(imputed_bufferstock), y = quake_losses))
+ggplot(df.hh) +
+  geom_point(aes(x = log(liquidity), y = gorkha_loss_ever))
 
 ggplot(df.hh) +
-  geom_point(aes(x = log(imputed_bufferstock), y = log(home_value)))
+  geom_point(aes(x = log(liquidity), y = log(home_value)))
 
 ggplot(df.hh) +
-  geom_point(aes(x = log(imputed_bufferstock), y = log(E_Y)))
+  geom_point(aes(x = log(liquidity), y = log(M_avg)))
 ```
 
 ```{r}
@@ -144,36 +153,36 @@ budgetconstraint
 
 ### WTP for aid
 df.hh$tau <- mcmapply(wtpeliciter, x = df.hh$x_noaid, h = df.hh$lag_h, 
-                    y = df.hh$E_Y, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                    y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
                     mc.cores = detectCores()-2, mc.preschedule = FALSE)
-df.hh$wtp <- df.hh$tau * df.hh$E_Y/(1-beta)
+df.hh$wtp <- df.hh$tau * df.hh$M_avg/(1-beta)
 
 df.hh$tauL <- mcmapply(wtpeliciter, x = df.hh$x_noaid, h = df.hh$lag_h, 
-                      y = df.hh$E_Y, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                      y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
                     mc.cores = detectCores()-2, mc.preschedule = FALSE)
-df.hh$wtpL <- df.hh$tauL * df.hh$E_Y/(1-beta)
+df.hh$wtpL <- df.hh$tauL * df.hh$M_avg/(1-beta)
 
 df.hh$tauC <- mcmapply(conditionalizer, x = df.hh$x_noaid, h = df.hh$lag_h, 
-                      y = df.hh$E_Y, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                      y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
                     mc.cores = detectCores()-2, mc.preschedule = FALSE)
-df.hh$wtpC <- df.hh$tauC * df.hh$E_Y/(1-beta)
+df.hh$wtpC <- df.hh$tauC * df.hh$M_avg/(1-beta)
 
 df.hh$tauCL <- mcmapply(conditionalizer, x = df.hh$x_noaid, h = df.hh$lag_h, 
-                      y = df.hh$E_Y, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                      y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
                     mc.cores = detectCores()-2, mc.preschedule = FALSE)
-df.hh$wtpCL <- df.hh$tauCL * df.hh$E_Y/(1-beta)
+df.hh$wtpCL <- df.hh$tauCL * df.hh$M_avg/(1-beta)
 
 df.hh$utils <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
-                        y = df.hh$E_Y, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                        y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
                     mc.cores = detectCores()-2, mc.preschedule = FALSE)
 df.hh$utilL <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
-                        y = df.hh$E_Y, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                        y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
                     mc.cores = detectCores()-2, mc.preschedule = FALSE)
 
 ### consumption and investment
 cf2 <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hh,
                 mc.cores = detectCores()-2)
-cf2 <- data.frame(do.call(rbind, cf2)*df.hh$E_Y)
+cf2 <- data.frame(do.call(rbind, cf2)*df.hh$M_avg)
 colnames(cf2) <- c("Consumption_noAid", "Consumption_Aid", "Investment_noAid", "Investment_Aid",
                       "Borrowing_noAid", "Borrowing_Aid")
 df.hh <- cbind(df.hh, cf2) 
@@ -184,10 +193,10 @@ df.hh <- df.hh %>%
 
 ### Effects of Universal Aid
 
-df.hhL <- mutate(df.hh, x_aid = x_noaid + 300000*budgetconstraint/E_Y)
+df.hhL <- mutate(df.hh, x_aid = x_noaid + 300000*budgetconstraint/M_avg)
 cf2L <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hhL,
                  mc.cores = detectCores()-2)
-cf2L <- data.frame(do.call(rbind, cf2L)*df.hh$E_Y)
+cf2L <- data.frame(do.call(rbind, cf2L)*df.hh$M_avg)
 colnames(cf2L) <- c("Consumption_noAid", "Consumption_AidL", "Investment_noAid", "Investment_AidL",
                       "Borrowing_noAid", "Borrowing_AidL")
 
@@ -209,49 +218,30 @@ sqrt(weighted.var(df.hh$borrowing_delta[df.hh$received_aid==1], df.hh$wt_hh[df.h
 ```
 
 ```{r}
-### Most things in first wave only
-df.hh <- filter(df.hh, wtp < 5e6)
-
 w1 = ggplot() +
   geom_histogram(aes(x = df.hh$wtp)) + theme_bw() + theme(text = element_text(size = 20)) + labs(x = "HH Surplus")
-w1
 w2 = ggplot() +
   geom_histogram(aes(x = df.hh$tau)) + xlim(0,1) + theme_bw() + theme(text = element_text(size = 20)) + labs(x = "tau")
 cowplot::plot_grid(w1, w2)
 ggsave(paste(rootdir, "/presentation_materials/wtphist.png", sep = ""), width = 12, height = 7)
 
-scat1 <- ggplot(filter(df.hh, wave == 1), aes(x = log(food_consumption*E_Y), y = wtp)) + 
+scat1 <- ggplot(filter(df.hh, food_consumption>0.1), aes(x = log(food_consumption*M_avg), y = wtp)) + 
   geom_point(alpha = .3, color = "darkorchid1") +
   geom_smooth(method = "lm") + labs(x = "log(food consumption)", y = "WTP (Nepali Rupees)") +
   theme(text = element_text(size = 20)) + theme_bw() + scale_y_continuous(label = scales::comma)
-scat1
-ggplot(filter(df.hh, wave == 1), aes(x = log(home_value*E_Y+1), y = wtp)) + 
-  geom_point(alpha = .3, color = "darkorchid1") +
-  geom_smooth(method = "lm") + 
-  theme_bw() 
-ggplot(filter(df.hh, wave == 1), aes(x = ihs(imputed_bufferstock*E_Y), y = wtp)) + 
-  geom_point(alpha = .3, color = "darkorchid1") +
-  geom_smooth(method = "lm") + 
-  theme_bw() 
-scat2 <- ggplot(filter(df.hh, wave == 1), aes(x = log(quake_losses+1), y = wtp)) + 
+scat2 <- ggplot(df.hh, aes(x = log(gorkha_loss_ever+1), y = wtp)) + 
   geom_point(alpha = .3, color = "darkorchid1") +
   geom_smooth(method = "lm") + labs(x = "log(damages + 1)", y = "") +
   theme(text = element_text(size = 20)) + theme_bw() + scale_y_continuous(label = scales::comma)
-scat2 
 cowplot::plot_grid(scat1, scat2)
 ggsave(paste(rootdir, "/presentation_materials/wtpscatters.png", sep = ""), width = 12, height = 7)
 
-ggplot(filter(df.hh, wave == 1), aes(x = log(quake_losses+1), y = log(lag_h+1))) + 
-  geom_point(alpha = .3, color = "darkorchid1") +
-  geom_smooth(method = "lm") + 
-  theme_bw()
-
-scat3 <- ggplot(filter(df.hh, wave == 1), aes(x = log(quake_losses+1), y = log(lag_h*E_Y+1))) + 
+scat3 <- ggplot(df.hh, aes(x = log(gorkha_loss_ever+1), y = log(lag_h*M_avg+1))) + 
   geom_point(alpha = .3, color = "darkorchid1") +
   geom_smooth(method = "lm") + labs(x = "log(damages + 1)", y = "log(Housing Stock + 1)") + 
   theme_bw()
 
-scat4 <- ggplot(df.hh %>% filter(wave==1) %>%
+scat4 <- ggplot(df.hh %>% 
     group_by(received_aid) %>%
     summarize(hstock = mean(lag_h), na.rm = TRUE), aes(x = as.factor(received_aid), y = hstock)) + 
   geom_col(fill = "darkorchid1") + labs(x = "Received Aid", y = "Housing Stock/E(Y)") + 
@@ -260,92 +250,70 @@ scat4 <- ggplot(df.hh %>% filter(wave==1) %>%
 
 cowplot::plot_grid(scat3, scat4)
 ggsave(paste(rootdir, "/presentation_materials/hstockquake.png", sep = ""), width = 12, height = 7)
+print("Difference in housing stock:")
+mean(df.hh$lag_h[df.hh$gorkha_hh==1]*df.hh$M_avg[df.hh$gorkha_hh==1])/mean(df.hh$lag_h[df.hh$gorkha_hh==0]*df.hh$M_avg[df.hh$gorkha_hh==1])
+```
 
+```{r}
+### WTP by district
 bensbydist <- df.hh %>%
-  filter(wave==1) %>%
   group_by(designation) %>%
   summarize(wtp = weighted.mean(wtp, wt_hh, na.rm = TRUE))
-bensbydist$designation = factor(bensbydist$designation, levels = c("crisis", "severe", "heavy", "hit", "slight"))
-
-df.hh %>%
-  group_by(wave) %>%
-  summarize(wtp = weighted.mean(wtp, wt_hh, na.rm = TRUE))
-
-### By wave
-bensbywave = df.hh %>%
-  group_by(wave, gorkha_hh) %>%
-  summarize(wtp = weighted.mean(wtp, wt_hh, na.rm = TRUE))
-
-ggplot(bensbywave) + geom_col(aes(x = wave, y = wtp, group = gorkha_hh, fill = as.factor(gorkha_hh)), position = "dodge") + theme_bw() + 
-  theme(text = element_text(size = 20)) + labs(x = "", y = "WTP By Wave", fill = "Earthquake Affected")
-ggsave(paste(rootdir, "/presentation_materials/counterfactualsbywave.png", sep = ""), width = 12, height = 7)
+bensbydist$designation = factor(bensbydist$designation, levels = c("crisis", "severe", "heavy", "hit", "slight", "none"))
 
 ggplot(bensbydist) + geom_col(aes(x = designation, y = wtp, fill = designation)) + theme_bw() + 
   theme(text = element_text(size = 20)) + labs(x = "", y = "WTP By District Designation", fill = "")
 ggsave(paste(rootdir, "/presentation_materials/counterfactualsbydist.png", sep = ""), width = 12, height = 7)
 
-ggplot(filter(df.hh, wave==1), aes(x = tau, y = max_interest)) +
-  geom_point(alpha = .3, color = "darkorchid1") +
-  geom_smooth(method = "lm") + labs(x = "WTP", y = "Max Interest Rate on Loans") + 
-  theme_bw()
+### WTP by coping strategies
 
-df.cope1 <- df.hh %>% filter(wave ==1) %>%
-  group_by(dissaving) %>%
-  summarize(wtp = mean(wtp, na.rm = TRUE),
-            tau = mean(tau, na.rm = TRUE))
+df.hh$tau100 <- df.hh$tau*100
+c1 <- lm(tau100 ~ max_interest, df.hh)
+c2 <- lm(tau100 ~ dissaving, df.hh)
+c3 <- lm(tau100 ~ cut_food, df.hh)
 
-df.cope2 <- df.hh %>% filter(wave ==1) %>%
-  group_by(cut_food) %>%
-  summarize(wtp = mean(wtp, na.rm = TRUE),
-            tau = mean(tau, na.rm = TRUE))
-
-ggplot(df.cope1) +
-  geom_col(aes(y = tau, x = dissaving, fill = dissaving)) + 
-  labs(x = "WTP", y = "") + 
-  theme_bw()
-
-ggplot(df.cope2) +
-  geom_col(aes(y = tau, x = cut_food, fill = cut_food)) + 
-  labs(x = "WTP", y = "") + 
-  theme_bw()
-
-### WTP by shock - first wave
-df.w1 = filter(df.hh, wave==1)
-weighted.mean(df.w1$wtp, df.w1$wt_hh, na.rm = TRUE); nrow(df.w1)
-weighted.mean(df.w1$wtp[df.w1$gorkha_hh==1], df.w1$wt_hh[df.w1$gorkha_hh==1], na.rm = TRUE); sum(df.w1$gorkha_hh==1)
-weighted.mean(df.w1$wtp[df.w1$other_nat_disaster==1], df.w1$wt_hh[df.w1$other_nat_disaster==1], na.rm = TRUE); sum(df.w1$other_nat_disaster==1)
-weighted.mean(df.w1$wtp[df.w1$riot==1], df.w1$wt_hh[df.w1$riot==1], na.rm = TRUE); sum(df.w1$riot==1)
-weighted.mean(df.w1$wtp[df.w1$price_shock==1], df.w1$wt_hh[df.w1$price_shock==1], na.rm = TRUE); sum(df.w1$price_shock==1)
-weighted.mean(df.w1$wtp[df.w1$illness_injury_shock==1], df.w1$wt_hh[df.w1$illness_injury_shock==1], na.rm = TRUE); sum(df.w1$illness_injury_shock==1)
-weighted.mean(df.w1$wtp[df.w1$livestock_farm_shock==1], df.w1$wt_hh[df.w1$livestock_farm_shock==1], na.rm = TRUE); sum(df.w1$livestock_farm_shock==1)
+modelsummary(list(c1, c2, c3), stars = TRUE, gof_omit = "IC|Adj|Lik|F|RMSE", output = "latex", fmt = 2)
 ```
 
 ```{r}
-print("tau:"); weighted.mean(df.w1$tau, df.w1$wt_hh, na.rm = TRUE)
-a = weighted.mean(df.w1$wtp, df.w1$wt_hh, na.rm = TRUE)
-print("wtp:"); a
-print("tau conditional:"); weighted.mean(df.w1$tauC, df.w1$wt_hh, na.rm = TRUE)
-b = weighted.mean(df.w1$wtpC, df.w1$wt_hh, na.rm = TRUE)
+### WTP by shock 
+weighted.mean(df.hh$wtp, df.hh$wt_hh, na.rm = TRUE); nrow(df.hh)
+weighted.mean(df.hh$wtp[df.hh$gorkha_hh==1], df.hh$wt_hh[df.hh$gorkha_hh==1], na.rm = TRUE); sum(df.hh$gorkha_hh==1)
+weighted.mean(df.hh$wtp[df.hh$other_nat_disaster==1], df.hh$wt_hh[df.hh$other_nat_disaster==1], na.rm = TRUE); sum(df.hh$other_nat_disaster==1)
+weighted.mean(df.hh$wtp[df.hh$riot_hh==1], df.hh$wt_hh[df.hh$riot_hh==1], na.rm = TRUE); sum(df.hh$riot_hh==1)
+weighted.mean(df.hh$wtp[df.hh$price_shock==1], df.hh$wt_hh[df.hh$price_shock==1], na.rm = TRUE); sum(df.hh$price_shock==1)
+weighted.mean(df.hh$wtp[df.hh$illness_injury_shock==1], df.hh$wt_hh[df.hh$illness_injury_shock==1], na.rm = TRUE); sum(df.hh$illness_injury_shock==1)
+weighted.mean(df.hh$wtp[df.hh$livestock_farm_shock==1], df.hh$wt_hh[df.hh$livestock_farm_shock==1], na.rm = TRUE); sum(df.hh$livestock_farm_shock==1)
+```
+
+```{r}
+sum(is.na(df.hh$tau))
+print("tau:"); weighted.mean(df.hh$tau, df.hh$wt_hh, na.rm = TRUE)
+a = weighted.mean(df.hh$wtp, df.hh$wt_hh, na.rm = TRUE)
+print("mean wtp:"); a
+a2 = median(df.hh$wtp, na.rm = TRUE)
+print("median wtp:"); a2
+print("tau conditional:"); weighted.mean(df.hh$tauC, df.hh$wt_hh, na.rm = TRUE)
+b = weighted.mean(df.hh$wtpC, df.hh$wt_hh, na.rm = TRUE)
 print("wtp conditional:"); b
 print("decrease:"); (a-b)/a
 
-print("tau sd:"); sqrt(weighted.mean((df.w1$tau - weighted.mean(df.w1$tau, df.w1$wt_hh))^2, df.w1$wt_hh))
-print("wtp sd:"); sqrt(weighted.mean((df.w1$wtp - weighted.mean(df.w1$wtp, df.w1$wt_hh))^2, df.w1$wt_hh))
+print("tau sd:"); sqrt(weighted.mean((df.hh$tau - weighted.mean(df.hh$tau, df.hh$wt_hh))^2, df.hh$wt_hh))
+print("wtp sd:"); sqrt(weighted.mean((df.hh$wtp - weighted.mean(df.hh$wtp, df.hh$wt_hh))^2, df.hh$wt_hh))
 
-print("cor losses wtp:"); cor(df.w1$quake_losses, df.w1$wtp)
-print("cor losses home val:"); cor(df.w1$quake_losses[df.w1$wave==1], df.w1$lag_h[df.w1$wave==1])
-print("cor food (relative):"); cor(df.w1$food_consumption, df.w1$wtp)
-print("cor interest:"); cor(df.w1$max_interest[!is.na(df.w1$max_interest) & df.w1$wave==1], df.w1$tau[!is.na(df.w1$max_interest) & df.w1$wave==1])
+print("cor losses wtp:"); cor(df.hh$gorkha_loss_ever, df.hh$wtp)
+print("cor losses home val:"); cor(df.hh$gorkha_loss_ever, df.hh$lag_h)
+print("cor food (relative):"); cor(df.hh$food_consumption, df.hh$wtp)
 
-print("fraction with losses:"); weighted.mean(df.w1$quake_losses[df.w1$wave==1]>0, df.w1$wt_hh[df.w1$wave==1])
+print("fraction with losses:"); weighted.mean(df.hh$gorkha_loss_ever>0, df.hh$wt_hh)
 ```
 
 
 ```{r}
 allocator <- function(tvector, uvector, avector = NULL){
-  df.w1$v <- tvector
-  df.w1$u <- uvector
-  df.w1$a <- if(is.null(avector)) {tvector} else {avector}
+  df.hh$v <- tvector
+  df.hh$u <- uvector
+  df.hh$a <- if(is.null(avector)) {tvector} else {avector}
   
   wtpboot <- function(data, idx, condition) {
     data$i <- condition
@@ -363,87 +331,87 @@ allocator <- function(tvector, uvector, avector = NULL){
   }
   
   df.wr <- data.frame("al" = factor(c("Actual", "NGO", "Damages", "Housing", "Damages rel.",
-                                     "Consumption", "Wealth", "Consumption rel.", "Wealth rel.", "Universal", "Optimal"), 
-                                 levels = c("Actual", "NGO", "Damages", "Housing", "Damages rel.",
-                                            "Consumption", "Wealth", "Consumption rel.", "Wealth rel.", "Universal", "Optimal")),
+                                     "Consumption", "Liquidity", "Consumption rel.", "Liq rel.", "Universal", "Optimal"), 
+                                 levels = c("Actual", "NGO", "Damages", "Damages rel.",
+                                            "Consumption", "Housing", "Liquidity", "Consumption rel.", "Liq rel.", "Universal", "Optimal")),
                      "bens" = rep(NA, 11),
                      "cil" = rep(NA, 11),
                      "cih" = rep(NA, 11))
   
   ### Actual
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$received_aid==1),
-       weights = df.w1$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$received_aid==1),
+       weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Actual"] = b$t0; df.wr$cil[df.wr$al=="Actual"] = b$normal[,2]; df.wr$cih[df.wr$al=="Actual"] = b$normal[,3]
   
   ### NGOs
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$NGO_transfers>0),
-           weights = df.w1$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$received_ngo_aid==1),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="NGO"] = b$t0; df.wr$cil[df.wr$al=="NGO"] = b$normal[,2]; df.wr$cih[df.wr$al=="NGO"] = b$normal[,3]
   
-  ### Quake losses (in the period they occurred)
-  qd <- wtd.quantile(df.w1$quake_losses, 1-budgetconstraint, weights = df.w1$wt_hh) 
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$quake_losses>qd),
-           weights = df.w1$wt_hh)
+  ### Quake losses 
+  qd <- wtd.quantile(df.hh$gorkha_loss_ever, 1-budgetconstraint, weights = df.hh$wt_hh) 
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$gorkha_loss_ever>qd),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Damages"] = b$t0; df.wr$cil[df.wr$al=="Damages"] = b$normal[,2]; df.wr$cih[df.wr$al=="Damages"] = b$normal[,3]
   
   ### Food Consumption
-  qc <- wtd.quantile(df.w1$food_consumption*df.w1$E_Y, budgetconstraint, weights = df.w1$wt_hh) 
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$food_consumption*df.w1$E_Y<qc),
-           weights = df.w1$wt_hh)
+  qc <- wtd.quantile(df.hh$food_consumption*df.hh$M_avg, budgetconstraint, weights = df.hh$wt_hh) 
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$food_consumption*df.hh$M_avg<qc),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Consumption"] = b$t0; df.wr$cil[df.wr$al=="Consumption"] = b$normal[,2]; df.wr$cih[df.wr$al=="Consumption"] = b$normal[,3]
   
-  qc <- wtd.quantile(df.w1$food_consumption, budgetconstraint, weights = df.w1$wt_hh) 
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$food_consumption<qc),
-           weights = df.w1$wt_hh)
+  qc <- wtd.quantile(df.hh$food_consumption, budgetconstraint, weights = df.hh$wt_hh) 
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$food_consumption<qc),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Consumption rel."] = b$t0; df.wr$cil[df.wr$al=="Consumption rel."] = b$normal[,2]; df.wr$cih[df.wr$al=="Consumption rel."] = b$normal[,3]
   
   ### Wealth
-  qb <- wtd.quantile(df.w1$imputed_bufferstock*df.w1$E_Y, budgetconstraint, weights = df.w1$wt_hh)
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock*df.w1$E_Y<qb),
-           weights = df.w1$wt_hh)
+  qb <- wtd.quantile(df.hh$x_noaid*df.hh$M_avg, budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$x_noaid*df.hh$M_avg<qb),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
-  df.wr$bens[df.wr$al=="Wealth"] = b$t0; df.wr$cil[df.wr$al=="Wealth"] = b$normal[,2]; df.wr$cih[df.wr$al=="Wealth"] = b$normal[,3]
+  df.wr$bens[df.wr$al=="Liquidity"] = b$t0; df.wr$cil[df.wr$al=="Liquidity"] = b$normal[,2]; df.wr$cih[df.wr$al=="Liquidity"] = b$normal[,3]
   
-  qb <- wtd.quantile(df.w1$imputed_bufferstock, budgetconstraint, weights = df.w1$wt_hh)
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$imputed_bufferstock<qb),
-           weights = df.w1$wt_hh)
+  qb <- wtd.quantile(df.hh$x_noaid, budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$x_noaid<qb),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
-  df.wr$bens[df.wr$al=="Wealth rel."] = b$t0; df.wr$cil[df.wr$al=="Wealth rel."] = b$normal[,2]; df.wr$cih[df.wr$al=="Wealth rel."] = b$normal[,3]
+  df.wr$bens[df.wr$al=="Liq rel."] = b$t0; df.wr$cil[df.wr$al=="Liq rel."] = b$normal[,2]; df.wr$cih[df.wr$al=="Liq rel."] = b$normal[,3]
   
   ### Housing
-  qh <- wtd.quantile(df.w1$lag_h*df.w1$E_Y, budgetconstraint, weights = df.w1$wt_hh)
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$lag_h*df.w1$E_Y<qh),
-           weights = df.w1$wt_hh)
+  qh <- wtd.quantile(df.hh$lag_h*df.hh$M_avg, budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$lag_h*df.hh$M_avg<qh),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Housing"] = b$t0; df.wr$cil[df.wr$al=="Housing"] = b$normal[,2]; df.wr$cih[df.wr$al=="Housing"] = b$normal[,3]
   
-  qh <- wtd.quantile(df.w1$lag_h, budgetconstraint, weights = df.w1$wt_hh)
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$lag_h<qh),
-           weights = df.w1$wt_hh)
+  qh <- wtd.quantile(df.hh$lag_h, budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$lag_h<qh),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Housing"] = b$t0; df.wr$cil[df.wr$al=="Housing"] = b$normal[,2]; df.wr$cih[df.wr$al=="Housing"] = b$normal[,3]
   
   ### Relative Damages
-  qh <- wtd.quantile(df.w1$damage_rel, 1-budgetconstraint, weights = df.w1$wt_hh)
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$damage_rel>qh),
-           weights = df.w1$wt_hh)
+  qh <- wtd.quantile(df.hh$damage_rel, 1-budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$damage_rel>qh),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Damages rel."] = b$t0; df.wr$cil[df.wr$al=="Damages rel."] = b$normal[,2]; df.wr$cih[df.wr$al=="Damages rel."] = b$normal[,3]
   
   ## Optimal
-  qw <- wtd.quantile(df.w1$wtp, 1-budgetconstraint, weights = df.w1$wt_hh)
-  b = boot(df.w1, statistic = wtpboot, R = 1000, condition = as.vector(df.w1$wtp>qw),
-           weights = df.w1$wt_hh)
+  qw <- wtd.quantile(df.hh$v, 1-budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$v>qw),
+           weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Optimal"] = b$t0; df.wr$cil[df.wr$al=="Optimal"] = b$normal[,2]; df.wr$cih[df.wr$al=="Optimal"] = b$normal[,3]
  
   ### Universal
-  b = boot(df.w1, statistic = wtpLboot, R = 1000, weights = df.w1$wt_hh)
+  b = boot(df.hh, statistic = wtpLboot, R = 1000, weights = df.hh$wt_hh)
   b = boot.ci(b, type = "norm", conf = .95)
   df.wr$bens[df.wr$al=="Universal"] = b$t0; df.wr$cil[df.wr$al=="Universal"] = b$normal[,2]; df.wr$cih[df.wr$al=="Universal"] = b$normal[,3]
 
@@ -454,7 +422,7 @@ allocator <- function(tvector, uvector, avector = NULL){
 ```{r}
 ### counterfactuals WTP
 
-df.als <- allocator(df.w1$wtp, df.w1$wtpL)
+df.als <- allocator(df.hh$wtp, df.hh$wtpL)
 
 ggplot(df.als, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + 
@@ -462,7 +430,7 @@ ggplot(df.als, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() +
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
 ggsave(paste(rootdir, "/presentation_materials/counterfactuals.png", sep = ""), width = 17, height = 7)
 
-ggplot(filter(df.als, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal", "Optimal")), 
+ggplot(filter(df.als, al %in% c("Actual", "Damages", "Consumption", "Housing", "Liquidity", "Universal", "Optimal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -472,14 +440,13 @@ ggsave(paste(rootdir, "/presentation_materials/counterfactuals_prez.png", sep = 
 
 ```{r}
 ### counterfactuals utilitarian
-
-df.alsU <- allocator(df.w1$utils, df.w1$utilL)
+df.alsU <- allocator(df.hh$utils, df.hh$utilL)
 
 ggplot(df.alsU, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Utility Relative to Random")
 
-ggplot(filter(df.alsU, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal")), 
+ggplot(filter(df.alsU, al %in% c("Actual", "Damages", "Housing", "Consumption", "Liquidity", "Universal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -491,13 +458,13 @@ ggsave(paste(rootdir, "/presentation_materials/benthamite.png", sep = ""), width
 ```{r}
 ### counterfactuals consumption
 
-df.alsA <- allocator(df.w1$consumption_delta, df.w1$consumption_deltaL)
+df.alsA <- allocator(df.hh$consumption_delta, df.hh$consumption_deltaL)
 
 ggplot(df.alsA, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Consumption Relative to Random")
 
-ggplot(filter(df.alsA, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal")), 
+ggplot(filter(df.alsA, al %in% c("Actual", "Damages", "Housing", "Consumption", "Liquidity", "Universal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -508,13 +475,13 @@ ggsave(paste(rootdir, "/presentation_materials/cfacts_consumption.png", sep = ""
 ```{r}
 ### counterfactuals investment
 
-df.alsB <- allocator(df.w1$investment_delta, df.w1$investment_deltaL)
+df.alsB <- allocator(df.hh$investment_delta, df.hh$investment_deltaL)
 
 ggplot(df.alsB, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Housing Investment Relative to Random")
 
-ggplot(filter(df.alsB, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal")), 
+ggplot(filter(df.alsB, al %in% c("Actual", "Damages", "Housing", "Consumption", "Liquidity", "Universal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -526,7 +493,7 @@ ggsave(paste(rootdir, "/presentation_materials/cfacts_investment.png", sep = "")
 ```{r}
 ### counterfactuals WTP for conditional aid - relative to random unconditional
 
-df.alsC <- allocator(df.w1$wtpC, df.w1$wtpCL, df.w1$wtp)
+df.alsC <- allocator(df.hh$wtpC, df.hh$wtpCL, df.hh$wtp)
 
 ggplot(df.alsC, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
   geom_errorbar(aes(ymin = cil, ymax = cih)) + 
@@ -534,7 +501,7 @@ ggplot(df.alsC, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() +
   theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
 ggsave(paste(rootdir, "/presentation_materials/counterfactuals_conditional.png", sep = ""), width = 17, height = 7)
 
-ggplot(filter(df.alsC, al %in% c("Actual", "Damages", "Housing", "Consumption", "Consumption rel.", "Universal")), 
+ggplot(filter(df.alsC, al %in% c("Actual", "Damages", "Housing", "Consumption", "Liquidity", "Universal")), 
        aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
   geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
   geom_hline(aes(yintercept = 1)) + theme_bw() + 
@@ -550,25 +517,58 @@ finalV$tau = mcmapply(wtpeliciter, x = finalV$x, h = finalV$h,
                       y = 150000, aidamt = 300000, vfx = list(finalV), theta = list(theta),
                       mc.cores = detectCores()-2, mc.preschedule = FALSE)
 
-pwtp = ggplot(filter(finalV, x<1, h<1, h>0, x>-lambda)) + geom_tile(aes(x = x, y = h, fill = tau), 
-                                                                    width = max(diff(unique(finalV$x))),
-                                                                    height =  max(diff(unique(finalV$h)))) + 
+pwtp = ggplot(finalV) + geom_tile(aes(x = x, y = h, fill = tau), 
+                                  width = max(diff(unique(finalV$x))),
+                                  height =  max(diff(unique(finalV$h)))) + 
   labs(x = "Wealth", y = "Housing Stock", fill = "Tau", title = "Unconditional") +
-  scale_fill_viridis_c(values = seq(0, 1, .1), limits = c(.3,.75)) + theme_bw() + theme(text = element_text(size = 20)) 
+  scale_fill_viridis_c() + theme_bw() + theme(text = element_text(size = 20)) 
 pwtp
 
 finalV$tauC = mcmapply(conditionalizer, x = finalV$x, h = finalV$h, 
                       y = 150000, aidamt = 300000, vfx = list(finalV), theta = list(theta),
                       mc.cores = detectCores()-2, mc.preschedule = FALSE)
 
-pwtpC = ggplot(filter(finalV, x<1, h<1, h>0, x>-lambda)) + geom_tile(aes(x = x, y = h, fill = tauC), 
-                                                                    width = max(diff(unique(finalV$x))),
-                                                                    height =  max(diff(unique(finalV$h)))) + 
+pwtpC = ggplot(finalV) + geom_tile(aes(x = x, y = h, fill = tauC), 
+                            width = max(diff(unique(finalV$x))),
+                            height =  max(diff(unique(finalV$h)))) + 
   labs(x = "Wealth", y = "Housing Stock", fill = "Tau", title = "Conditional") +
-  scale_fill_viridis_c(values = seq(0, 1, .1), limits = c(.3,.75)) + theme_bw() + theme(text = element_text(size = 20)) 
+  scale_fill_viridis_c() + theme_bw() + theme(text = element_text(size = 20)) 
 pwtpC
 cowplot::plot_grid(pwtp, pwtpC)
 ggsave(paste(rootdir, "/presentation_materials/wtpsurf.png", sep = ""), width = 12, height = 7)
 ```
+Inequality/Growth simulations
 
+```{r}
+growthfactor <- seq(1, 4, by = .5)
+spreadfactor <- seq(.5, 2, by = .25)
 
+evdata <- crossing(growthfactor, spreadfactor)
+
+externalvalidator <- function(g, s){
+  df.tranform <- df.hh
+  df.tranform$x_noaid <- s*(df.hh$x_noaid - mean(df.hh$x_noaid)) + g*mean(df.hh$x_noaid)
+  df.tranform$lag_h <- s*(df.hh$lag_h - mean(df.hh$lag_h)) + g*mean(df.hh$lag_h)
+  df.tranform$M_avg <- s*(df.hh$M_avg - mean(df.hh$M_avg)) + g*mean(df.hh$M_avg)
+  
+  df.tranform$tau <- mcmapply(wtpeliciter, x = df.tranform$x_noaid, h = df.tranform$lag_h, 
+                      y = df.tranform$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                      mc.cores = detectCores()-2, mc.preschedule = FALSE)
+  df.tranform$wtp <- df.tranform$tau * df.tranform$M_avg/(1-beta)
+  df.tranform$tauL <- mcmapply(wtpeliciter, x = df.tranform$x_noaid, h = df.tranform$lag_h, 
+                      y = df.tranform$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                      mc.cores = detectCores()-2, mc.preschedule = FALSE)
+  df.tranform$wtpL <- df.tranform$tauL * df.tranform$M_avg/(1-beta)
+  
+  r = weighted.mean(df.tranform$wtp, df.tranform$wt_hh)*budgetconstraint/weighted.mean(df.tranform$wtpL, df.tranform$wt_hh)
+  return(r)
+}
+
+evdata$tval <- unlist(mapply(externalvalidator, evdata$growthfactor, evdata$spreadfactor))
+
+ggplot(evdata) +
+  geom_tile(aes(x = growthfactor, y = spreadfactor, fill = tval)) + 
+  labs(x = "Growth Factor", y = "Spread Factor", fill = "Benefits of Targeting Relative to Universal") +
+  theme_bw() + theme(text = element_text(size = 20))
+#ggsave(paste(rootdir, "/presentation_materials/growthineq.png", sep = ""), width = 9, height = 7)
+```

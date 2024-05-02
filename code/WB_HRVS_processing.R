@@ -1127,6 +1127,8 @@ df.aid <- df.hh %>% arrange(wave) %>%
           var_log_income = var(log(total_income+1), na.rm = TRUE),
           avg_log_income = mean(log(total_income+1), na.rm = TRUE),
           gorkha_loss_ever = sum(gorkha_loss_amt),
+          riot_loss_ever = sum(riot_losses),
+          ngo_aid_total = sum(NGO_transfers),
           avg_log_remit = mean(log(1+remittance_income), na.rm = TRUE), 
           total_loans_taken = sum(new_loans_taken),
           n_waves = n())
@@ -1136,8 +1138,10 @@ df.hh <- select(df.hh, -c(prev_migrants, migrant_male, migrant_educated, migrant
 df.hh <- merge(df.hh, df.land, by = c("hhid"), all.x = TRUE)
 df.hh <- merge(df.hh, df.aid, by = "hhid") %>%
   mutate(received_aid = if_else(aid_total>0, 1, 0),  ### at any point
+         received_ngo_aid = if_else(ngo_aid_total>0, 1, 0),
          received_recon_aid = if_else(reconstruction_aid_total>0, 1, 0),
          gorkha_hh = if_else(gorkha_loss_ever>0, 1, 0),
+         riot_hh = if_else(riot_loss_ever>0, 1, 0),
          caste_yr = paste(ethnicity, wave, sep = "_"),
          vdc_yr = paste(district, vdc, wave, sep = "_"),
          cons_shock = consumption - avg_cons) %>%

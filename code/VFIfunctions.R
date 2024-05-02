@@ -259,7 +259,7 @@ bellman <- function(w, theta, shockpts = 30, m = 2000){
                     lower = c(0,0), upper = c(x+lambda, x+lambda), 
                     control = list(ftol_rel = 1e-6, ftol_abs = 0, xtol_rel = 0, maxeval = m))
       if (x + lambda - sum(sol$par) < 1e-9) { ### double check solutions near boundary - tend to get stuck in local minima
-        c0 = min(w$cfx[rowidx], x + lambda); i0 = w$ifx[rowidx]
+        c0 = min(w$cfx[rowidx], x + lambda); i0 = min(w$ifx[rowidx], x + lambda)
         sol2 = cobyla(fn = hhprob, x0 = c(c0, i0),
                       lower = c(0,0), upper = c(x+lambda, x+lambda), 
                       control = list(ftol_rel = 1e-6, ftol_abs = 0, xtol_rel = 0, maxeval = m))
@@ -300,13 +300,14 @@ howard <- function(w, theta, shockpts = 30){
 }
 
 ### VFI
-VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 3, mqp = FALSE){
+VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 0, mqp = FALSE, shockpts = c(8,30)){
   gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
   lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   w = vector(mode = "list", length = maxiter)
   w[[1]] = v0
-  tol1 = FALSE; i = 2; d = 1; s = 30
+  tol1 = FALSE; i = 2; d = 1
   while (i<=maxiter & d > tol) {
+    if (i==2) {s = shockpts[1]} else {s = shockpts[2]}
     wnext = bellman(w = w[[i-1]], theta, shockpts = s)
     ## howard
     if (howardk>0) {
@@ -334,16 +335,18 @@ VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 3, mqp = FALSE)
 
 ### Define GMM function
 
-gmmmomentmatcher <- function(theta, df) {
+gmmmomentmatcher <- function(theta, df, v0 = NULL, returnv = FALSE, shockpts = c(8,30), ubm = c(5,5)) {
   print(theta)
   saveRDS(theta, paste(getwd(), "/data/model_output/theta.rds", sep = ""))
   
   ### initial guess
-  statespace = create.statespace(ubm = c(5,5), theta, method = "equal")
-  v0 = firstguesser(statespace, theta)
+  if (is.null(v0)) {
+    statespace = create.statespace(ubm = ubm, theta, method = "equal")
+    v0 = firstguesser(statespace, theta)
+  } else {v0 = v0[[length(v0)]]}
   
   ### VFI
-  V = VFI(v0, theta)
+  V = VFI(v0, theta, shockpts = shockpts)
   saveRDS(V, paste(getwd(), "/data/model_output/V.rds", sep = ""))
   finalV <- V[[length(V)]]
   policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "rollmean")
@@ -353,14 +356,18 @@ gmmmomentmatcher <- function(theta, df) {
   ### data
   momentmat <- momentmatcher(vfx = list(policycfx, policyifx, policydef), t0 = theta, data = df)
   print(sum(colMeans(momentmat)^2))
-  return(momentmat)
+  if (returnv) {
+    return(list(momentmat, V))
+  } else {
+    return(momentmat)
+  }
 }
 
 momentmatcher <- function(vfx, t0, data, savings_measure = "liquid"){
   gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]*t0[9]; hbar = t0[5]*(1-t0[9])*t0[10]/(1-t0[10])
   lambda = t0[6]; sigma = t0[7]; sigmame = t0[8]; alpha = t0[9]; delta = t0[10]
   
-  meshocks <- exp(rnorm(nrow(data), 0, sigmame))
+  set.seed(1646); meshocks <- exp(rnorm(nrow(data), -sigmame^2/2, sigmame))
   data$M_avg <- data$M_avg*meshocks
   
   data <- mutate(data, liquidity = liquidity_hat/M_avg,
@@ -385,9 +392,9 @@ momentmatcher <- function(vfx, t0, data, savings_measure = "liquid"){
   e2 = (ifx - data$home_investment)/mean(data$home_investment)
   e3 = (dfx - data$default_hat)/mean(data$default_hat)
   ###savings and variance of income
-  e4 = ((R-1)*data$cash_savings - data$cap_gains)/mean(data$cap_gains)
+  e4 = ((R-1)*data$cash_savings - data$cap_gains)/mean(data$cap_gains) ### use current cash rather than lag b/c of how survey question is asked
   e5 = (data$loans_made_1yr*annuitycalc(R, 1) + data$loans_made_2yr*annuitycalc(R, 2) + data$loans_made_3yr*annuitycalc(R, 3) - data$loan_payments_recd_ann)/mean(data$loan_payments_recd_ann)
-  e6 = (data$loans_taken_1yr*annuitycalc(R, 1) + data$loans_taken_2yr*annuitycalc(R, 2) + data$loans_taken_3yr*annuitycalc(R, 3) - data$annuities)/mean(data$annuities)
+  e6 = (data$loans_taken_1yr*annuitycalc(R, 1) + data$loans_taken_2yr*annuitycalc(R, 2) + data$loans_taken_3yr*annuitycalc(R, 3) - data$amount_owed)/mean(data$amount_owed)
   ### depreciation
   e7 = data$years_ago_built_resid*(data$home_value_resid - (delta-1)*data$years_ago_built_resid)
   ### interactions
@@ -398,19 +405,19 @@ momentmatcher <- function(vfx, t0, data, savings_measure = "liquid"){
   e12 = e2*log(data$M_avg)/(mean(data$home_investment)*mean(log(data$M_avg)))
   e13 = e2*log(data$lag_h+1)/(mean(data$home_investment)*mean(log(data$lag_h+1)))
   ### variance of income and measurement error
-  e14 = (log(data$total_income) + sigma^2/2)/mean(log(data$total_income))
-  e15 = (log(data$total_income)^2 - sigma^4/4 - sigma^2 - sigmame^2)/mean(log(data$total_income)^2)
-  return(cbind(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e14, e15)*wt)
+  e14 = (log(data$total_income) + sigma^2/2 + sigmame^2/2)/mean(log(data$total_income))
+  e15 = (log(data$total_income)^2 - (sigma^2/2 + sigmame^2/2)^2 - sigma^2 - sigmame^2)/mean(log(data$total_income)^2)
+  return(cbind(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15)*wt)
 }
 
 partialderivs <- function(idx, tol, v0, theta){
   thetap <- theta
   thetap[idx] <- theta[idx] + tol
-  Vp1 <- VFI(v0, thetap)
+  Vp1 <- VFI(v0, thetap, shockpts = c(30,30), tol = 1e-3)
   return(Vp1)
 }
 
-momentgrad <- function(theta, df, tol = .025){
+momentgrad <- function(theta, df, tol = .005){
   print(theta)
   
   ### initial value and policy functions
