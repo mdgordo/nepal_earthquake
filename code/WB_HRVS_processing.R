@@ -755,7 +755,7 @@ for (i in c(1:3)) {
                annuity = if_else(s12q08==0, s12q06, if_else(s12q09==0, s12q06/ceiling(s12q08/12),
                                  s12q06 * s12q09/100 * (1 + s12q09/100)^ceiling(s12q08/12) / ((1 + s12q09/100)^ceiling(s12q08/12) - 1))),
                amount_owed = if_else(s12q05 < 13, annuity*s12q05/12, annuity),
-               implied_default = if_else(s12q05 > s12q08 + 3 & annuity*ceiling(s12q08/12) > s12q11, 1, 0), 
+               implied_default = if_else(s12q05 > s12q08 + 6 & annuity*ceiling(s12q08/12) > s12q11, 1, 0), 
                loan_payments_ann = if_else(s12q05==0, s12q11, s12q11/ceiling(s12q05/12))) %>%  
               group_by(hhid) %>%
               summarize(new_loans_taken = sum(new_loans_taken, na.rm = TRUE),
@@ -1030,10 +1030,10 @@ for (i in c(1:3)) {
                       total_income = labor_income + passive_income, 
                       labor_supply = wage_labor_days + self_emp_days + work_aid_days,
                       wage_rate = labor_income/labor_supply*(365-days_ill),
-                      consumption = food_home_production*52 + food_market*52 + food_inkind*52 + if_else(is.na(durables_consumption + energy + utilities_paid + rent_paid + transportation + 
-                          clothing_cleaning_home + entertainment_other + other_expenses + craft_consumption), 0, durables_consumption + energy + utilities_paid + rent_paid + transportation + 
+                      consumption = food_home_production*52 + food_market*52 + food_inkind*52 + if_else(is.na(durables_consumption + energy + utilities_paid + transportation + 
+                          clothing_cleaning_home + entertainment_other + other_expenses + craft_consumption), 0, durables_consumption + energy + utilities_paid + transportation + 
                             clothing_cleaning_home + entertainment_other + other_expenses + craft_consumption), ## 22 imputed as 0
-                      non_durables = food_home_production*52 + food_market*52 + food_inkind*52 + energy + utilities_paid + rent_paid + transportation + 
+                      non_durables = food_home_production*52 + food_market*52 + food_inkind*52 + energy + utilities_paid + transportation + 
                           clothing_cleaning_home + entertainment_other + other_expenses + craft_consumption,
                       food_consumption = food_home_production*52 + food_market*52 + food_inkind*52,
                       cap_inputs = business_expenses + ag_costs + landrent_paid_cash + livestock_costs + landrent_paid_inkind,
@@ -1171,3 +1171,4 @@ write_csv(df.hh, "full_panel.csv")
 
 setwd("..")
 setwd("..")
+

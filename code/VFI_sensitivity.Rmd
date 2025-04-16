@@ -1,0 +1,337 @@
+---
+title: "VFI results"
+author: "Matthew Gordon"
+date: "7/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+rootdir <- dirname(getwd())
+```
+
+### Load packages and data
+
+```{r, message=FALSE, echo=FALSE, warning=FALSE}
+### packages and data
+library(tidyverse)
+library(dumbells)
+library(parallel)
+library(nloptr)
+library(flatlandr)
+library(Rearrangement)
+library(fastGHQuad)
+library(rdrobust)
+library(Hmisc, exclude = "summarize")
+library(modelsummary)
+library(boot)
+options('nloptr.show.inequality.warning'=FALSE)
+source(paste(rootdir, "/code/VFIfunctions.R", sep = ""))
+source(paste(rootdir, "/code/rdhelpers.R", sep = ""))
+
+### Read in final Value function
+theta = readRDS(paste(rootdir, "/data/model_output/theta.rds", sep = ""))
+theta[1] <- 1.2 ## from kaboski townsend
+theta[2] <- .926
+theta
+xn = hn = 80
+statespace = create.statespace(ubm = c(10,10), theta, method = "equal")
+v0 = firstguesser(statespace, theta)
+# V = VFI(v0, theta)
+# saveRDS(V, paste(rootdir, "/data/model_output/V_crra.rds", sep = ""))
+V <- readRDS(paste(rootdir, "/data/model_output/V_crra.rds", sep = ""))
+finalV = V[[length(V)]]
+```
+
+```{r}
+gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
+gqpts = gaussHermiteData(13)
+
+### Read in Data
+df.hh <- readRDS(paste(rootdir, "/data/model_output/df.adj.rds", sep = "")) 
+
+set.seed(1646); meshocks <- exp(rnorm(nrow(df.hh), 0, sigmame))
+df.hh$M_avg <- df.hh$M_avg*meshocks
+df.hh <- mutate(df.hh, liquidity = liquidity_hat/M_avg,
+             liquidity_plus = liquidity_plus_hat/M_avg,  
+             food_consumption = non_durables_hat/M_avg,
+             home_value = home_value_hat/M_avg,
+             home_investment = home_investment_hat/M_avg,
+             quake_aid = quake_aid/M_avg,
+             total_income = total_income_hat/M_avg,
+             x_noaid = liquidity - quake_aid,
+             x_aid = x_noaid + 300000/M_avg,
+             damage_rel = gorkha_loss_ever/M_avg) %>%
+  group_by(hhid) %>%
+  mutate(lag_h = lag(home_value, order_by = wave),
+         lay_y = lag(total_income, order_by = wave)) %>%
+  filter(wave==2 & designation != "none" & !is.na(lag_h))
+
+```
+
+
+```{r}
+### Aid Simulations
+policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "rollmean")
+policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "rollmean")
+policydef <- interpolater.creater(finalV, theta, var = "def", method = "rollmean")
+
+budgetconstraint = weighted.mean(df.hh$received_aid, df.hh$wt_hh)
+budgetconstraint
+
+### WTP for aid
+df.hh$tau <- mcmapply(wtpeliciter, x = df.hh$x_noaid, h = df.hh$lag_h, 
+                    y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$wtp <- df.hh$tau * df.hh$M_avg/(1-beta)
+
+df.hh$tauL <- mcmapply(wtpeliciter, x = df.hh$x_noaid, h = df.hh$lag_h, 
+                      y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$wtpL <- df.hh$tauL * df.hh$M_avg/(1-beta)
+
+df.hh$tauC <- mcmapply(conditionalizer, x = df.hh$x_noaid, h = df.hh$lag_h, 
+                      y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$wtpC <- df.hh$tauC * df.hh$M_avg/(1-beta)
+
+df.hh$tauCL <- mcmapply(conditionalizer, x = df.hh$x_noaid, h = df.hh$lag_h, 
+                      y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$wtpCL <- df.hh$tauCL * df.hh$M_avg/(1-beta)
+
+df.hh$utils <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
+                        y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$utilL <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
+                        y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+
+### consumption and investment
+cf2 <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hh,
+                mc.cores = detectCores()-2)
+cf2 <- data.frame(do.call(rbind, cf2)*df.hh$M_avg)
+colnames(cf2) <- c("Consumption_noAid", "Consumption_Aid", "Investment_noAid", "Investment_Aid",
+                      "Borrowing_noAid", "Borrowing_Aid")
+df.hh <- cbind(df.hh, cf2) 
+df.hh <- df.hh %>%
+  mutate(consumption_delta = log(Consumption_Aid) - log(Consumption_noAid),
+         investment_delta = log(1+Investment_Aid) - log(1+Investment_noAid),
+         borrowing_delta = ihs(Borrowing_Aid) - ihs(Borrowing_noAid))
+
+### Effects of Universal Aid
+
+df.hhL <- mutate(df.hh, x_aid = x_noaid + 300000*budgetconstraint/M_avg)
+cf2L <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hhL,
+                 mc.cores = detectCores()-2)
+cf2L <- data.frame(do.call(rbind, cf2L)*df.hh$M_avg)
+colnames(cf2L) <- c("Consumption_noAid", "Consumption_AidL", "Investment_noAid", "Investment_AidL",
+                      "Borrowing_noAid", "Borrowing_AidL")
+
+df.hh <- cbind(df.hh, cf2L[,c("Consumption_AidL", "Investment_AidL", "Borrowing_AidL")]) 
+df.hh <- df.hh %>%
+  mutate(consumption_deltaL = log(Consumption_AidL) - log(Consumption_noAid),
+         investment_deltaL = log(1+Investment_AidL) - log(1+Investment_noAid),
+         borrowing_deltaL = ihs(Borrowing_AidL) - ihs(Borrowing_noAid))
+
+#### Model predictions to compare to RD - these are predictions of first tranche - 50K - for those that actually received aid
+### c_RD <- 0.34; i_RD <- 4.15; rem_RD <- -5.13; sav_RD <- 0.85
+
+weighted.mean(df.hh$consumption_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1])
+sqrt(weighted.var(df.hh$consumption_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]))
+
+weighted.mean(df.hh$investment_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1])
+sqrt(weighted.var(df.hh$investment_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]))
+
+-1*weighted.mean(df.hh$borrowing_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]) ### Borrowing is actually savings
+sqrt(weighted.var(df.hh$borrowing_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]))
+```
+
+
+
+```{r}
+### counterfactuals WTP
+
+df.als <- allocator(df.hh$wtp, df.hh$wtpL)
+
+ggplot(df.als, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
+#ggsave(paste(rootdir, "/presentation_materials/counterfactuals.png", sep = ""), width = 17, height = 7)
+
+ggplot(filter(df.als, al %in% c("Actual", "Damages", "Consumption", "Shake PGA", "Liquidity", "Universal", "Optimal")), 
+       aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
+  geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
+#ggsave(paste(rootdir, "/presentation_materials/counterfactuals_prez.png", sep = ""), width = 17, height = 7)
+```
+
+```{r}
+### counterfactuals utilitarian
+df.alsU <- allocator(df.hh$utils, df.hh$utilL)
+
+ggplot(df.alsU, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Utility Relative to Random")
+
+ggplot(filter(df.alsU, al %in% c("Actual", "Damages", "Consumption", "Shake PGA", "Liquidity", "Universal", "Optimal")), 
+       aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
+  geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Utility Relative to Random")
+#ggsave(paste(rootdir, "/presentation_materials/benthamite.png", sep = ""), width = 17, height = 7)
+```
+
+
+```{r}
+### Read in final Value function
+theta = readRDS(paste(rootdir, "/data/model_output/theta.rds", sep = ""))
+theta[5] <- theta[5]/10 ## arbitrary
+theta
+xn = hn = 80
+statespace = create.statespace(ubm = c(10,10), theta, method = "equal")
+v0 = firstguesser(statespace, theta)
+# V = VFI(v0, theta)
+# saveRDS(V, paste(rootdir, "/data/model_output/V_hbar.rds", sep = ""))
+V <- readRDS(paste(rootdir, "/data/model_output/V_hbar.rds", sep = ""))
+finalV = V[[length(V)]]
+
+gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
+lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
+gqpts = gaussHermiteData(13)
+
+### Read in Data
+df.hh <- readRDS(paste(rootdir, "/data/model_output/df.adj.rds", sep = "")) 
+
+set.seed(1646); meshocks <- exp(rnorm(nrow(df.hh), 0, sigmame))
+df.hh$M_avg <- df.hh$M_avg*meshocks
+df.hh <- mutate(df.hh, liquidity = liquidity_hat/M_avg,
+             liquidity_plus = liquidity_plus_hat/M_avg,  
+             food_consumption = non_durables_hat/M_avg,
+             home_value = home_value_hat/M_avg,
+             home_investment = home_investment_hat/M_avg,
+             quake_aid = quake_aid/M_avg,
+             total_income = total_income_hat/M_avg,
+             x_noaid = liquidity - quake_aid,
+             x_aid = x_noaid + 300000/M_avg,
+             damage_rel = gorkha_loss_ever/M_avg) %>%
+  group_by(hhid) %>%
+  mutate(lag_h = lag(home_value, order_by = wave),
+         lay_y = lag(total_income, order_by = wave)) %>%
+  filter(wave==2 & designation != "none" & !is.na(lag_h))
+
+### Aid Simulations
+policycfx <- interpolater.creater(finalV, theta, var = "cfx", method = "rollmean")
+policyifx <- interpolater.creater(finalV, theta, var = "ifx", method = "rollmean")
+policydef <- interpolater.creater(finalV, theta, var = "def", method = "rollmean")
+
+budgetconstraint = weighted.mean(df.hh$received_aid, df.hh$wt_hh)
+budgetconstraint
+
+### WTP for aid
+df.hh$tau <- mcmapply(wtpeliciter, x = df.hh$x_noaid, h = df.hh$lag_h, 
+                    y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$wtp <- df.hh$tau * df.hh$M_avg/(1-beta)
+
+df.hh$tauL <- mcmapply(wtpeliciter, x = df.hh$x_noaid, h = df.hh$lag_h, 
+                      y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$wtpL <- df.hh$tauL * df.hh$M_avg/(1-beta)
+
+df.hh$tauC <- mcmapply(conditionalizer, x = df.hh$x_noaid, h = df.hh$lag_h, 
+                      y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$wtpC <- df.hh$tauC * df.hh$M_avg/(1-beta)
+
+df.hh$tauCL <- mcmapply(conditionalizer, x = df.hh$x_noaid, h = df.hh$lag_h, 
+                      y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$wtpCL <- df.hh$tauCL * df.hh$M_avg/(1-beta)
+
+df.hh$utils <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
+                        y = df.hh$M_avg, aidamt = 300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+df.hh$utilL <- mcmapply(utilbooster, x = df.hh$x_noaid, h = df.hh$lag_h,
+                        y = df.hh$M_avg, aidamt = budgetconstraint*300000, vfx = list(finalV), theta = list(theta),
+                    mc.cores = detectCores()-2, mc.preschedule = FALSE)
+
+### consumption and investment
+cf2 <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hh,
+                mc.cores = detectCores()-2)
+cf2 <- data.frame(do.call(rbind, cf2)*df.hh$M_avg)
+colnames(cf2) <- c("Consumption_noAid", "Consumption_Aid", "Investment_noAid", "Investment_Aid",
+                      "Borrowing_noAid", "Borrowing_Aid")
+df.hh <- cbind(df.hh, cf2) 
+df.hh <- df.hh %>%
+  mutate(consumption_delta = log(Consumption_Aid) - log(Consumption_noAid),
+         investment_delta = log(1+Investment_Aid) - log(1+Investment_noAid),
+         borrowing_delta = ihs(Borrowing_Aid) - ihs(Borrowing_noAid))
+
+### Effects of Universal Aid
+
+df.hhL <- mutate(df.hh, x_aid = x_noaid + 300000*budgetconstraint/M_avg)
+cf2L <- mclapply(c(1:nrow(df.hh)), counterfactualizer, vfx = list(policycfx, policyifx), df.hh = df.hhL,
+                 mc.cores = detectCores()-2)
+cf2L <- data.frame(do.call(rbind, cf2L)*df.hh$M_avg)
+colnames(cf2L) <- c("Consumption_noAid", "Consumption_AidL", "Investment_noAid", "Investment_AidL",
+                      "Borrowing_noAid", "Borrowing_AidL")
+
+df.hh <- cbind(df.hh, cf2L[,c("Consumption_AidL", "Investment_AidL", "Borrowing_AidL")]) 
+df.hh <- df.hh %>%
+  mutate(consumption_deltaL = log(Consumption_AidL) - log(Consumption_noAid),
+         investment_deltaL = log(1+Investment_AidL) - log(1+Investment_noAid),
+         borrowing_deltaL = ihs(Borrowing_AidL) - ihs(Borrowing_noAid))
+
+#### Model predictions to compare to RD - these are predictions of first tranche - 50K - for those that actually received aid
+### c_RD <- 0.34; i_RD <- 4.15; rem_RD <- -5.13; sav_RD <- 0.85
+
+weighted.mean(df.hh$consumption_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1])
+sqrt(weighted.var(df.hh$consumption_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]))
+
+weighted.mean(df.hh$investment_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1])
+sqrt(weighted.var(df.hh$investment_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]))
+
+-1*weighted.mean(df.hh$borrowing_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]) ### Borrowing is actually savings
+sqrt(weighted.var(df.hh$borrowing_delta[df.hh$received_aid==1], df.hh$wt_hh[df.hh$received_aid==1]))
+```
+
+
+```{r}
+### counterfactuals WTP
+
+df.alsh <- allocator(df.hh$wtp, df.hh$wtpL)
+
+ggplot(df.als, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
+#ggsave(paste(rootdir, "/presentation_materials/counterfactuals.png", sep = ""), width = 17, height = 7)
+
+ggplot(filter(df.als, al %in% c("Actual", "Damages", "Consumption", "Shake PGA", "Liquidity", "Universal", "Optimal")), 
+       aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
+  geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Surplus Relative to Random")
+#ggsave(paste(rootdir, "/presentation_materials/counterfactuals_prez.png", sep = ""), width = 17, height = 7)
+```
+
+```{r}
+### counterfactuals utilitarian
+df.alshU <- allocator(df.hh$utils, df.hh$utilL)
+
+ggplot(df.alsU, aes(x = al, y = bens, color = as.factor(bens))) + geom_point() + 
+  geom_errorbar(aes(ymin = cil, ymax = cih)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Utility Relative to Random")
+
+ggplot(filter(df.alsU, al %in% c("Actual", "Damages", "Consumption", "Shake PGA", "Liquidity", "Universal", "Optimal")), 
+       aes(x = al, y = bens, color = as.factor(bens))) + geom_point(size = 5) + 
+  geom_errorbar(aes(ymin = cil, ymax = cih), width = .5, size = 1) + 
+  geom_hline(aes(yintercept = 1)) + theme_bw() + 
+  theme(text = element_text(size = 20), legend.position = "none") + labs(x = "", y = "Utility Relative to Random")
+#ggsave(paste(rootdir, "/presentation_materials/benthamite.png", sep = ""), width = 17, height = 7)
+```
+

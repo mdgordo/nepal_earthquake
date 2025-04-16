@@ -26,25 +26,29 @@ dfprep <- function(df, v, donut, b, dist.exclude, hpop = Inf){
   return(df)
 }
 
-vectorprep <- function(df, v, b, fuzzy, ihs, weights){
+vectorprep <- function(df, v, b, fuzzy, transform = "none", weights){
   if (fuzzy!=FALSE & fuzzy != "inv") {f <- unlist(df[, fuzzy])} else if (fuzzy=="inv") {f <- 1 - df$reconstruction_aid_bin} else {f <- NULL}
   Y <- unlist(df[, v])
   X <- unlist(df[, b])
-  if (ihs==TRUE) {
+  if (grepl("_bin", v)){
+    Y <- Y
+  } else if (transform=="log") {
     if (sum(Y==0)>0) {
       Y <- log(Y+1)
-    } else {
-      Y <- log(Y)
+      } else {
+        Y <- log(Y)
+        }
+      } else if (transform=="ihs") {
+        Y <- ihs(Y)
       }
-  }
   if (weights==TRUE) w <- df$wt_hh else w <- NULL
   return(list(f, Y, X, w))
 }
 
 optbw <- function(v, b, df, fuzzy = FALSE, k = "triangular", weights = TRUE, donut = 0, 
-                  vce = NULL, dist.exclude=NULL, vars = NULL, ihs = FALSE) {
+                  vce = NULL, dist.exclude=NULL, vars = NULL, transform = "none") {
   df <- dfprep(df, v, donut, b, dist.exclude)
-  vs = vectorprep(df, v, b, fuzzy, ihs, weights)
+  vs = vectorprep(df, v, b, fuzzy, transform, weights)
   f = vs[[1]]; Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
   covs <- covmatmaker(df, vars)
   bwsct <- rdbwselect(y = Y, x = X, c = 0, weights = w, fuzzy = f, covs = covs,
@@ -54,18 +58,22 @@ optbw <- function(v, b, df, fuzzy = FALSE, k = "triangular", weights = TRUE, don
 }
 
 pdlvarselect <- function(v, maxiter = 10, tol = 1, df, dist.exclude = NULL, donut = 0, 
-                         k = "triangular", vce = NULL, ihs = FALSE, fuzzy = FALSE){
+                         k = "triangular", vce = NULL, transform = "none", fuzzy = FALSE){
   ### only works for dist_2_seg1pt at the moment and triangular kernel
   i = 0
   if (is.null(fuzzy)) fuzzy <- FALSE
   bandinit <- optbw(v, b = "dist_2_seg1pt", df = df, fuzzy = fuzzy, donut = donut, dist.exclude = dist.exclude, 
-                    k = k, vce = vce, ihs = ihs, vars = "all")
+                    k = k, vce = vce, transform = transform, vars = "all")
   Y = unlist(df[, v])
-  if (ihs==TRUE) {
+  if (transform=="log") {
     if (sum(Y==0)>0) {
-      df$Y = log(Y+1)
-      } else {df$Y = log(Y)}
-    } else {df$Y = Y}
+      Y <- log(Y+1)
+    } else {
+      Y <- log(Y)
+    }
+  } else if (transform=="ihs") {
+    Y <- ihs(Y)
+  }
   df = mutate(df, distpos = if_else(dist_2_seg1pt >= 0, dist_2_seg1pt, 0))
   hlast <- bandinit[1,1]
   
@@ -104,7 +112,7 @@ pdlvarselect <- function(v, maxiter = 10, tol = 1, df, dist.exclude = NULL, donu
     vars <- colnames(pdl1$model)[pdl1$index | pdl2$index | pdl3$index]
     if (is.null(vars)) {vars <- "none"}
     bandinit <- optbw(v, b = "dist_2_seg1pt", df = df, fuzzy = fuzzy, dist.exclude = dist.exclude, 
-                      weights = TRUE, k = k, vce = vce, ihs = ihs, vars = vars)
+                      weights = TRUE, k = k, vce = vce, transform = transform, vars = vars)
     h0 <- bandinit[1,1]
     if (h0 %in% hlast) i = maxiter else i = i+1; hlast = c(hlast, h0)
   }
@@ -112,9 +120,9 @@ pdlvarselect <- function(v, maxiter = 10, tol = 1, df, dist.exclude = NULL, donu
 }
 
 regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, k = "triangular", weights = TRUE, donut = 0, 
-                   vce = NULL, dist.exclude=NULL, vars = "none", ihs = FALSE, poly = 1){
+                   vce = NULL, dist.exclude=NULL, vars = "none", transform = "none", poly = 1){
   df <- dfprep(df, v, donut, b, dist.exclude)
-  vs = vectorprep(df, v, b, fuzzy, ihs, weights)
+  vs = vectorprep(df, v, b, fuzzy, transform, weights)
   f = vs[[1]]; Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
   if (length(vars)==1) {if (vars=="opt") {vars <- pdlvarselect(v, df = df, dist.exclude = dist.exclude, k = k, vce = vce, fuzzy = fuzzy)}}
   covs <- covmatmaker(df, vars)
@@ -123,11 +131,11 @@ regout <- function(v, b, df, h = NULL, b0 = NULL, fuzzy = FALSE, k = "triangular
   return(out)
 }
 
-plotvar <- function(v, b, df, h=NULL, ihs=FALSE, k = "triangular", weights = TRUE, 
+plotvar <- function(v, b, df, h=NULL, transform="none", k = "triangular", weights = TRUE, 
                     vce = NULL, donut = 0, dist.exclude=NULL, vars = "none", p = 1,
                     residualizer = FALSE) {
   df <- dfprep(df, v, donut, b, dist.exclude)
-  vs = vectorprep(df, v, b, fuzzy = FALSE, ihs, weights)
+  vs = vectorprep(df, v, b, fuzzy = FALSE, transform, weights)
   Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
   if (residualizer) {
     covs <- covmatmaker(df, vars)
@@ -153,16 +161,21 @@ histfunc <- function(b, df, h=40, dist.exclude=NULL){
     theme_light() + labs(y = "weighted count", x = paste("distance to ", b))
 }
 
-rdgazer <- function(rdlist, dvlabs = NULL, xlines = NULL, se_r = "Robust", type = "text", ...){
-  dummymods <- list(); coef <- list(); se <- list(); bw <- c(); nobs <- c(); untreatedmean <- c()
+rdgazer <- function(rdlist, dvlabs = NULL, xlines = NULL, se_r = "Conventional", p_r = "Conventional", type = "text", ...){
+  dummymods <- list(); coef <- list(); se <- list(); pval <- list(); bw <- c(); nobs <- c(); untreatedmean <- c()
   for (i in 1:length(rdlist)) {
     dummymods[[i]] <- lm(rdlist[[i]]$Y ~ rdlist[[i]]$X)
-    coef[[i]] <- c(0, rdlist[[i]]$coef["Conventional",])
-    se[[i]] <- c(1, rdlist[[i]]$se[se_r,])
+    c <- c(0, rdlist[[i]]$coef["Conventional",])
+    c[abs(c)>100] <- round(c[abs(c)>100], 0)
+    s <- c(1, rdlist[[i]]$se[se_r,])
+    s[s>100] <- round(s[s>100], 0)
+    coef[[i]] <- c
+    se[[i]] <- s
+    pval[[i]] <- c(1, rdlist[[i]]$pv[p_r,])
     bw[i] <- round(rdlist[[i]]$bws[1,1],2)
     nobs[i] <- sum(rdlist[[i]]$N_h)
   }
-  s <- stargazer(dummymods, type = type, coef = coef, se = se, column.labels = dvlabs,
+  s <- stargazer(dummymods, type = type, coef = coef, se = se, p = pval, column.labels = dvlabs,
                  omit.stat = "all", digits = 2, df = FALSE, omit = c("Constant"), 
                  covariate.labels = c("Treatment"),
                  add.lines = c(list(c("N", nobs),
@@ -211,9 +224,9 @@ rdquant <- function(Y, x, fuzzy = NULL, grid = quantile(Y, seq(.1,.9,.1), na.rm 
 }
 
 qplot <- function(qvar, bvar, df, plot = TRUE, grid = NULL, vars = "none", k = "triangular", h = NULL, b = NULL, 
-                  dist.exclude = NULL, donut = 0, poly = 1, weights = TRUE, ihs = FALSE, vce = NULL, fuzzy = FALSE){
+                  dist.exclude = NULL, donut = 0, poly = 1, weights = TRUE, transform = "none", vce = NULL, fuzzy = FALSE){
   df <- dfprep(df, qvar, donut, bvar, dist.exclude)
-  vs = vectorprep(df, qvar, bvar, fuzzy, ihs, weights)
+  vs = vectorprep(df, qvar, bvar, fuzzy, transform, weights)
   f = vs[[1]]; Y = vs[[2]]; X = vs[[3]]; w = vs[[4]]
   covs <- covmatmaker(df, vars)
   if (is.null(grid)) grid = quantile(Y, seq(.1,.9,.1), na.rm = TRUE)

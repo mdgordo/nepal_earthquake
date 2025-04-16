@@ -29,7 +29,7 @@ library(rdrobust)
 source(paste(rootdir, "/code/rdhelpers.r", sep = ""))
 
 df.hh <- read_csv(paste(rootdir, "/data/processed/full_panel.csv", sep = ""), guess_max = 7500)
-df.hh <- filter(df.hh, !is.na(total_income) & food_consumption>0 & total_income>0)
+df.hh <- filter(df.hh, !is.na(total_income) & food_consumption>0 & total_income>0. & non_durables>0)
 df <- filter(df.hh, n_waves==3) %>%
   mutate(land_med = if_else(land_qtle %in% c(1,2), 1, 2),
          gorkha_loss_ever = gorkha_loss_ever/1000,
@@ -53,6 +53,9 @@ df <- filter(df.hh, n_waves==3) %>%
          net_informal = (inf_transfers - inf_transfers_made)/1000,
          financial_assets = financial_assets/1000,
          jewelery = jewelery/1000)
+
+mean(df.hh$home_value, na.rm = TRUE)/260000
+median(df.hh$home_value, na.rm = TRUE)/260000
 ```
 
 ### Risk sharing regressions
@@ -62,19 +65,19 @@ coefficients usually about .2 (see Morten/Townsend)
 Heterogeneity
 
 ```{r}
-risksharing_all <- feols(log(food_consumption) ~ log(total_income) | as.factor(hhid) + as.factor(vdc_yr),
+risksharing_all <- feols(log(non_durables) ~ log(total_income) | as.factor(hhid) + as.factor(vdc_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
-risksharing_hc1 <- feols(log(food_consumption) ~ log(total_income) + log(total_income):caste_recode | as.factor(hhid) + as.factor(vdc_yr),
+risksharing_hc1 <- feols(log(non_durables) ~ log(total_income) + log(total_income):caste_recode | as.factor(hhid) + as.factor(vdc_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
-risksharing_fh1 <- feols(log(food_consumption) ~ log(total_income) + log(total_income):femalehh | as.factor(hhid) + as.factor(vdc_yr),
+risksharing_fh1 <- feols(log(non_durables) ~ log(total_income) + log(total_income):femalehh | as.factor(hhid) + as.factor(vdc_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
-risksharing_l1 <- feols(log(food_consumption) ~ log(total_income) + log(total_income):as.factor(land_med) | as.factor(hhid) + as.factor(vdc_yr),
+risksharing_l1 <- feols(log(non_durables) ~ log(total_income) + log(total_income):as.factor(land_med) | as.factor(hhid) + as.factor(vdc_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
-risksharing_q1 <- feols(log(food_consumption) ~ log(total_income) + log(total_income):gorkha_hh | as.factor(hhid) + as.factor(vdc_yr),
+risksharing_q1 <- feols(log(non_durables) ~ log(total_income) + log(total_income):gorkha_hh | as.factor(hhid) + as.factor(vdc_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
 mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_q1)
@@ -85,24 +88,24 @@ modelsummary(dvnames(mods), stars = TRUE, gof_omit = "IC|Adj|Within|RMSE")
 
 ```{r}
 
-risksharing_all <- feols(log(food_consumption) ~ log(total_income) | as.factor(hhid) + as.factor(caste_yr),
+risksharing_all <- feols(log(non_durables) ~ log(total_income) | as.factor(hhid) + as.factor(caste_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
-risksharing_hc1 <- feols(log(food_consumption) ~ log(total_income) + log(total_income):caste_recode | as.factor(hhid) + as.factor(caste_yr),
+risksharing_hc1 <- feols(log(non_durables) ~ log(total_income) + log(total_income):caste_recode | as.factor(hhid) + as.factor(caste_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
-risksharing_fh1 <- feols(log(food_consumption) ~ log(total_income) + log(total_income):femalehh | as.factor(hhid) + as.factor(caste_yr),
+risksharing_fh1 <- feols(log(non_durables) ~ log(total_income) + log(total_income):femalehh | as.factor(hhid) + as.factor(caste_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
-risksharing_l1 <- feols(log(food_consumption) ~ log(total_income) + log(total_income):as.factor(land_med) | as.factor(hhid) + as.factor(caste_yr),
+risksharing_l1 <- feols(log(non_durables) ~ log(total_income) + log(total_income):as.factor(land_med) | as.factor(hhid) + as.factor(caste_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
-risksharing_q1 <- feols(log(food_consumption) ~ log(total_income) + log(total_income):gorkha_hh | as.factor(hhid) + as.factor(caste_yr),
+risksharing_q1 <- feols(log(non_durables) ~ log(total_income) + log(total_income):gorkha_hh | as.factor(hhid) + as.factor(caste_yr),
                          data = df, weights = df$wt_hh, vcov = ~strata)
 
 mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_q1)
 
-modelsummary(dvnames(mods), gof_omit = "IC|Adj|Within|RMSE", stars = TRUE)
+modelsummary(dvnames(mods), gof_omit = "IC|Adj|Within|RMSE", stars = TRUE, output = "latex")
 ```
 
 ### Female Headed Households with remittance income
@@ -125,13 +128,13 @@ modelsummary(dvnames(stg1reg), stars = TRUE, gof_omit = "IC|Adj|Within|RMSE")
 ```
 
 ```{r}
-risksharing_all <- feols(log(food_consumption) ~ 1 | as.factor(hhid) | 
+risksharing_all <- feols(log(non_durables) ~ 1 | as.factor(hhid) | 
                            log(total_income) ~ rainfall_month_7 + rainfall_month_8 + rainfall_month_9 + rainfall_month_10 + 
                             rainfall_month_11 + rainfall_month_12 + rainfall_month_1 + rainfall_month_2 + rainfall_month_3 + 
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6,
                         data = df, weights = df$wt_hh)
 
-risksharing_hc1 <- feols(log(food_consumption) ~ 1 | as.factor(hhid) | 
+risksharing_hc1 <- feols(log(non_durables) ~ 1 | as.factor(hhid) | 
                            log(total_income) + log(total_income):caste_recode ~ rainfall_month_7 + rainfall_month_8 + rainfall_month_9 + rainfall_month_10 + 
                             rainfall_month_11 + rainfall_month_12 + rainfall_month_1 + rainfall_month_2 + rainfall_month_3 + 
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6 + 
@@ -140,7 +143,7 @@ risksharing_hc1 <- feols(log(food_consumption) ~ 1 | as.factor(hhid) |
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6),
                         data = df, weights = df$wt_hh)
 
-risksharing_fh1 <- feols(log(food_consumption) ~ 1 | as.factor(hhid) | 
+risksharing_fh1 <- feols(log(non_durables) ~ 1 | as.factor(hhid) | 
                            log(total_income) + log(total_income):femalehh ~ rainfall_month_7 + rainfall_month_8 + rainfall_month_9 + rainfall_month_10 + 
                             rainfall_month_11 + rainfall_month_12 + rainfall_month_1 + rainfall_month_2 + rainfall_month_3 + 
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6 + 
@@ -149,7 +152,7 @@ risksharing_fh1 <- feols(log(food_consumption) ~ 1 | as.factor(hhid) |
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6),
                         data = df, weights = df$wt_hh)
 
-risksharing_l1 <- feols(log(food_consumption) ~ 1 | as.factor(hhid) | 
+risksharing_l1 <- feols(log(non_durables) ~ 1 | as.factor(hhid) | 
                            log(total_income) + log(total_income):as.factor(land_med) ~ rainfall_month_7 + rainfall_month_8 + rainfall_month_9 + rainfall_month_10 + 
                             rainfall_month_11 + rainfall_month_12 + rainfall_month_1 + rainfall_month_2 + rainfall_month_3 + 
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6 + 
@@ -158,7 +161,7 @@ risksharing_l1 <- feols(log(food_consumption) ~ 1 | as.factor(hhid) |
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6),
                         data = df, weights = df$wt_hh)
 
-risksharing_q1 <- feols(log(food_consumption) ~ 1 | as.factor(hhid) | 
+risksharing_q1 <- feols(log(non_durables) ~ 1 | as.factor(hhid) | 
                            log(total_income) + log(total_income):gorkha_hh ~ rainfall_month_7 + rainfall_month_8 + rainfall_month_9 + rainfall_month_10 + 
                             rainfall_month_11 + rainfall_month_12 + rainfall_month_1 + rainfall_month_2 + rainfall_month_3 + 
                             rainfall_month_4 + rainfall_month_5 + rainfall_month_6 + 
@@ -169,7 +172,7 @@ risksharing_q1 <- feols(log(food_consumption) ~ 1 | as.factor(hhid) |
 
 mods <- list(risksharing_all, risksharing_hc1, risksharing_fh1, risksharing_l1, risksharing_q1)
 
-modelsummary(dvnames(mods), stars = TRUE, gof_omit = "IC|Adj|Within|RMSE")
+modelsummary(dvnames(mods), stars = TRUE, gof_omit = "IC|Adj|Within|RMSE", output = "latex")
 ```
 
 ### Cyclicality - ways of smoothing- HH FE
@@ -201,7 +204,7 @@ finreg <- feols(cash_savings ~ log(total_income) | as.factor(hhid),
 
 mods <- list(aidreg, ngoreg, govreg, infreg, finreg, remreg2, migreg, loanreg2)
 
-modelsummary(dvnames(mods), gof_omit = "IC|Adj|Within|RMSE", stars = TRUE)
+modelsummary(dvnames(mods), gof_omit = "IC|Adj|Within|RMSE", stars = TRUE, output = "latex")
 ```
 
 
@@ -234,14 +237,14 @@ cpubtransregvdc <- feols(cash_savings ~ as.factor(land_med) | as.factor(vdc_yr),
 
 mods <- list(caidregvdc, cngoregvdc, cpubtransregvdc2, cinftransregvdc, cpubtransregvdc, cremregvdc, cmigregvdc, cloanregvdc)
 
-modelsummary(dvnames(mods), gof_omit = "IC|Adj|Within|RMSE", stars = TRUE)
+modelsummary(dvnames(mods), gof_omit = "IC|Adj|Within|RMSE", stars = TRUE, output = "latex")
 ```
 
 
 #### Summary Stats
 
 ```{r}
-dfsum <- df.hh[,c("consumption", "food_consumption", "total_income", "productive_assets", "investments", "jewelery", "school_costs",
+dfsum <- df.hh[,c("non_durables", "food_consumption", "total_income", "productive_assets", "investments", "jewelery", "school_costs",
               "home_value", "home_investment", "years_ago_built", 
               "currentlyliving", "n_migrants", "migrants_past_year", "migrants_overseas", "femalehh", "cash_savings", "remittance_income", 
               "new_loans_taken", "loans_made_past_year", "implied_default", 
@@ -255,7 +258,8 @@ xtabwts <- sumstats.wtd(dfsum, df.hh$wt_hh, d = 2, labs = c("Consumption", "Food
                               "Remittance Income",  "Loans Taken Past Year", "Loans Made Past Year", "Default(%)",
                               "Skipped Meal(%)", "Earthquake Aid", "Earthquake Aid(%)", "NGO Aid", 
                               "Public Transfers", "Informal Transfers", "Earthquake Losses (%)", "Earthquake Losses"))
-print(xtabwts, include.rownames = FALSE)
+xtabwts <- xtabwts[,c(1:5,8)]
+print(xtable(xtabwts), include.rownames = FALSE)
 
 weighted.mean(df.hh$n_migrants > 0, df.hh$wt_hh)
 weighted.mean(df.hh$migrants_overseas, df.hh$wt_hh)/weighted.mean(df.hh$n_migrants, df.hh$wt_hh)
@@ -357,69 +361,14 @@ modelsummary(dvnames(mods), gof_omit = "IC|Within|Adj|RMSE|F|Lik", stars = TRUE,
 mods <- list(qinc1, qincfe1, qinciv21, qinciv31, qinc41)
 
 modelsummary(dvnames(mods), gof_omit = "IC|Within|Adj|RMSE|F|Lik", stars = TRUE, coef_omit = "vdc_code|district", 
-            add_rows = data.frame(rbind(c("Fixed Effects", "", "Village", "", "District", "District"),
+            add_rows = data.frame(rbind(c("Fixed Effectes", "", "Village", "", "District", "District"),
                                         c("IV", "", "", "Shake Intensity", "Shake Intensity", "Shake Intensity"),
-                                        c("Wave", rep("1", 5)))))
+                                        c("Wave", rep("1", 5)))), output = "latex")
 
 
 weighted.mean(df$gorkha_loss_ever[df$wave==1 & df$gorkha_loss_ever>0], df$wt_hh[df$wave==1 & df$gorkha_loss_ever>0])
 ```
 
-
-### Is Housing Value a good proxy for Earthquake damages?
-
-```{r}
-df$h1 <- log(df$home_value + 1) ## model summary sometimes hangs when you put log+1 in the formula
-
-qinc <- lm(h1 ~ gorkha_loss_ever,
-              data = df, weights = df$wt_hh)
-
-qincfe <- lm(h1 ~ gorkha_loss_ever + as.factor(vdc_code) + as.factor(wave),
-              data = df, weights = df$wt_hh)
-
-qinciv2 <- ivreg(h1 ~ gorkha_loss_ever | shake_pga,
-              data = df, weights = df$wt_hh)
-
-qinciv3 <- ivreg(h1 ~ gorkha_loss_ever + as.factor(district)| shake_pga + as.factor(district) + as.factor(wave),
-              data = df, weights = df$wt_hh)
-
-qinc4 <- ivreg(h1 ~ gorkha_loss_ever + as.factor(district) + as.factor(wave) + log(elevation) + log(distance_epicenter) | 
-              shake_pga + as.factor(district) + as.factor(wave) + log(elevation) + log(distance_epicenter),
-              data = df, weights = df$wt_hh)
-
-qinc1 <- lm(h1 ~ gorkha_loss_ever,
-              data = df, weights = df$wt_hh, subset = df$wave==1)
-
-qincfe1 <- lm(h1 ~ gorkha_loss_ever + as.factor(vdc_code),
-              data = df, weights = df$wt_hh, subset = df$wave==1)
-
-qinciv21 <- ivreg(h1 ~ gorkha_loss_ever | shake_pga,
-              data = df, weights = df$wt_hh, subset = df$wave==1)
-
-qinciv31 <- ivreg(h1 ~ gorkha_loss_ever + as.factor(district)| shake_pga + as.factor(district),
-              data = df, weights = df$wt_hh, subset = df$wave==1)
-
-qinc41 <- ivreg(h1 ~ gorkha_loss_ever + as.factor(district) + log(elevation) + log(distance_epicenter) | 
-              shake_pga + as.factor(district) + log(elevation) + log(distance_epicenter),
-              data = df, weights = df$wt_hh, subset = df$wave==1) 
-
-mods <- list(qinc, qincfe, qinciv2, qinciv3, qinc4)
-
-modelsummary(dvnames(mods), gof_omit = "IC|Within|Adj|RMSE|F|Lik", coef_omit = "vdc_code|district", stars = TRUE,
-            add_rows = data.frame(rbind(c("Fixed Effects", "", "Village", "", "District", "District"),
-                                        c("IV", "", "", "Shake Intensity", "Shake Intensity", "Shake Intensity"),
-                                        c("Wave", rep("All", 5)))))
-
-mods <- list(qinc1, qincfe1, qinciv21, qinciv31, qinc41)
-
-modelsummary(dvnames(mods), gof_omit = "IC|Within|Adj|RMSE|F|Lik", coef_omit = "vdc_code|district", stars = TRUE,
-            add_rows = data.frame(rbind(c("Fixed Effects", "", "Village", "", "District", "District"),
-                                        c("IV", "", "", "Shake Intensity", "Shake Intensity", "Shake Intensity"),
-                                        c("Wave", rep("1", 5)))))
-
-
-weighted.mean(df$gorkha_loss_ever[df$wave==1 & df$gorkha_loss_ever>0], df$wt_hh[df$wave==1 & df$gorkha_loss_ever>0])
-```
 
 ```{r} 
 df.housing <- filter(df.hh, wave==1) %>%
@@ -478,7 +427,7 @@ depreg3b <- fepois(home_value ~ years_ago_built + home_investment +
 
 mods <- list(depreg1, depreg1a, depreg1b, depreg2, depreg2a, depreg2b, depreg3, depreg3a, depreg3b)
 
-modelsummary(mods, gof_omit = "IC|Within|Adj|RMSE", stars = TRUE, coef_omit = "district")
+modelsummary(mods, gof_omit = "IC|Within|Adj|RMSE", stars = TRUE, coef_omit = "district", output = "latex")
 ```
 
 

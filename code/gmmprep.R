@@ -12,7 +12,7 @@ source(paste(getwd(), "/code/VFIfunctions.R", sep = ""))
 
 df.hh <- read_csv(paste(getwd(), "/data/processed/full_panel.csv", sep = ""), guess_max = 7500) %>% ### drop 1004 observations w missing values
   filter(!is.na(age_hh), !is.na(highest_ed), !is.na(religion), !is.na(home_investment), !is.na(implied_default),
-         !is.na(cash_savings), !is.na(loan_payments_recd_ann), !is.na(remittance_income), !is.na(prev_migrants),
+         !is.na(cash_savings), !is.na(loan_payments_recd_ann), !is.na(remittance_income), !is.na(prev_migrants), !is.na(non_durables),
          !is.na(consumption), !is.na(total_income), !is.na(avg_income), !is.na(home_value)) %>%
   mutate(M_avg = NA,
          total_income_hat = NA,
@@ -75,19 +75,19 @@ ggplot() + geom_point(aes(x = log(df.hh$M_avg), y = log(df.hh$total_income_hat),
 
 
 ### Purge consumption, housing, default, savings variables
-foodreg <- lm(log(food_consumption+1) ~ poly(age_hh, 2) + poly(hhmembers, 2) + under18 + over65 +
+foodreg <- lm(log(non_durables+1) ~ poly(age_hh, 2) + poly(hhmembers, 2) + under18 + over65 +
                 poly(highest_ed, 2) + as.factor(wave), 
               data = df.hh, weights = wt_hh)
-df.hh$food_consumption_hat <- exp(predict(foodreg, newdata = avghhdat) + foodreg$residuals)
-foodratio <- weighted.mean(df.hh$food_consumption, df.hh$wt_hh)/weighted.mean(df.hh$food_consumption_hat, df.hh$wt_hh)
-df.hh$food_consumption_hat <- df.hh$food_consumption_hat*foodratio
+df.hh$non_durables_hat <- exp(predict(foodreg, newdata = avghhdat) + foodreg$residuals)
+foodratio <- weighted.mean(df.hh$non_durables, df.hh$wt_hh)/weighted.mean(df.hh$non_durables_hat, df.hh$wt_hh)
+df.hh$non_durables_hat <- df.hh$non_durables_hat*foodratio
 
 summary(foodreg)
 ggplot(df.hh) +
-  geom_point(aes(x = log(food_consumption), y = foodreg$fitted.values, color = gorkha_hh)) + 
+  geom_point(aes(x = log(non_durables), y = foodreg$fitted.values, color = gorkha_hh)) + 
   geom_abline(slope = 1, intercept = 0)
 ggplot(df.hh) +
-  geom_point(aes(x = log(food_consumption), y = log(food_consumption_hat), color = gorkha_hh)) + 
+  geom_point(aes(x = log(non_durables), y = log(non_durables_hat), color = gorkha_hh)) + 
   geom_abline(slope = 1, intercept = 0)
 
 homereg <- lm(log(home_value+1) ~ poly(age_hh, 2) + poly(hhmembers, 2) + under18 + over65 +
@@ -181,42 +181,51 @@ ggplot(filter(df.hh, !is.na(liquidity_w_investments))) +
 #### Investment variables adjusted based on ratio of adjusted realized income to actual realized income
 df.hh$home_investment_hat <- df.hh$home_investment * df.hh$total_income_hat/(df.hh$total_income+1)
 
+df.hh <- mutate(df.hh, total_rainfall = rainfall_month_7 + rainfall_month_8 + rainfall_month_9 + rainfall_month_10 + 
+                  rainfall_month_11 + rainfall_month_12 + rainfall_month_1 + rainfall_month_2 + rainfall_month_3 + 
+                  rainfall_month_4 + rainfall_month_5 + rainfall_month_6)
+
 ### construct and save adjusted dataset
 df.adj <- df.hh %>% 
-  select(hhid, wave, wt_hh, food_consumption_hat, home_value_hat, home_investment_hat, 
+  mutate() %>%
+  select(hhid, wave, wt_hh, food_consumption, non_durables_hat, home_value_hat, home_investment_hat, 
          liquidity_plus_hat, liquidity_hat, default_hat, total_income_hat, M_avg, remittance_income,
          years_ago_built_resid, home_value_resid, cash_savings, cap_gains, loan_payments_recd_ann,
          amount_owed, loans_made_1yr, loans_made_2yr, loans_made_3yr, loans_taken_1yr, loans_taken_2yr, loans_taken_3yr, 
-         quake_aid, max_interest, cut_food, dissaving, dist_2_seg1pt1, dist_2_seg1, quake_losses, gorkha_loss_ever,
-         received_aid, wt_hh, gorkha_hh, riot_hh, received_ngo_aid, designation, 
-         other_nat_disaster, livestock_farm_shock, riot, illness_injury_shock, price_shock) %>%
+         quake_aid, max_interest, cut_food, cut_nonfood, school_interrupt, child_labor, child_wage_labor,
+         asset_sales, dissaving, migrants_past_year, dist_2_seg1pt1, dist_2_seg1, quake_losses, gorkha_loss_ever,
+         received_aid, wt_hh, gorkha_hh, riot_hh, received_ngo_aid, designation, total_rainfall,
+         other_nat_disaster, livestock_farm_shock, riot, illness_injury_shock, price_shock,
+         caste_recode, femalehh, landvalue, implied_default, shake_pga, elevation, slope, walls, foundation,
+         roof, fuel, stove, currentlyliving, under5, over65) %>%
   mutate(max_interest = if_else(is.na(max_interest), 0, max_interest))
 
 saveRDS(df.adj, paste(getwd(), "/data/model_output/df.adj.rds", sep = ""))
 
-sigmame <- .7
-meshocks <- exp(rnorm(nrow(df.adj), -sigmame^2/2, sigmame))
+sigmame <- .2
+meshocks <- exp(rnorm(nrow(df.adj), sigmame^2/2, sigmame))
 df.adj$M_avg <- df.adj$M_avg * meshocks
 
 df.adj <- df.adj %>%
   mutate(liquidity = liquidity_hat/M_avg,
          liquidity_plus = liquidity_plus_hat/M_avg,  
-         food_consumption = food_consumption_hat/M_avg,
+         non_durables = non_durables_hat/M_avg,
          home_value = home_value_hat/M_avg,
          home_investment = home_investment_hat/M_avg,
          quake_aid = quake_aid/M_avg,
          total_income = total_income_hat/M_avg) %>%
   group_by(hhid) %>%
-  mutate(lag_h = lag(home_value, order_by = wave))
+  mutate(lag_h = lag(home_value, order_by = wave),
+         lag_y = lag(total_income, order_by = wave))
 
 ### Sanity checks
 lapply(df.adj, function(x) sum(is.na(x)))
 df.adj <- df.adj[complete.cases(df.adj),]
 
 ## U shape b/c dividing by low income results in higher liq values
-ggplot(df.adj, aes(x = log(M_avg), y = ihs(liquidity))) + geom_point(aes(color = log(food_consumption), alpha = .3)) + 
+ggplot(df.adj, aes(x = log(M_avg), y = ihs(liquidity))) + geom_point(aes(color = log(non_durables), alpha = .3)) + 
   scale_color_viridis_c() + geom_smooth(method = "lm")
-ggplot(df.adj, aes(y = log(M_avg), x = ihs(liquidity_plus))) + geom_point(aes(color = log(food_consumption), alpha = .3)) + 
+ggplot(df.adj, aes(y = log(M_avg), x = ihs(liquidity_plus))) + geom_point(aes(color = log(non_durables), alpha = .3)) + 
   scale_color_viridis_c() + geom_smooth(method = "lm")
 
 ### liq savings vs tot savings w/assets
@@ -225,7 +234,7 @@ ggplot(df.hh, aes(x = ihs(liquidity), y = ihs(liquidity_w_investments))) +
 cor(df.hh$liquidity[!is.na(df.hh$liquidity)], df.hh$liquidity_w_investments[!is.na(df.hh$liquidity)], method = "spearman")
 
 ggplot(df.adj) + 
-  geom_point(aes(x = ihs(liquidity), y = ihs(lag_h), color = log(food_consumption)), alpha = .3) +
+  geom_point(aes(x = ihs(liquidity), y = ihs(lag_h), color = log(non_durables)), alpha = .3) +
   scale_color_viridis_c()
 
 ggplot(df.adj) + 
@@ -234,24 +243,28 @@ ggplot(df.adj) +
 
 ggplot(df.adj) + 
   geom_point(aes(x = ihs(liquidity), y = ihs(lag_h), color = default_hat), alpha = .3)
-mean(df.adj$food_consumption[df.adj$default_hat>.5]); mean(df.adj$food_consumption[df.adj$default_hat<.5])
-mean(df.adj$home_investment[df.adj$default_hat>.5]); mean(df.adj$home_investment[df.adj$default_hat<.5])
-mean(df.adj$liquidity[df.adj$default_hat>.5]); mean(df.adj$liquidity[df.adj$default_hat<.5])
-mean(df.adj$lag_h[df.adj$default_hat>.5]); mean(df.adj$lag_h[df.adj$default_hat<.5])
 
-ggplot(df.adj, aes(x = ihs(liquidity), y = food_consumption)) +
+mean(df.adj$non_durables[df.adj$default_hat>.5]); mean(df.adj$non_durables[df.adj$default_hat<.5])
+mean(df.adj$home_investment[df.adj$default_hat>.5]); mean(df.adj$home_investment[df.adj$default_hat<.5])
+mean(df.adj$liquidity[df.adj$default_hat>.5], na.rm = TRUE); mean(df.adj$liquidity[df.adj$default_hat<.5], na.rm = TRUE)
+mean(df.adj$lag_h[df.adj$default_hat>.5], na.rm = TRUE); mean(df.adj$lag_h[df.adj$default_hat<.5], na.rm = TRUE)
+
+ggplot() + geom_density(data = filter(df.adj, default_hat > .5), aes(x = liquidity, color = "red")) +
+  geom_density(data = filter(df.adj, default_hat < .5), aes(x = liquidity, color = "blue")) + xlim(-5, 10)
+
+ggplot(df.adj, aes(x = ihs(liquidity), y = non_durables)) +
   geom_point() + geom_smooth()
 
 ggplot(df.adj, aes(x = ihs(liquidity), y = ihs(home_investment))) + 
   geom_point() + geom_smooth()
 
-ggplot(df.adj, aes(x = ihs(lag_h), y = food_consumption)) + 
+ggplot(df.adj, aes(x = ihs(lag_h), y = non_durables)) + 
   geom_point() + geom_smooth()
 
 ggplot(df.adj, aes(x = ihs(lag_h), y = ihs(home_investment))) + 
   geom_point() + geom_smooth()
 
-summary(lm(log(food_consumption) ~ ihs(liquidity) + log(lag_h) + ihs(liquidity):log(lag_h), data = df.adj))
+summary(lm(log(non_durables) ~ ihs(liquidity) + log(lag_h) + ihs(liquidity):log(lag_h), data = df.adj))
 summary(lm(log(1+home_investment) ~ ihs(liquidity) + log(lag_h) + ihs(liquidity):log(lag_h), data = df.adj))
 summary(lm(default_hat ~ ihs(liquidity) + log(lag_h) + ihs(liquidity):log(lag_h), data = df.adj))
 
@@ -277,3 +290,10 @@ sol <- directL(fn = deltmin,
               lower = c(0,0,0,0), upper = c(5,5,5,5), 
               control = list(maxeval = 2000))
 sol
+
+## bound on unpredictable variance of income?
+rainreg <- feols(log(total_income) ~ total_rainfall | as.factor(hhid),
+                 data = df.adj, weights = df.adj$wt_hh)
+
+sqrt(var(rainreg$fitted.values))
+sqrt(var(rainreg$residuals))

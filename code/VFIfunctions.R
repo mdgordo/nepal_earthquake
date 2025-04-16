@@ -22,7 +22,7 @@ great.expectations <- function(sigma, gqpts){
 }
 
 create.statespace = function(ubm = c(5,5), theta, method = "equal"){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   
   if (method=="chebyshev") {
@@ -132,7 +132,7 @@ extrapolator <- function(w, x, h, xvals, hvals, Tw, var) {
 
 interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
   
-  cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10]); lambda = theta[6]
+  cbar = theta[4]; hbar = theta[5]; lambda = theta[6]
   if (var %in% c("aidcfx", "aidifx")) {
     Tw = if (var == "aidcfx") w$cfx else w$ifx
   } else {
@@ -189,7 +189,7 @@ interpolater.creater = function(w, theta, method = "simplical", var = "Tw"){
 ### Function factory for generation household maximization problem (minimizes the negative - which is positive)
 
 hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10] 
   
   draws = exp(great.expectations(sigma, gqpts))
@@ -217,7 +217,7 @@ hhprob_funkfact <- function(x, h, Valfunc, theta, gqpts){
 }
 
 firstguesser <- function(w, theta){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   hsteady = (1-alpha)*delta/(1-delta)
   guesswrap = function(rowidx){
@@ -241,7 +241,7 @@ firstguesser <- function(w, theta){
 ### Bellman Operator
 
 bellman <- function(w, theta, shockpts = 30, m = 2000){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   gqpts = gaussHermiteData(shockpts)
   Valfunc = interpolater.creater(w, theta, method = "simplical")
@@ -282,7 +282,7 @@ bellman <- function(w, theta, shockpts = 30, m = 2000){
 
 ### Howard Policy Iteration
 howard <- function(w, theta, shockpts = 30){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   gqpts = gaussHermiteData(shockpts)
   Valfunc = interpolater.creater(w, theta, method = "simplical")
@@ -301,7 +301,7 @@ howard <- function(w, theta, shockpts = 30){
 
 ### VFI
 VFI <- function(v0, theta, maxiter = 30, tol = 2.5e-3, howardk = 0, mqp = FALSE, shockpts = c(8,30)){
-  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]*theta[9]; hbar = theta[5]*(1-theta[9])*theta[10]/(1-theta[10])
+  gamma = theta[1]; beta = theta[2]; R = theta[3]; cbar = theta[4]; hbar = theta[5]
   lambda = theta[6]; sigma = theta[7]; sigmame = theta[8]; alpha = theta[9]; delta = theta[10]
   w = vector(mode = "list", length = maxiter)
   w[[1]] = v0
@@ -363,16 +363,18 @@ gmmmomentmatcher <- function(theta, df, v0 = NULL, returnv = FALSE, shockpts = c
   }
 }
 
-momentmatcher <- function(vfx, t0, data, savings_measure = "liquid"){
-  gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]*t0[9]; hbar = t0[5]*(1-t0[9])*t0[10]/(1-t0[10])
+momentmatcher <- function(vfx, t0, data, savings_measure = "liquid", ndraws = 100){
+  gamma = t0[1]; beta = t0[2]; R = t0[3]; cbar = t0[4]; hbar = t0[5]
   lambda = t0[6]; sigma = t0[7]; sigmame = t0[8]; alpha = t0[9]; delta = t0[10]
   
-  set.seed(1646); meshocks <- exp(rnorm(nrow(data), -sigmame^2/2, sigmame))
+  ## 100 draws for each HH
+  data <- data[rep(seq_len(nrow(data)), each = ndraws), ]
+  set.seed(1646); meshocks <- exp(rnorm(nrow(data), sigmame^2/2, sigmame))
   data$M_avg <- data$M_avg*meshocks
   
   data <- mutate(data, liquidity = liquidity_hat/M_avg,
                  liquidity_plus = liquidity_plus_hat/M_avg,  
-                 food_consumption = food_consumption_hat/M_avg,
+                 non_durables = non_durables_hat/M_avg,
                  home_value = home_value_hat/M_avg,
                  home_investment = home_investment_hat/M_avg,
                  quake_aid = quake_aid/M_avg,
@@ -382,13 +384,22 @@ momentmatcher <- function(vfx, t0, data, savings_measure = "liquid"){
   data <- data[complete.cases(data),]
   
   wt = sqrt(data$wt_hh/sum(data$wt_hh))
-  x = if (savings_measure=="liquid") {data$liquidity} else {data$liquidity_plus}
-  cfx <- mcmapply(vfx[[1]], x, data$lag_h, mc.cores = detectCores())
-  ifx <- mcmapply(vfx[[2]], x, data$lag_h, mc.cores = detectCores())
+  x = if (savings_measure=="liquid") {data$liquidity} else {data$liquidity_plus} 
+  x_noaid = x - data$quake_aid; x_aid = x + 300000/data$M_avg ####
+  
+  cfx <- mcmapply(vfx[[1]], x, data$lag_h, mc.cores = detectCores()) 
+  ifx <- mcmapply(vfx[[2]], x, data$lag_h, mc.cores = detectCores()) 
   dfx <- mcmapply(vfx[[3]], x, data$lag_h, mc.cores = detectCores())
+  ### For matching RD moments
+  cfxnoaid <- mcmapply(vfx[[1]], x_noaid, data$lag_h, mc.cores = detectCores()) * data$M_avg #### multiplication to original units important to get scaling same as in RD
+  cfxaid <- mcmapply(vfx[[1]], x_aid, data$lag_h, mc.cores = detectCores()) * data$M_avg ####
+  ifxnoaid <- mcmapply(vfx[[2]], x_noaid, data$lag_h, mc.cores = detectCores()) * data$M_avg ####
+  ifxaid <- mcmapply(vfx[[2]], x_aid, data$lag_h, mc.cores = detectCores()) * data$M_avg ####
+  ### RD estimates
+  c_RD <- 0.66; i_RD <- 9.79 ####
   
   ## consumption and investment
-  e1 = (cfx - data$food_consumption)/mean(data$food_consumption)
+  e1 = (cfx - data$non_durables)/mean(data$non_durables)
   e2 = (ifx - data$home_investment)/mean(data$home_investment)
   e3 = (dfx - data$default_hat)/mean(data$default_hat)
   ###savings and variance of income
@@ -398,26 +409,29 @@ momentmatcher <- function(vfx, t0, data, savings_measure = "liquid"){
   ### depreciation
   e7 = data$years_ago_built_resid*(data$home_value_resid - (delta-1)*data$years_ago_built_resid)
   ### interactions
-  e8 = e1*ihs(x)/(mean(data$food_consumption)*mean(ihs(data$liquidity)))
-  e9 = e1*log(data$M_avg)/(mean(data$food_consumption)*mean(log(data$M_avg)))
-  e10 = e1*log(data$lag_h+1)/(mean(data$food_consumption)*mean(log(data$lag_h+1)))
+  e8 = e1*ihs(x)/(mean(data$non_durables)*mean(ihs(data$liquidity)))
+  e9 = e1*log(data$M_avg)/(mean(data$non_durables)*mean(log(data$M_avg)))
+  e10 = e1*log(data$lag_h+1)/(mean(data$non_durables)*mean(log(data$lag_h+1)))
   e11 = e2*ihs(x)/(mean(data$home_investment)*mean(ihs(data$liquidity)))
   e12 = e2*log(data$M_avg)/(mean(data$home_investment)*mean(log(data$M_avg)))
   e13 = e2*log(data$lag_h+1)/(mean(data$home_investment)*mean(log(data$lag_h+1)))
   ### variance of income and measurement error
   e14 = (log(data$total_income) + sigma^2/2 + sigmame^2/2)/mean(log(data$total_income))
   e15 = (log(data$total_income)^2 - (sigma^2/2 + sigmame^2/2)^2 - sigma^2 - sigmame^2)/mean(log(data$total_income)^2)
-  return(cbind(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15)*wt)
+  ### RD moments
+  e16 = (data$received_aid==1)*(log(cfxaid) - log(cfxnoaid) - c_RD)/c_RD ###
+  e17 = (data$received_aid==1)*(log(1+ifxaid) - log(1+ifxnoaid) - i_RD)/i_RD ###
+  return(cbind(e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17)*wt) ###
 }
 
 partialderivs <- function(idx, tol, v0, theta){
   thetap <- theta
   thetap[idx] <- theta[idx] + tol
-  Vp1 <- VFI(v0, thetap, shockpts = c(30,30), tol = 1e-3)
+  Vp1 <- VFI(v0, thetap, shockpts = c(30,30), tol = 2.5e-3/2)
   return(Vp1)
 }
 
-momentgrad <- function(theta, df, tol = .005){
+momentgrad <- function(theta, df, tol = 2.5e-3){
   print(theta)
   
   ### initial value and policy functions
@@ -602,5 +616,120 @@ constrainttroubleshooter = function(rowidx, w, crange = c(0,x+lambda)){
   cs = seq(crange[1], crange[2], length.out = 40)
   hs = sapply(cs, function(c) hhprob(c(c, x+lambda-c)))
   ggplot() + geom_line(aes(x = cs, y = hs))
+}
+
+allocator <- function(tvector, uvector, avector = NULL){
+  df.hh$v <- tvector
+  df.hh$u <- uvector
+  df.hh$a <- if(is.null(avector)) {tvector} else {avector}
+  
+  wtpboot <- function(data, idx, condition) {
+    data$i <- condition
+    df = data[idx,]
+    a = mean(df$a, na.rm = TRUE)
+    ct = mean(df$v[df$i])
+    return(ct/a)
+  }
+  
+  wtpLboot <- function(data, idx) {
+    df = data[idx,]
+    a = mean(df$a, na.rm = TRUE)
+    ct = mean(df$u)*(1/budgetconstraint)
+    return(ct/a)
+  }
+  
+  df.wr <- data.frame("al" = factor(c("Actual", "NGO", "Damages", "Shake PGA", "Housing", "Damages rel.",
+                                      "Consumption", "Liquidity", "Consumption rel.", "Liq rel.", "Universal", "Optimal"), 
+                                    levels = c("Actual", "NGO", "Damages", "Shake PGA", "Damages rel.",
+                                               "Consumption", "Housing", "Liquidity", "Consumption rel.", "Liq rel.", "Universal", "Optimal")),
+                      "bens" = rep(NA, 12),
+                      "cil" = rep(NA, 12),
+                      "cih" = rep(NA, 12))
+  
+  ### Actual
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$received_aid==1),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Actual"] = b$t0; df.wr$cil[df.wr$al=="Actual"] = b$normal[,2]; df.wr$cih[df.wr$al=="Actual"] = b$normal[,3]
+  
+  ### NGOs
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$received_ngo_aid==1),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="NGO"] = b$t0; df.wr$cil[df.wr$al=="NGO"] = b$normal[,2]; df.wr$cih[df.wr$al=="NGO"] = b$normal[,3]
+  
+  ### Quake losses 
+  qd <- wtd.quantile(df.hh$gorkha_loss_ever, 1-budgetconstraint, weights = df.hh$wt_hh) 
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$gorkha_loss_ever>qd),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Damages"] = b$t0; df.wr$cil[df.wr$al=="Damages"] = b$normal[,2]; df.wr$cih[df.wr$al=="Damages"] = b$normal[,3]
+  
+  ### Peak Ground Acceleration 
+  qd <- wtd.quantile(df.hh$shake_pga, 1-budgetconstraint, weights = df.hh$wt_hh) 
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$shake_pga>qd),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Shake PGA"] = b$t0; df.wr$cil[df.wr$al=="Shake PGA"] = b$normal[,2]; df.wr$cih[df.wr$al=="Shake PGA"] = b$normal[,3]
+  
+  ### Food Consumption
+  qc <- wtd.quantile(df.hh$food_consumption*df.hh$M_avg, budgetconstraint, weights = df.hh$wt_hh) 
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$food_consumption*df.hh$M_avg<qc),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Consumption"] = b$t0; df.wr$cil[df.wr$al=="Consumption"] = b$normal[,2]; df.wr$cih[df.wr$al=="Consumption"] = b$normal[,3]
+  
+  qc <- wtd.quantile(df.hh$food_consumption, budgetconstraint, weights = df.hh$wt_hh) 
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$food_consumption<qc),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Consumption rel."] = b$t0; df.wr$cil[df.wr$al=="Consumption rel."] = b$normal[,2]; df.wr$cih[df.wr$al=="Consumption rel."] = b$normal[,3]
+  
+  ### Wealth
+  qb <- wtd.quantile(df.hh$x_noaid*df.hh$M_avg, budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$x_noaid*df.hh$M_avg<qb),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Liquidity"] = b$t0; df.wr$cil[df.wr$al=="Liquidity"] = b$normal[,2]; df.wr$cih[df.wr$al=="Liquidity"] = b$normal[,3]
+  
+  qb <- wtd.quantile(df.hh$x_noaid, budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$x_noaid<qb),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Liq rel."] = b$t0; df.wr$cil[df.wr$al=="Liq rel."] = b$normal[,2]; df.wr$cih[df.wr$al=="Liq rel."] = b$normal[,3]
+  
+  ### Housing
+  qh <- wtd.quantile(df.hh$lag_h*df.hh$M_avg, budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$lag_h*df.hh$M_avg<qh),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Housing"] = b$t0; df.wr$cil[df.wr$al=="Housing"] = b$normal[,2]; df.wr$cih[df.wr$al=="Housing"] = b$normal[,3]
+  
+  qh <- wtd.quantile(df.hh$lag_h, budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$lag_h<qh),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Housing"] = b$t0; df.wr$cil[df.wr$al=="Housing"] = b$normal[,2]; df.wr$cih[df.wr$al=="Housing"] = b$normal[,3]
+  
+  ### Relative Damages
+  qh <- wtd.quantile(df.hh$damage_rel, 1-budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$damage_rel>qh),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Damages rel."] = b$t0; df.wr$cil[df.wr$al=="Damages rel."] = b$normal[,2]; df.wr$cih[df.wr$al=="Damages rel."] = b$normal[,3]
+  
+  ## Optimal
+  qw <- wtd.quantile(df.hh$v, 1-budgetconstraint, weights = df.hh$wt_hh)
+  b = boot(df.hh, statistic = wtpboot, R = 1000, condition = as.vector(df.hh$v>qw),
+           weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Optimal"] = b$t0; df.wr$cil[df.wr$al=="Optimal"] = b$normal[,2]; df.wr$cih[df.wr$al=="Optimal"] = b$normal[,3]
+  
+  ### Universal
+  b = boot(df.hh, statistic = wtpLboot, R = 1000, weights = df.hh$wt_hh)
+  b = boot.ci(b, type = "norm", conf = .95)
+  df.wr$bens[df.wr$al=="Universal"] = b$t0; df.wr$cil[df.wr$al=="Universal"] = b$normal[,2]; df.wr$cih[df.wr$al=="Universal"] = b$normal[,3]
+  
+  return(df.wr)  
 }
 
